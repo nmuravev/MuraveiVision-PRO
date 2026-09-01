@@ -1,0 +1,148 @@
+"""3D reconstruction API — COLMAP sidecar + SSE progress."""
+from __future__ import annotations
+
+import asyncio
+import json
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel, Field
+
+from services import recon_scanner
+from services.security import require_role
+
+router = APIRouter(tags=["recon"])
+
+
+class ReconStartBody(BaseModel):
+    video_path: str = Field(..., min_length=1)
+    t_start: float | None = Field(default=None, ge=0)
+    t_end: float | None = Field(default=None, ge=0)
+    fps_sample: float = Field(default=1.0, ge=0.1, le=5.0)
+
+
+class ManifestPatchBody(BaseModel):
+    scale_m_per_unit: float | None = None
+    scale_reference: dict[str, Any] | None = None
+    rotation_x: float | None = None
+
+
+@router.get("/api/recon/status")
+async def recon_status(_user: dict[str, Any] = Depends(require_role("operator"))) -> dict[str, Any]:
+    return recon_scanner.status()
+
+
+@router.post("/api/recon/start")
+async def recon_start(
+    body: ReconStartBody,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    try:
+        return recon_scanner.start(
+            video_path=body.video_path,
+            t_start=body.t_start,
+            t_end=body.t_end,
+            fps_sample=body.fps_sample,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/api/recon/stop")
+async def recon_stop(_user: dict[str, Any] = Depends(require_role("operator"))) -> dict[str, Any]:
+    return recon_scanner.stop()
+
+
+@router.get("/api/recon/stream")
+async def recon_stream(_user: dict[str, Any] = Depends(require_role("operator"))) -> StreamingResponse:
+    async def gen():
+        idx = 0
+        yield f"data: {json.dumps({'type': 'status', **recon_scanner.status()}, ensure_ascii=False)}\n\n"
+        while True:
+            events, idx = recon_scanner.drain_events(idx)
+            for ev in events:
+                yield f"data: {json.dumps({'type': 'progress', **ev}, ensure_ascii=False)}\n\n"
+                if ev.get("status") in ("done", "colmap_done", "error", "idle"):
+                    return
+            st = recon_scanner.status()
+            if st.get("status") in ("done", "colmap_done", "error", "idle") and not events:
+                yield f"data: {json.dumps({'type': 'status', **st}, ensure_ascii=False)}\n\n"
+                return
+            await asyncio.sleep(0.4)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@router.get("/api/recon/manifest")
+async def recon_manifest(
+    video_path: str = Query(...),
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    try:
+        man = recon_scanner.get_manifest(video_path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not man:
+        return {"manifest": None}
+    return {"manifest": man}
+
+
+@router.patch("/api/recon/manifest/{job_id}")
+async def recon_manifest_patch(
+    job_id: str,
+    body: ManifestPatchBody,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    patch = body.model_dump(exclude_unset=True)
+    try:
+        man = recon_scanner.update_manifest(job_id, patch)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"manifest": man}
+
+
+@router.get("/api/recon/poses")
+async def recon_poses(
+    video_path: str = Query(...),
+    time_sec: float = Query(..., ge=0),
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    try:
+        payload = recon_scanner.get_poses_at_time(video_path, time_sec)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not payload:
+        raise HTTPException(status_code=404, detail="Нет camera poses для этого видео")
+    return payload
+
+
+@router.get("/api/recon/asset/{job_id}/{name}")
+async def recon_asset(
+    job_id: str,
+    name: str,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+):
+    try:
+        path = recon_scanner.asset_path(job_id, name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    media = {
+        ".ply": "application/octet-stream",
+        ".splat": "application/octet-stream",
+        ".json": "application/json",
+        ".jpg": "image/jpeg",
+    }
+    return FileResponse(path, media_type=media.get(path.suffix.lower(), "application/octet-stream"))

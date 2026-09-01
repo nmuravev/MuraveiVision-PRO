@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MuraveiVision PRO — Отчёт анализа</title>
+<style>
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #0a0a0a;
+    color: #e0e0e0;
+    padding: 24px;
+    line-height: 1.4;
+  }
+  .header {
+    border-bottom: 2px solid #00ff88;
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: #00ff88;
+    text-transform: uppercase;
+  }
+  .header .subtitle {
+    font-size: 12px;
+    color: #888;
+    margin-top: 4px;
+  }
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .meta-item {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .meta-item .label { color: #888; font-size: 10px; text-transform: uppercase; }
+  .meta-item .value { color: #e0e0e0; font-weight: 500; margin-top: 2px; word-break: break-all; }
+  .dashboard {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    padding: 16px;
+  }
+  .stat-card .stat-label {
+    font-size: 10px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .stat-card .stat-value {
+    font-size: 32px;
+    font-weight: 700;
+    margin-top: 4px;
+  }
+  .stat-card.total .stat-value { color: #0d96dc; }
+  .stat-card.confirmed .stat-value { color: #00ff88; }
+  .stat-card.rejected .stat-value { color: #ff4444; }
+  .stat-card.classes .stat-value { color: #ffaa00; }
+  .class-bars {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+  .class-bars h3 {
+    font-size: 12px;
+    color: #888;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .bar-row {
+    display: grid;
+    grid-template-columns: 140px 1fr 100px;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 12px;
+  }
+  .bar-name { color: #e0e0e0; font-family: ui-monospace, "Consolas", monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-track {
+    background: #0a0a0a;
+    height: 8px;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #00ff88, #0d96dc);
+  }
+  .bar-count { color: #888; text-align: right; white-space: nowrap; min-width: 90px; }
+  .controls {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    padding: 12px 16px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 24px;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+  .control-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .control-label {
+    font-size: 10px;
+    color: #888;
+    text-transform: uppercase;
+    margin-right: 4px;
+  }
+  .filter-btn {
+    background: #0a0a0a;
+    border: 1px solid #2a2a2a;
+    color: #e0e0e0;
+    padding: 4px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .filter-btn:hover { border-color: #00ff88; }
+  .filter-btn.active { background: #00ff88; color: #0a0a0a; border-color: #00ff88; }
+  .filter-btn.confirmed.active { background: #00ff88; }
+  .filter-btn.false-positive.active { background: #ff4444; color: #fff; }
+  .filter-btn.pending.active { background: #ffaa00; color: #0a0a0a; }
+  .search-input {
+    background: #0a0a0a;
+    border: 1px solid #2a2a2a;
+    color: #e0e0e0;
+    padding: 4px 10px;
+    font-size: 11px;
+    width: 200px;
+  }
+  .search-input:focus { outline: none; border-color: #0d96dc; }
+  .sort-select {
+    background: #0a0a0a;
+    border: 1px solid #2a2a2a;
+    color: #e0e0e0;
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+  .group { margin-bottom: 24px; }
+  .group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #141414;
+    border-left: 3px solid #0d96dc;
+    margin-bottom: 12px;
+    cursor: pointer;
+  }
+  .group-header h2 {
+    font-size: 13px;
+    font-weight: 600;
+    font-family: ui-monospace, "Consolas", monospace;
+  }
+  .group-header .count { font-size: 11px; color: #888; }
+  .group-header .toggle { font-size: 11px; color: #0d96dc; }
+  .detection-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .detection-card {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    gap: 12px;
+    transition: border-color 0.2s;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .detection-card:hover { border-color: #0d96dc; }
+  .detection-card.confirmed { border-left: 3px solid #00ff88; }
+  .detection-card.false-positive { border-left: 3px solid #ff4444; }
+  .detection-card.pending { border-left: 3px solid #ffaa00; }
+  .detection-card.edited { border-left: 3px solid #0d96dc; }
+  .crop-thumb {
+    width: 100px;
+    height: 100px;
+    background: #0a0a0a;
+    border: 1px solid #2a2a2a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: #555;
+    overflow: hidden;
+  }
+  .crop-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .card-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .timecode {
+    font-family: ui-monospace, "Consolas", monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: #0d96dc;
+  }
+  .class-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .class-row .label { color: #888; }
+  .class-row .value { color: #e0e0e0; font-weight: 500; text-align: right; }
+  .class-row .value.edited {
+    color: #0d96dc;
+    text-decoration: underline;
+  }
+  .confidence-badge {
+    display: inline-block;
+    background: #0a0a0a;
+    padding: 2px 6px;
+    border-radius: 2px;
+    font-size: 10px;
+    font-family: ui-monospace, "Consolas", monospace;
+  }
+  .status-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-radius: 2px;
+    margin-top: 4px;
+    width: fit-content;
+  }
+  .status-badge.confirmed { background: #00ff88; color: #0a0a0a; }
+  .status-badge.false-positive { background: #ff4444; color: #fff; }
+  .status-badge.pending { background: #ffaa00; color: #0a0a0a; }
+  .note {
+    font-size: 11px;
+    color: #888;
+    font-style: italic;
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid #2a2a2a;
+  }
+  .footer {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid #2a2a2a;
+    font-size: 10px;
+    color: #555;
+    text-align: center;
+  }
+  .empty { color: #888; padding: 16px; font-size: 13px; }
+  @media print {
+    body { background: #fff; color: #000; padding: 12px; }
+    .controls, .group-header .toggle { display: none !important; }
+    .detection-card, .stat-card, .class-bars, .meta-item {
+      background: #fff;
+      border-color: #000;
+      color: #000;
+    }
+    .detection-card { page-break-inside: avoid; }
+    .stat-card .stat-value, .timecode { color: #000; }
+    .header h1 { color: #000; }
+    .header { border-color: #000; }
+  }
+  @media (max-width: 1200px) {
+    .detection-grid { grid-template-columns: repeat(2, 1fr); }
+    .dashboard { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 768px) {
+    .detection-grid { grid-template-columns: 1fr; }
+    .dashboard { grid-template-columns: 1fr; }
+    .detection-card { grid-template-columns: 1fr; }
+    .crop-thumb { width: 100%; height: 150px; }
+  }
+
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>MuraveiVision PRO // Автономный отчёт анализа</h1>
+  <div class="subtitle">Сформировано: 2026-08-25 01:50:11 UTC</div>
+  <div class="meta-grid">
+    <div class="meta-item"><div class="label">Оператор</div><div class="value">operator</div></div>
+    <div class="meta-item"><div class="label">Исходный файл</div><div class="value">video_2026-08-24_22-29-43.mp4</div></div>
+    <div class="meta-item"><div class="label">Модель</div><div class="value">yoloe-26s-seg.pt</div></div>
+    <div class="meta-item"><div class="label">Длительность</div><div class="value">00:00:22</div></div>
+    <div class="meta-item"><div class="label">Платформа</div><div class="value">Windows 11 · RTX 5060 8GB</div></div>
+  </div>
+</div>
+
+<div class="dashboard">
+  <div class="stat-card total">
+    <div class="stat-label">Всего детекций</div>
+    <div class="stat-value">10</div>
+  </div>
+  <div class="stat-card confirmed">
+    <div class="stat-label">Подтверждено</div>
+    <div class="stat-value">5</div>
+  </div>
+  <div class="stat-card rejected">
+    <div class="stat-label">Отклонено</div>
+    <div class="stat-value">3</div>
+  </div>
+  <div class="stat-card classes">
+    <div class="stat-label">Уникальных классов</div>
+    <div class="stat-value">8</div>
+  </div>
+</div>
+
+<div class="class-bars">
+  <h3>Разбивка по классам</h3>
+  <div class="bar-row"><div class="bar-name">soldier</div><div class="bar-track"><div class="bar-fill" style="width:30.0%"></div></div><div class="bar-count">3 (30.0%)</div></div><div class="bar-row"><div class="bar-name">artillery_mlrs</div><div class="bar-track"><div class="bar-fill" style="width:10.0%"></div></div><div class="bar-count">1 (10.0%)</div></div><div class="bar-row"><div class="bar-name">quadcopter_drone</div><div class="bar-track"><div class="bar-fill" style="width:10.0%"></div></div><div class="bar-count">1 (10.0%)</div></div><div class="bar-row"><div class="bar-name">anti_personnel_mine</div><div class="bar-track"><div class="bar-fill" style="width:10.0%"></div></div><div class="bar-count">1 (10.0%)</div></div><div class="bar-row"><div class="bar-name">tripwire_booby_trap</div><div class="bar-track"><div class="bar-fill" style="width:10.0%"></div></div><div class="bar-count">1 (10.0%)</div></div><div class="bar-row"><div class="bar-name">armored_vehicle</div><div class="bar-track"><div class="bar-fill" style="width:10.0%"></div></div><div class="bar-count">1 (10.0%)</div></div><div class="bar-row"><div class="bar-name">uav</div><div class="bar-track"><div class="bar-fill" style="width:10.0%"></div></div><div class="bar-count">1 (10.0%)</div></div><div class="bar-row"><div class="bar-name">tank</div><div class="bar-track"><div class="bar-fill" style="width:10.0%"></div></div><div class="bar-count">1 (10.0%)</div></div>
+</div>
+
+<div class="controls">
+  <div class="control-group">
+    <span class="control-label">Статус:</span>
+    <button class="filter-btn status-btn active" data-status="all">Все</button>
+    <button class="filter-btn status-btn confirmed" data-status="confirmed">Confirmed</button>
+    <button class="filter-btn status-btn false-positive" data-status="false-positive">False Positive</button>
+    <button class="filter-btn status-btn pending" data-status="pending">Pending</button>
+  </div>
+  <div class="control-group">
+    <span class="control-label">Класс:</span>
+    <select class="sort-select" id="class-filter">
+      <option value="all">Все классы</option>
+      <option value="soldier">soldier</option><option value="artillery_mlrs">artillery_mlrs</option><option value="quadcopter_drone">quadcopter_drone</option><option value="anti_personnel_mine">anti_personnel_mine</option><option value="tripwire_booby_trap">tripwire_booby_trap</option><option value="armored_vehicle">armored_vehicle</option><option value="uav">uav</option><option value="tank">tank</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <span class="control-label">Поиск:</span>
+    <input type="text" class="search-input" id="search-input" placeholder="По заметкам...">
+  </div>
+  <div class="control-group">
+    <span class="control-label">Сортировка:</span>
+    <select class="sort-select" id="sort-select">
+      <option value="time">По времени</option>
+      <option value="confidence">По уверенности</option>
+      <option value="class">По классу</option>
+    </select>
+  </div>
+</div>
+
+<div class="group" data-group="00:00"><div class="group-header"><h2>00:00:00 – 00:00:59</h2><div><span class="count">10 детекций</span> <span class="toggle">▼ Свернуть</span></div></div><div class="detection-grid">
+    <div class="detection-card confirmed" data-status="confirmed" data-class="soldier" data-notes="" data-time="00:00:02" data-confidence="100">
+      <div class="crop-thumb"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="crop"></div>
+      <div class="card-body">
+        <div class="timecode">00:00:02</div>
+        <div class="class-row"><span class="label">Класс ИИ:</span><span class="value">soldier <span class="confidence-badge">100%</span></span></div>
+        <div class="class-row"><span class="label">Класс оператора:</span><span class="value">soldier</span></div>
+        <span class="status-badge confirmed">Confirmed</span>
+        
+      </div>
+    </div>
+
+    <div class="detection-card false-positive edited" data-status="false-positive" data-class="artillery_mlrs" data-notes="Ложная тревога, тень от дерева" data-time="00:00:02" data-confidence="100">
+      <div class="crop-thumb"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="crop"></div>
+      <div class="card-body">
+        <div class="timecode">00:00:02</div>
+        <div class="class-row"><span class="label">Класс ИИ:</span><span class="value">tank <span class="confidence-badge">100%</span></span></div>
+        <div class="class-row"><span class="label">Класс оператора:</span><span class="value edited">artillery_mlrs &#9998;</span></div>
+        <span class="status-badge false-positive">False Positive</span>
+        <div class="note">"Ложная тревога, тень от дерева"</div>
+      </div>
+    </div>
+
+    <div class="detection-card confirmed" data-status="confirmed" data-class="quadcopter_drone" data-notes="" data-time="00:00:04" data-confidence="100">
+      <div class="crop-thumb"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="crop"></div>
+      <div class="card-body">
+        <div class="timecode">00:00:04</div>
+        <div class="class-row"><span class="label">Класс ИИ:</span><span class="value">quadcopter_drone <span class="confidence-badge">100%</span></span></div>
+        <div class="class-row"><span class="label">Класс оператора:</span><span class="value">quadcopter_drone</span></div>
+        <span class="status-badge confirmed">Confirmed</span>
+        
+      </div>
+    </div>
+
+    <div class="detection-card false-positive" data-status="false-positive" data-class="anti_personnel_mine" data-notes="" data-time="00:00:04" data-confidence="62">
+      <div class="crop-thumb"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="crop"></div>
+      <div class="card-body">
+        <div class="timecode">00:00:04</div>
+        <div class="class-row"><span class="label">Класс ИИ:</span><span class="value">anti_personnel_mine <span class="confidence-badge">62%</span></span></div>
+        <div class="class-row"><span class="label">Класс оператора:</span><span class="value">anti_personnel_mine</span></div>
+        <span class="status-badge false-positive">False Positive</span>
+        
+      </div>
+    </div>
+
+    <div class="detection-card pending" data-status="pending" data-class="tripwire_booby_trap" data-notes="Требует проверки оператором" data-time="00:00:04" data-confidence="44">
+      <div class="crop-thumb"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="crop"></div>
+      <div class="card-body">
+        <div class="timecode">00:00:04</div>
+        <div class="class-row"><span class="label">Класс ИИ:</span><span class="value">tripwire_booby_trap <span class="confidence-badge">44%</span></span></div>
+        <div class="class-row"><span class="label">Класс оператора:</span><span class="value">tripwire_booby_trap</span></div>
+        <span class="status-badge pending">Pending</span>
+        <div class="note">"Требует проверки оператором"</div>
+      </div>
+    </div>
+
+    <div class="detection-card confirmed" data-status="confirmed" data-class="soldier" data-notes="" data-time="00:00:07" data-confidence="100">
+      <div class="crop-thumb"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="crop"></div>
+      <div class="card-body">
+        <div class="timecode">00:00:07</div>
+        <div class="class-row"><span class="label">Класс ИИ:</span><span class="value">soldier <span class="confidence-badge">100%</span></span></div>
+        <div class="class-row"><span class="label">Класс оператора:</span><span class="value">soldier</span></div>
+        <span class="status-badge confirmed">Confirmed</span>
+        
+      </div>
+    </div>
+
+    <div class="detection-card confirmed edited" data-status="confirmed" data-class="armored_vehicle" data-notes="Бронемашина, не ОБТ." data-time="00:00:10" data-confidence="87">
+      <div class="crop-thumb"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="crop"></div>
+      <div class="card-body">
+        <div class="timecode">00:00:10</div>
+        <div class="class-row"><span class="label">Класс ИИ:</span><span class="value">tank <span class="confidence-badge">87%</span></span></div>
+        <div class="class-row"><span class="label">Класс оператора:</span><span class="value edited">armored_vehicle &#9998;</span></div>
+        <span class="status-badge confirmed">Confirmed</span>
+        <div class="note">"Бронемашина, не ОБТ."</div>
+      </div>
+    </div>
+
+    <div class="detection-card false-positive" data-status="false-positive" data-class="soldier" data-notes="Силуэт куста" data-time="00:00:14" data-confidence="55">
+      <div class="crop-thumb"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="crop"></div>
+      <div class="card-body">
+        <div class="timecode">00:00:14</div>
+        <div class="class-row"><span class="label">Класс ИИ:</span><span class="value">soldier <span class="confidence-badge">55%</span></span></div>
+        <div class="class-row"><span class="label">Класс оператора:</span><span class="value">soldier</span></div>
+        <span class="status-badge false-positive">False Positive</span>
+        <div class="note">"Силуэт куста"</div>
+      </div>
+    </div>
+
+    <div class="detection-card pending" data-status="pending" data-class="uav" data-notes="" data-time="00:00:18" data-confidence="71">
+      <div class="crop-thumb"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="crop"></div>
+      <div class="card-body">
+        <div class="timecode">00:00:18</div>
+        <div class="class-row"><span class="label">Класс ИИ:</span><span class="value">uav <span class="confidence-badge">71%</span></span></div>
+        <div class="class-row"><span class="label">Класс оператора:</span><span class="value">uav</span></div>
+        <span class="status-badge pending">Pending</span>
+        
+      </div>
+    </div>
+
+    <div class="detection-card confirmed" data-status="confirmed" data-class="tank" data-notes="Подтверждаю, танк на грунтовке." data-time="00:00:22" data-confidence="93">
+      <div class="crop-thumb"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="crop"></div>
+      <div class="card-body">
+        <div class="timecode">00:00:22</div>
+        <div class="class-row"><span class="label">Класс ИИ:</span><span class="value">tank <span class="confidence-badge">93%</span></span></div>
+        <div class="class-row"><span class="label">Класс оператора:</span><span class="value">tank</span></div>
+        <span class="status-badge confirmed">Confirmed</span>
+        <div class="note">"Подтверждаю, танк на грунтовке."</div>
+      </div>
+    </div>
+</div></div>
+
+<div class="footer">
+  Сгенерировано автоматически. Документ содержит служебную информацию. MuraveiVision v3.0
+</div>
+
+<script>
+
+  document.querySelectorAll('.status-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.status-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyFilters();
+    });
+  });
+  document.getElementById('class-filter').addEventListener('change', applyFilters);
+  document.getElementById('search-input').addEventListener('input', applyFilters);
+  document.getElementById('sort-select').addEventListener('change', applySort);
+
+  function applyFilters() {
+    const status = document.querySelector('.status-btn.active').dataset.status;
+    const cls = document.getElementById('class-filter').value;
+    const search = document.getElementById('search-input').value.toLowerCase();
+    document.querySelectorAll('.detection-card').forEach(card => {
+      const matchStatus = status === 'all' || card.dataset.status === status;
+      const matchClass = cls === 'all' || card.dataset.class === cls;
+      const note = (card.dataset.notes || card.querySelector('.note')?.textContent || '').toLowerCase();
+      const hay = (note + ' ' + (card.dataset.class || '') + ' ' + (card.dataset.time || '')).toLowerCase();
+      const matchSearch = !search || hay.includes(search);
+      card.style.display = (matchStatus && matchClass && matchSearch) ? '' : 'none';
+    });
+    document.querySelectorAll('.group').forEach(group => {
+      const vis = Array.from(group.querySelectorAll('.detection-card')).some(c => c.style.display !== 'none');
+      group.style.display = vis ? '' : 'none';
+    });
+  }
+
+  function applySort() {
+    const sortBy = document.getElementById('sort-select').value;
+    document.querySelectorAll('.detection-grid').forEach(grid => {
+      const cards = Array.from(grid.children);
+      cards.sort((a, b) => {
+        if (sortBy === 'time') return a.dataset.time.localeCompare(b.dataset.time);
+        if (sortBy === 'confidence') return parseInt(b.dataset.confidence, 10) - parseInt(a.dataset.confidence, 10);
+        if (sortBy === 'class') return a.dataset.class.localeCompare(b.dataset.class);
+        return 0;
+      });
+      cards.forEach(c => grid.appendChild(c));
+    });
+  }
+
+  document.querySelectorAll('.group-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const grid = header.nextElementSibling;
+      const toggle = header.querySelector('.toggle');
+      if (grid.style.display === 'none') {
+        grid.style.display = '';
+        toggle.textContent = '▼ Свернуть';
+      } else {
+        grid.style.display = 'none';
+        toggle.textContent = '▶ Развернуть';
+      }
+    });
+  });
+
+</script>
+
+</body>
+</html>

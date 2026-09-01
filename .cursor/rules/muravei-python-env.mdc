@@ -1,0 +1,34 @@
+---
+description: Always use muravei_env Python 3.12 — never system Python 3.14
+alwaysApply: true
+---
+
+# Python environment (MuraveiVision PRO)
+
+## Mandatory interpreter
+
+- **Only** `muravei_env\Scripts\python.exe` (Python **3.12.10**).
+- **Only** `muravei_env\Scripts\pip.exe` for installs.
+- Never call bare `python`, `py`, `pip`, or `C:\Python314\...` — PATH on this machine prefers system **3.14**, which is incompatible.
+
+## Commands
+
+```powershell
+# run / smoke
+.\muravei_env\Scripts\python.exe -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000
+
+# deps (from repo root)
+.\muravei_env\Scripts\pip.exe install --no-cache-dir -r backend\requirements.txt
+# or: npm run backend:install
+```
+
+Also wired in: `package.json` (`backend`, `backend:install`, `desktop`, smokes), `start-backend.bat`, `Запустить.bat`, `scripts\build_portable.ps1` (`$PyVer = "3.12.10"`).
+
+## Compatibility constraints
+
+- Pin installs against `backend\requirements.txt` (notably `numpy>=1.26.0,<2`, `ultralytics>=8.4.116`).
+- After any `pip install`, verify with:
+  - `muravei_env\Scripts\python.exe -c "import sys; print(sys.version)"` → must start with `3.12`
+  - `muravei_env\Scripts\pip.exe check`
+- Portable ZIP must bake **embeddable 3.12.10** into staged `muravei_env`, not copy host 3.14.
+- Do not add packages that require Python ≥3.13/3.14 without an explicit project decision and requirements update.

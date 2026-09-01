@@ -1,0 +1,242 @@
+# military_classes.yaml
+# Полный список из 238 классов для YOLO-World / YOLOv12
+
+names:
+  0: tank
+  1: tank turret in ground
+  2: dug-in artillery
+  3: armored vehicle
+  4: armored personnel carrier
+  5: vehicle with cage armor
+  6: military truck
+  7: military jeep
+  8: tanker truck
+  9: self-propelled artillery
+  10: multiple rocket launcher
+  11: anti-aircraft gun
+  12: howitzer
+  13: missile launcher
+  14: military helicopter
+  15: military aircraft
+  16: quadcopter drone
+  17: military boat
+  18: inflatable decoy
+  19: soldier
+  20: person in camouflage uniform
+  21: armed person
+  22: person carrying rifle
+  23: person with shovel
+  24: soldier digging trench
+  25: group of soldiers
+  26: rifle
+  27: machine gun
+  28: grenade launcher
+  29: anti-tank missile
+  30: ammunition box
+  31: wooden crate
+  32: metal barrel
+  33: jerry can
+  34: portable generator
+  35: field kitchen
+  36: wooden pallet
+  37: military radio antenna
+  38: radio mast
+  39: satellite dish
+  40: radar
+  41: electronic warfare antenna
+  42: communication antenna
+  43: trench
+  44: bunker
+  45: dugout entrance
+  46: foxhole
+  47: barbed wire
+  48: barbed wire coil
+  49: anti-tank obstacle
+  50: dragon teeth obstacle
+  51: Czech hedgehog obstacle
+  52: concrete block barricade
+  53: gabion barrier
+  54: sandbag wall
+  55: checkpoint
+  56: watchtower
+  57: earth berm
+  58: anti-tank ditch
+  59: camouflage net
+  60: camouflaged position
+  61: vehicle under net
+  62: covered vehicle
+  63: military tent
+  64: medical tent
+  65: command tent
+  66: anti-drone net
+  67: drone protection cage
+  68: metal grille armor
+  69: cut branches on ground
+  70: plastic bottle
+  71: metal can
+  72: food wrapper
+  73: discarded paper
+  74: cardboard box
+  75: plastic bag
+  76: garbage pile
+  77: campfire remains
+  78: smoke plume
+  79: dust cloud
+  80: tire track
+  81: footpath in grass
+  82: trampled vegetation
+  83: disturbed soil
+  84: fresh dug dirt
+  85: discarded clothing
+  86: soldier in civilian clothing
+  87: soldier lying prone
+  88: running soldier
+  89: soldier carrying military backpack
+  90: combat medic with armband
+  91: wounded soldier
+  92: fallen body
+  93: ghillie suit
+  94: military helmet
+  95: body armor vest
+  96: tactical vest with pouches
+  97: military backpack
+  98: combat tourniquet
+  99: rolled bandage
+  100: bloody bandage
+  101: first aid pouch IFAK
+  102: stretcher
+  103: battle rifle
+  104: carbine
+  105: submachine gun
+  106: light machine gun
+  107: general purpose machine gun
+  108: heavy machine gun
+  109: anti-materiel rifle
+  110: suppressed rifle
+  111: underbarrel grenade launcher
+  112: telescopic sight
+  113: bipod
+  114: spent cartridge case
+  115: pile of shell casings
+  116: spent artillery shell casing
+  117: pile of artillery shell casings
+  118: spent mortar round tail fin
+  119: ammunition magazine
+  120: ammo belt
+  121: linked ammunition box
+  122: ammunition crate
+  123: artillery shell
+  124: mortar round
+  125: hand grenade
+  126: anti-tank mine
+  127: anti-personnel mine
+  128: directional fragmentation mine
+  129: bounding mine
+  130: tripwire booby trap
+  131: RPG-7 grenade launcher
+  132: spent RPG launch tube
+  133: RPG-18 Mukha launcher
+  134: RPG-26 launcher
+  135: M72 LAW launcher
+  136: AT4 disposable launcher
+  137: MRO-A Shmel thermobaric
+  138: anti-tank guided missile launcher
+  139: ATGM missile in container
+  140: MANPADS
+  141: FPV drone
+  142: fixed-wing drone
+  143: reconnaissance drone
+  144: drone propeller
+  145: drone wreckage
+  146: fiber optic spool
+  147: thin glinting fiber optic cable
+  148: drone antenna
+  149: drone controller with screen
+  150: field radio station
+  151: whip antenna
+  152: radar station
+  153: satellite dish antenna
+  154: gasoline generator
+  155: laptop computer
+  156: freshly dug soil patch
+  157: spoil heap of dug-out soil
+  158: dugout ventilation pipe
+  159: shell crater with scorched earth
+  160: shrapnel fragments
+  161: pile of cut branches
+  162: wilted cut foliage
+  163: narrow footpath through bushes
+  164: trampled flattened grass
+  165: extinguished campfire site
+  166: grey ash soot patch
+  167: muzzle blast scorched grass
+  168: disturbed snow with tracks
+  169: dark melt spots on snow
+  170: sun glint on optics or metal
+  171: white plastic sheet or bag
+  172: cigarette pack
+  173: food can
+  174: litter pile
+  175: jerry can fuel container
+  176: discarded tire
+  177: pile of cement bags
+  178: sand or gravel pile
+  179: rebar steel rods bundle
+  180: welded wire mesh
+  181: roofing felt rolls
+  182: construction debris pile
+  183: military motorcycle
+  184: ATV quad bike
+  185: snowmobile
+  186: pickup truck with mounted gun
+  187: fuel bowser truck
+  188: ambulance vehicle
+  189: evacuation vehicle
+  190: towed howitzer
+  191: mortar
+  192: mortar baseplate
+  193: automatic grenade launcher
+  194: heavy machine gun on tripod
+  195: train car with cargo
+  196: armored vehicle on flatbed
+  197: tarp-covered vehicle on train platform
+  198: stack of railway sleepers
+  199: field bakery with smoking chimney
+  200: medical tent cluster
+  201: dummy tank decoy
+  202: dummy artillery piece
+  203: corner radar reflector
+  204: smoke canister
+  205: wood-burning field stove
+  206: thermal imaging camera
+  207: night vision goggles
+  208: flare gun
+  209: signal flare
+  210: field telephone
+  211: communication cable reel
+  212: mobile command post
+  213: field communications van
+  214: electronic warfare vehicle
+  215: jamming equipment
+  216: mine detector
+  217: explosive ordnance disposal robot
+  218: military working dog
+  219: handler with military dog
+  220: field hospital
+  221: mobile surgery unit
+  222: supply depot
+  223: ammunition storage facility
+  224: fuel storage tank
+  225: military convoy
+  226: patrol route
+  227: observation post
+  228: listening post
+  229: forward operating base
+  230: combat outpost
+  231: vehicle maintenance area
+  232: refueling station
+  233: ammunition reloading point
+  234: casualty collection point
+  235: prisoner of war holding area
+  236: military checkpoint barrier
+  237: military guard shack

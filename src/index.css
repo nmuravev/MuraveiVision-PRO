@@ -1,0 +1,294 @@
+/* src/index.css — DaVinci Resolve inspired theme */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --dv-bg: #1a1a1a;
+  --dv-bg-deep: #0f0f0f;
+  --dv-panel: #252525;
+  --dv-panel-header: #2a2a2a;
+  --dv-border: #3a3a3a;
+  --dv-border-soft: #333333;
+  --dv-text: #e8e8e8;
+  --dv-text-muted: #9a9a9a;
+  --dv-accent: #e87d0d;
+  --dv-accent-hot: #ff4444;
+  --dv-playhead: #e87d0d;
+  --dv-selection: #3d6a99;
+  --dv-drop-zone: rgba(61, 106, 153, 0.45);
+  --dv-drop-zone-edge: rgba(232, 125, 13, 0.5);
+  --dv-splitter: #1f1f1f;
+  --dv-splitter-hover: #e87d0d;
+  --dv-surface-2: #2e2e2e;
+  --dv-hover: #333333;
+  --dv-focus-ring: rgba(232, 125, 13, 0.45);
+  --dv-danger: #e05555;
+  --dv-success: #3d9a5f;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  max-height: 100vh;
+  overflow: hidden;
+  background-color: var(--dv-bg-deep);
+  color: var(--dv-text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--dv-accent);
+  outline-offset: 1px;
+}
+
+.panel {
+  z-index: 10;
+}
+.dropdown {
+  z-index: 50;
+}
+.header {
+  z-index: 100;
+}
+.modal {
+  z-index: 999;
+}
+.floating-panel {
+  z-index: 400;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--dv-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: #4a4a4a;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6a6a6a;
+}
+
+/* —— react-mosaic DaVinci chrome —— */
+.mosaic {
+  height: 100% !important;
+  background: var(--dv-bg-deep) !important;
+}
+
+.mosaic-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.mosaic-window,
+.mosaic-preview {
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+.mosaic-window-toolbar {
+  background: var(--dv-panel-header) !important;
+  height: 28px !important;
+  box-shadow: none !important;
+  border-bottom: 1px solid var(--dv-border) !important;
+  transition: background 150ms ease, box-shadow 150ms ease;
+}
+
+.mosaic-window-title {
+  color: var(--dv-text-muted) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  transition: color 150ms ease;
+}
+
+/* Active panel: focus within mosaic window */
+.mosaic-window:focus-within .mosaic-window-toolbar {
+  background: #323232 !important;
+  box-shadow: inset 0 -2px 0 var(--dv-accent) !important;
+}
+
+.mosaic-window:focus-within .mosaic-window-title {
+  color: var(--dv-text) !important;
+}
+
+.mosaic-window-body {
+  background: var(--dv-panel) !important;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mosaic-window .mosaic-window-controls .bp4-button,
+.mosaic-window .mosaic-window-controls button {
+  color: var(--dv-text-muted) !important;
+}
+
+.mosaic-split.-row > .mosaic-split-line,
+.mosaic-split.-column > .mosaic-split-line {
+  background: var(--dv-splitter) !important;
+  transition: background 120ms ease;
+}
+
+.mosaic-split:hover > .mosaic-split-line {
+  background: var(--dv-splitter-hover) !important;
+  opacity: 0.85;
+}
+
+.drop-target-container .drop-target.left,
+.drop-target-container .drop-target.right,
+.drop-target-container .drop-target.top,
+.drop-target-container .drop-target.bottom {
+  background: var(--dv-drop-zone-edge) !important;
+}
+
+.drop-target-container .drop-target.center {
+  background: var(--dv-drop-zone) !important;
+}
+
+/* Custom panel chrome */
+.panel-chrome {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--dv-panel);
+  border: 1px solid var(--dv-border-soft);
+}
+
+.panel-chrome:focus-within > .panel-chrome__header {
+  background: #323232;
+  box-shadow: inset 3px 0 0 var(--dv-accent);
+}
+
+.panel-chrome:focus-within > .panel-chrome__header .panel-chrome__title {
+  color: var(--dv-text);
+}
+
+.panel-chrome__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--dv-panel-header);
+  border-bottom: 1px solid var(--dv-border);
+  flex-shrink: 0;
+  cursor: grab;
+  user-select: none;
+  transition: background 150ms ease, box-shadow 150ms ease;
+}
+
+.panel-chrome__header:active {
+  cursor: grabbing;
+}
+
+.panel-chrome__title {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dv-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 150ms ease;
+}
+
+.panel-chrome__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.panel-chrome__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--dv-text-muted);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.panel-chrome__btn:hover {
+  background: var(--dv-hover);
+  color: var(--dv-text);
+}
+
+.panel-chrome__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+.floating-panel-window {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  background: var(--dv-panel);
+  border: 1px solid var(--dv-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  min-width: 320px;
+  min-height: 200px;
+  z-index: 400;
+}
+
+.floating-panel-window:focus-within {
+  border-color: var(--dv-accent);
+}
+
+.drop-zone-overlay {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+}
+
+.drop-zone-overlay__region {
+  position: absolute;
+  background: var(--dv-drop-zone-edge);
+  border: 1px solid var(--dv-accent);
+  opacity: 0.85;
+}
+
+.drop-zone-overlay__region.center {
+  background: var(--dv-drop-zone);
+  border-color: var(--dv-selection);
+}
+
+/* Section labels in panels */
+.dv-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dv-text);
+  letter-spacing: 0.01em;
+}
+
+.dv-section-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--dv-text-muted);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
