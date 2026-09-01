@@ -97,8 +97,12 @@ async def lifespan(app: FastAPI):
     print(f"[SYSTEM] YOLO mode={engine.mode} model={engine.model_name}")
     print(f"[SYSTEM] Static dist: {DIST_DIR} exists={DIST_DIR.is_dir()}")
     print("[SYSTEM] MuraveiVision PRO Backend starting...")
+    from services.network_sync import start_network_worker, stop_network_worker
+
+    start_network_worker()
     yield
     print("[SYSTEM] Backend stopping...")
+    await stop_network_worker()
 
 
 app = FastAPI(

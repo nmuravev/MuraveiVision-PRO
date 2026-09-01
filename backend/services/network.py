@@ -1,4 +1,4 @@
-"""Network bases: config, targets exchange, chat (Variant A — same API host)."""
+"""Network bases: config, targets exchange, chat."""
 from __future__ import annotations
 
 import time
@@ -10,8 +10,29 @@ from services.db import _connect, init_db
 TARGET_TTL_SEC = 24 * 3600
 
 
+def ensure_base_id() -> str:
+    """Persist a UUID v4 base_id once. Empty string is invalid and is replaced."""
+    init_db()
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT base_id FROM network_config WHERE id = 1").fetchone()
+        existing = str(row["base_id"] or "").strip() if row else ""
+        if existing:
+            return existing
+        new_id = str(uuid.uuid4())
+        conn.execute(
+            "UPDATE network_config SET base_id = ?, updated_at = ? WHERE id = 1",
+            (new_id, time.time()),
+        )
+        conn.commit()
+        return new_id
+    finally:
+        conn.close()
+
+
 def get_config() -> dict[str, Any]:
     init_db()
+    base_id = ensure_base_id()
     conn = _connect()
     try:
         row = conn.execute("SELECT * FROM network_config WHERE id = 1").fetchone()
@@ -21,13 +42,17 @@ def get_config() -> dict[str, Any]:
                 "server_ip": "127.0.0.1",
                 "port": 8000,
                 "base_name": "База-1",
+                "base_id": base_id,
             }
+        keys = set(row.keys())
         return {
             "mode": str(row["mode"]),
             "server_ip": str(row["server_ip"]),
             "port": int(row["port"]),
             "base_name": str(row["base_name"]),
+            "base_id": base_id,
             "updated_at": float(row["updated_at"]),
+            "has_hub_pin": bool(str(row["hub_pin"] or "").strip()) if "hub_pin" in keys else False,
         }
     finally:
         conn.close()
@@ -39,6 +64,7 @@ def save_config(
     server_ip: str,
     port: int,
     base_name: str,
+    hub_pin: str | None = None,
 ) -> dict[str, Any]:
     init_db()
     mode = mode if mode in ("off", "server", "client") else "off"
@@ -58,10 +84,27 @@ def save_config(
             """,
             (mode, server_ip.strip() or "127.0.0.1", port, base_name.strip() or "База-1", time.time()),
         )
+        pin = (hub_pin or "").strip()
+        if pin:
+            conn.execute(
+                "UPDATE network_config SET hub_pin = ? WHERE id = 1",
+                (pin,),
+            )
         conn.commit()
     finally:
         conn.close()
     return get_config()
+
+
+def get_hub_pin() -> str:
+    """Return stored hub PIN. Never expose via GET /config."""
+    init_db()
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT hub_pin FROM network_config WHERE id = 1").fetchone()
+        return str(row["hub_pin"] or "").strip() if row else ""
+    finally:
+        conn.close()
 
 
 def heartbeat(base_id: str, base_name: str, ip: str) -> None:
@@ -136,9 +179,10 @@ def add_target(
     source_base: str | None = None,
     source_video: str | None = None,
     notes: str | None = None,
+    target_id: str | None = None,
 ) -> dict[str, Any]:
     init_db()
-    tid = str(uuid.uuid4())
+    tid = (target_id or "").strip() or str(uuid.uuid4())
     now = time.time()
     conn = _connect()
     try:
@@ -180,16 +224,120 @@ def get_target(tid: str) -> dict[str, Any] | None:
         conn.close()
 
 
-def list_targets(limit: int = 100) -> list[dict[str, Any]]:
+def upsert_target(
+    *,
+    class_name: str,
+    confidence: float = 0.0,
+    gps_lat: float | None = None,
+    gps_lon: float | None = None,
+    crop_path: str | None = None,
+    source_base: str | None = None,
+    source_video: str | None = None,
+    notes: str | None = None,
+    target_id: str | None = None,
+    created_at: float | None = None,
+    expires_at: float | None = None,
+) -> dict[str, Any]:
+    """Insert incoming replica, or update if incoming created_at is strictly newer."""
+    init_db()
+    tid = (target_id or "").strip() or str(uuid.uuid4())
+    ts = float(created_at) if created_at is not None else time.time()
+    exp = float(expires_at) if expires_at is not None else ts + TARGET_TTL_SEC
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO network_targets (
+                id, created_at, direction, class_name, confidence,
+                gps_lat, gps_lon, crop_path, source_base, source_video,
+                notes, expires_at, synced_at
+            ) VALUES (?, ?, 'in', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+            ON CONFLICT(id) DO UPDATE SET
+                created_at = excluded.created_at,
+                direction = excluded.direction,
+                class_name = excluded.class_name,
+                confidence = excluded.confidence,
+                gps_lat = excluded.gps_lat,
+                gps_lon = excluded.gps_lon,
+                crop_path = excluded.crop_path,
+                source_base = excluded.source_base,
+                source_video = excluded.source_video,
+                notes = excluded.notes,
+                expires_at = excluded.expires_at
+            WHERE excluded.created_at > network_targets.created_at
+            """,
+            (
+                tid,
+                ts,
+                class_name,
+                float(confidence),
+                gps_lat,
+                gps_lon,
+                crop_path,
+                source_base,
+                source_video,
+                notes,
+                exp,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_target(tid) or {"id": tid}
+
+
+def list_targets(limit: int = 100, since: float | None = None) -> list[dict[str, Any]]:
     init_db()
     purge_stale()
     conn = _connect()
     try:
+        limit_n = max(1, min(limit, 500))
+        if since is not None:
+            rows = conn.execute(
+                """
+                SELECT * FROM network_targets
+                WHERE created_at > ?
+                ORDER BY created_at DESC LIMIT ?
+                """,
+                (float(since), limit_n),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM network_targets ORDER BY created_at DESC LIMIT ?",
+                (limit_n,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def list_unsynced_out_targets(limit: int = 100) -> list[dict[str, Any]]:
+    init_db()
+    conn = _connect()
+    try:
         rows = conn.execute(
-            "SELECT * FROM network_targets ORDER BY created_at DESC LIMIT ?",
-            (max(1, min(limit, 500)),),
+            """
+            SELECT * FROM network_targets
+            WHERE direction = 'out' AND synced_at IS NULL
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (max(1, min(limit, 200)),),
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def mark_target_synced(tid: str, ts: float | None = None) -> None:
+    init_db()
+    conn = _connect()
+    try:
+        conn.execute(
+            "UPDATE network_targets SET synced_at = ? WHERE id = ?",
+            (float(ts if ts is not None else time.time()), tid),
+        )
+        conn.commit()
     finally:
         conn.close()
 

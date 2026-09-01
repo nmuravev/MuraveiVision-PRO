@@ -77,9 +77,11 @@ flowchart TB
 
 ## 6. Сеть (тактическая)
 
-`backend/api/network.py` + `services/network.py`: server/client/off, heartbeat, targets (в т.ч. `gps_lat`/`gps_lon`), чат.
+`backend/api/network.py` + `services/network.py` + `services/network_sync.py`: server/client/off, JWT на хаб, heartbeat, targets (GPS, `source_video`), чат.
 
-**Известный лимит:** на одном инстансе POST target может дублировать in/out для демо. Настоящая репликация между машинами — в roadmap.
+Клиентский worker (тик 30 с) стартует из `main.py` lifespan всегда; no-op если `mode != client`. `POST /targets` пишет только `direction=out`. Входящие — upsert newer-wins (`direction=in`). Skip self по `source_base` == `base_id` или `base_name`. Инкрементальный pull: `GET /targets?since=`.
+
+Один процесс / одна SQLite **не** проверяет репликацию — две копии каталога, см. [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md#сеть-баз). 4×Live / Event Timeline — отдельно, [TODO.md](TODO.md).
 
 ## 7. Правила генерации кода
 

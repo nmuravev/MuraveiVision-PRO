@@ -47,10 +47,10 @@
 
 ## P2 — сеть и продукт
 
-9. Реальная репликация целей между базами  
+9. Реальная репликация целей между базами — **DONE** (3.1, worker + JWT + `?since=`)  
 10. Пресет 4×Live + event timeline  
-11. KML/GeoJSON + PDF  
-12. Hotkeys оператора  
+11. KML/GeoJSON + PDF — **DONE** (Stage 1 / 3.3)  
+12. Hotkeys оператора — **DONE** (Stage 1 / 3.4)  
 
 ## P3
 

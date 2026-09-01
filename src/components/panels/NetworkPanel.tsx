@@ -14,12 +14,14 @@ export const NetworkPanel: React.FC = () => {
   const activeId = useMuraveiStore((s) => s.activeDetectionId);
 
   const config = useNetworkStore((s) => s.config);
+  const status = useNetworkStore((s) => s.status);
   const bases = useNetworkStore((s) => s.bases);
   const targets = useNetworkStore((s) => s.targets);
   const messages = useNetworkStore((s) => s.messages);
   const error = useNetworkStore((s) => s.error);
   const loadConfig = useNetworkStore((s) => s.loadConfig);
   const saveConfig = useNetworkStore((s) => s.saveConfig);
+  const fetchStatus = useNetworkStore((s) => s.fetchStatus);
   const fetchBases = useNetworkStore((s) => s.fetchBases);
   const fetchTargets = useNetworkStore((s) => s.fetchTargets);
   const fetchMessages = useNetworkStore((s) => s.fetchMessages);
@@ -27,6 +29,7 @@ export const NetworkPanel: React.FC = () => {
   const sendMessage = useNetworkStore((s) => s.sendMessage);
 
   const [draft, setDraft] = useState(config);
+  const [hubPin, setHubPin] = useState('');
   const [chat, setChat] = useState('');
   const [busy, setBusy] = useState(false);
   const [localErr, setLocalErr] = useState<string | null>(null);
@@ -40,6 +43,7 @@ export const NetworkPanel: React.FC = () => {
   useEffect(() => {
     if (!isAuthenticated) return;
     void loadConfig();
+    void fetchStatus();
     void fetchBases();
     void fetchTargets();
     void fetchMessages();
@@ -48,11 +52,18 @@ export const NetworkPanel: React.FC = () => {
       void fetchTargets();
       void fetchMessages();
     }, 8000);
-    return () => window.clearInterval(t);
-  }, [isAuthenticated, loadConfig, fetchBases, fetchTargets, fetchMessages]);
+    const st = window.setInterval(() => {
+      void fetchStatus();
+    }, 5000);
+    return () => {
+      window.clearInterval(t);
+      window.clearInterval(st);
+    };
+  }, [isAuthenticated, loadConfig, fetchStatus, fetchBases, fetchTargets, fetchMessages]);
 
   const refreshAll = () => {
     void loadConfig();
+    void fetchStatus();
     void fetchBases();
     void fetchTargets();
     void fetchMessages();
@@ -62,7 +73,8 @@ export const NetworkPanel: React.FC = () => {
     setBusy(true);
     setLocalErr(null);
     try {
-      await saveConfig(draft);
+      await saveConfig({ ...draft, hub_pin: hubPin || undefined });
+      setHubPin('');
     } catch (e) {
       setLocalErr(e instanceof Error ? e.message : 'Ошибка');
     } finally {
@@ -187,6 +199,19 @@ export const NetworkPanel: React.FC = () => {
             />
           </label>
           {canEditConfig && (
+            <label className="block space-y-1">
+              <span className="text-[var(--dv-text-muted)]">PIN хаба (клиент)</span>
+              <input
+                type="password"
+                autoComplete="off"
+                className="w-full bg-[var(--dv-bg-deep)] border border-[var(--dv-border)] px-2 py-1 rounded-sm"
+                value={hubPin}
+                placeholder={config.has_hub_pin ? '••••••• (сохранён)' : 'PIN оператора хаба'}
+                onChange={(e) => setHubPin(e.target.value)}
+              />
+            </label>
+          )}
+          {canEditConfig && (
             <button
               type="button"
               disabled={busy}
@@ -201,6 +226,40 @@ export const NetworkPanel: React.FC = () => {
               Смена режима — только engineer / master
             </div>
           )}
+        </section>
+
+        <section className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-wider text-[var(--dv-text-muted)]">
+            Синхронизация
+          </div>
+          <div className="border border-[var(--dv-border)] rounded-sm px-2 py-1.5 bg-[var(--dv-bg-deep)] space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[var(--dv-text-muted)]">Хаб</span>
+              <span className={status?.hub_reachable ? 'text-emerald-400' : 'text-red-400'}>
+                {status?.hub_reachable ? 'online' : 'offline'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[var(--dv-text-muted)]">Worker</span>
+              <span className={status?.worker_alive ? 'text-emerald-400' : 'text-slate-500'}>
+                {status?.worker_alive ? 'alive' : '—'}
+              </span>
+            </div>
+            <div className="text-[10px] text-[var(--dv-text-muted)]">
+              Последняя синхронизация:{' '}
+              {status?.last_sync_ts
+                ? new Date(status.last_sync_ts * 1000).toLocaleTimeString()
+                : 'ещё не было'}
+            </div>
+            {config.base_id && (
+              <div className="text-[9px] truncate text-[var(--dv-text-muted)]" title={config.base_id}>
+                base_id: {config.base_id}
+              </div>
+            )}
+            {status?.last_error && (
+              <div className="text-red-400 text-[10px] break-words">{status.last_error}</div>
+            )}
+          </div>
         </section>
 
         <section className="space-y-1.5">

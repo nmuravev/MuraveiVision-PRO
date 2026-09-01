@@ -67,6 +67,7 @@ ollama/models/
 # Runtime DB / secrets / test artifacts (user data — never commit)
 muravei.db
 muravei.db-*
+muravei.db.backup
 .env
 .env.*
 playwright-report/

@@ -58,6 +58,8 @@
 | `server_ip` | TEXT | по умолчанию `127.0.0.1` |
 | `port` | INTEGER | по умолчанию `8000` |
 | `base_name` | TEXT | по умолчанию `База-1` |
+| `hub_pin` | TEXT | PIN для login на хаб; в API не отдаётся |
+| `base_id` | TEXT | UUID v4, один раз на инстанс |
 | `updated_at` | REAL | epoch |
 
 ### `network_bases` — известные базы
@@ -72,19 +74,20 @@
 ### `network_targets` — цели между базами
 | Столбец | Тип | Описание |
 |---------|-----|----------|
-| `id` | TEXT PK | |
-| `created_at` | REAL | epoch |
-| `direction` | TEXT | `incoming` / `outgoing` |
+| `id` | TEXT PK | стабильный UUID (реплики делят один id) |
+| `created_at` | REAL | epoch; newer-wins при upsert |
+| `direction` | TEXT | `in` / `out` |
 | `class_name` | TEXT | |
 | `confidence` | REAL | |
 | `gps_lat` / `gps_lon` | REAL | (миграция) |
-| `crop_path` | TEXT | |
-| `source_base` | TEXT | |
+| `crop_path` | TEXT | путь, не байты |
+| `source_base` | TEXT | имя или id отправителя |
 | `source_video` | TEXT | (миграция) — ролик-источник |
 | `notes` | TEXT | |
 | `expires_at` | REAL | TTL 24ч |
+| `synced_at` | REAL | NULL = ещё не push на хаб |
 
-Индекс: `idx_net_targets_created(created_at DESC)`.
+Индексы: `idx_net_targets_created(created_at DESC)`, `idx_net_targets_synced(synced_at)`.
 
 ### `network_messages` — текстовые сообщения
 | Столбец | Тип | Описание |
@@ -137,6 +140,7 @@
 
 `init_db()` после создания таблиц проверяет `PRAGMA table_info` и добивает недостающие столбцы через `ALTER TABLE`:
 - `detections`: `ai_class_name`, `gps_lat`, `gps_lon`, `gps_alt`
-- `network_targets`: `source_video`
+- `network_targets`: `source_video`, `synced_at`
+- `network_config`: `hub_pin`, `base_id`
 
 Обновление схемы — только аддитивное; явных drop-миграций нет.

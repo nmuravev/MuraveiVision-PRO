@@ -44,7 +44,7 @@
 
 ## Сеть
 
-- **Network sync** — server/client, `source_video=` на целях, TTL 24ч. API `/api/network/config`, `/api/network/targets`.
+- **Network sync** — реальная репликация между машинами: фоновый worker, JWT на хаб, инкрементальный pull `GET /targets?since=`, upsert newer-wins, TTL 24 ч. `source_video` и GPS уезжают вместе с целью. API: `/api/network/config` (`hub_pin` write-only), `/api/network/status`, `/api/network/targets`.
 
 ## Фотограмметрия (C.1–C.5)
 

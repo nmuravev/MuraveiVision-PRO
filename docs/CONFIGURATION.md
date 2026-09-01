@@ -64,9 +64,11 @@
 | `server_ip` | `127.0.0.1` | |
 | `port` | `8000` | |
 | `base_name` | `База-1` | |
+| `base_id` | UUID v4 | генерируется один раз, в GET `/config` |
+| `hub_pin` | — | write-only; клиент логинится им на хаб. GET не отдаёт |
 | TTL цели | 24ч | `expires_at` в `network_targets` |
 
-API: `GET/POST /api/network/config`.
+API: `GET/POST /api/network/config`, `GET /api/network/status`. Worker: [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md#сеть-баз).
 
 ## Классы
 

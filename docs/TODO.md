@@ -14,7 +14,6 @@
 
 | # | Задача | Критерий готовности | Проверка |
 |---|--------|--------------------|----------|
-| 8 | Реальная сетевая репликация целей между базами | цель с Базы-1 появляется на Базе-2 <5с | network E2E |
 | 9 | Пресет 4×Live + Event Timeline | 4 live-потока + лента событий | Playwright |
 
 ## Улучшения / оптимизация (потом)
@@ -50,3 +49,8 @@
   - 3.4 Hotkeys — `src/hooks/useHotkeys.ts`, undo patch-only, Playwright `test_hotkeys.test.ts`.
   - 4.2 Audio cue — `soundType` beep/alarm/none + volume в RulesPanel.
   - 3.3 KML/GeoJSON/PDF — `backend/services/geo_export.py`, `GET /api/export/kml|geojson`, `GET /api/report/pdf`, dropdown TopBar, `test_geo_export.py`.
+- **Masterplan v3 3.1 Network replication** — DONE:
+  - Demo in/out mirror снят; `POST /targets` пишет одну строку `out`.
+  - Worker `network_sync.py` (тик 30 с, JWT, push/pull `?since=`, upsert newer-wins, skip self).
+  - `GET /api/network/status`, `hub_pin` write-only, `test_network_sync.py`.
+  - Ручной E2E — две копии каталога, см. [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md#сеть-баз).

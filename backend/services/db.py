@@ -125,7 +125,9 @@ def init_db() -> None:
                     server_ip TEXT NOT NULL DEFAULT '127.0.0.1',
                     port INTEGER NOT NULL DEFAULT 8000,
                     base_name TEXT NOT NULL DEFAULT 'База-1',
-                    updated_at REAL NOT NULL
+                    updated_at REAL NOT NULL,
+                    hub_pin TEXT,
+                    base_id TEXT
                 );
                 CREATE TABLE IF NOT EXISTS network_bases (
                     id TEXT PRIMARY KEY,
@@ -146,7 +148,8 @@ def init_db() -> None:
                     source_base TEXT,
                     source_video TEXT,
                     notes TEXT,
-                    expires_at REAL
+                    expires_at REAL,
+                    synced_at REAL
                 );
                 CREATE TABLE IF NOT EXISTS network_messages (
                     id TEXT PRIMARY KEY,
@@ -204,6 +207,18 @@ def init_db() -> None:
             }
             if "source_video" not in network_target_cols:
                 conn.execute("ALTER TABLE network_targets ADD COLUMN source_video TEXT")
+            if "synced_at" not in network_target_cols:
+                conn.execute("ALTER TABLE network_targets ADD COLUMN synced_at REAL")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_net_targets_synced ON network_targets(synced_at)"
+            )
+            network_config_cols = {
+                r[1] for r in conn.execute("PRAGMA table_info(network_config)").fetchall()
+            }
+            if "hub_pin" not in network_config_cols:
+                conn.execute("ALTER TABLE network_config ADD COLUMN hub_pin TEXT")
+            if "base_id" not in network_config_cols:
+                conn.execute("ALTER TABLE network_config ADD COLUMN base_id TEXT")
             override_cols = {
                 r[1] for r in conn.execute("PRAGMA table_info(class_overrides)").fetchall()
             }
