@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-03
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `03f8488`
+- **Commit:** `3ac3c27` (product tip includes Batch CD `03f8488`)
 - **Unit tests:** 149
 - **E2E specs:** 6+
 - **Status:** P0–P3 closed, next focus — field smoke + perf on 8GB
-- **Last updated by:** auto-sync after Batch CD (P3.15.5)
+- **Last updated by:** docs: save master plan + establish auto-sync rules
 
 ---
 
