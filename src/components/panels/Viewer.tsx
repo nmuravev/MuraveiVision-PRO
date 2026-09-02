@@ -37,6 +37,7 @@ import {
 import { CompareSyncModal } from './CompareSyncModal';
 import { HeatmapOverlay } from './HeatmapOverlay';
 import { BatchSegModal } from './BatchSegModal';
+import { BatchChangeModal } from './BatchChangeModal';
 import type { BatchSegMask } from '../../store/useBatchSegStore';
 import { parseSam3TextPrompt, useSam3Store } from '../../store/useSam3Store';
 import { Sam3PropagateModal } from './Sam3PropagateModal';
@@ -278,6 +279,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const showHeatmap = useChangeDetectionStore((s) => s.showHeatmap);
   const setShowHeatmap = useChangeDetectionStore((s) => s.setShowHeatmap);
   const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [batchChangeOpen, setBatchChangeOpen] = useState(false);
   const [batchSegOpen, setBatchSegOpen] = useState(false);
   const [samPropOpen, setSamPropOpen] = useState(false);
   const analysisConfig = useMuraveiStore((s) => s.analysisConfig);
@@ -2535,6 +2537,20 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                   {cdLoading ? 'Анализ…' : 'Анализ изменений'}
                 </Button>
               )}
+              {compareMode && (
+                <Button
+                  size="sm"
+                  disabled={
+                    !isAuthenticated ||
+                    !useViewerStore.getState().viewers['viewer-1']?.sourcePath ||
+                    !useViewerStore.getState().viewers['viewer-2']?.sourcePath
+                  }
+                  onClick={() => setBatchChangeOpen(true)}
+                  title="Пакетный CD: subsample пар auto_sync → analyze_pair"
+                >
+                  Пакетный CD
+                </Button>
+              )}
               {compareMode &&
                 viewerId === 'viewer-1' &&
                 Boolean(cdResult?.image_diff?.heatmap_b64) && (
@@ -3148,6 +3164,14 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           onSyncComplete={({ timeBefore, timeAfter }) => {
             cdRequestSeek(timeBefore, timeAfter);
           }}
+        />
+      ) : null}
+      {viewerId === 'viewer-1' && compareMode && batchChangeOpen ? (
+        <BatchChangeModal
+          open={batchChangeOpen}
+          videoBefore={useViewerStore.getState().viewers['viewer-1']?.sourcePath || ''}
+          videoAfter={useViewerStore.getState().viewers['viewer-2']?.sourcePath || ''}
+          onClose={() => setBatchChangeOpen(false)}
         />
       ) : null}
       {overlayMode === 'seg' && batchSegOpen ? (

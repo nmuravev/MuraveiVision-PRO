@@ -1,4 +1,4 @@
-"""P3.15: Compare Sync change detection + auto time sync + export API."""
+"""P3.15: Compare Sync change detection + auto time sync + export + batch API."""
 from __future__ import annotations
 
 import asyncio
@@ -10,8 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from services import batch_change_detection as batch_cd
 from services.change_detection import analyze_pair
-from services.change_export import build_change_html
+from services.change_export import build_batch_change_html, build_change_html
 from services.geo_export import build_change_kml
 from services.security import require_role
 from services.time_sync import auto_sync
@@ -36,6 +37,19 @@ class SyncRequest(BaseModel):
     video_after: str
     source: Literal["auto", "tracks", "detections"] = "auto"
     tolerance_m: float = Field(default=15.0, ge=1.0, le=500.0)
+
+
+class BatchChangeRequest(BaseModel):
+    video_before: str
+    video_after: str
+    source: Literal["auto", "tracks", "detections"] = "auto"
+    pair_stride: int = Field(default=1, ge=1, le=50)
+    max_pairs: int = Field(default=50, ge=1, le=200)
+    use_image_fallback: bool = False
+    tolerance_m: float = Field(default=10.0, ge=1.0, le=500.0)
+    moved_m: float = Field(default=3.0, ge=0.5, le=100.0)
+    time_window_sec: float = Field(default=0.5, ge=0.1, le=10.0)
+    sync_tolerance_m: float = Field(default=15.0, ge=1.0, le=500.0)
 
 
 @router.post("/analyze")
@@ -90,9 +104,97 @@ async def sync_videos(
     }
 
 
+@router.post("/batch")
+async def batch_change_start(
+    body: BatchChangeRequest,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(
+            lambda: batch_cd.start(
+                video_before=body.video_before,
+                video_after=body.video_after,
+                source=body.source,
+                pair_stride=body.pair_stride,
+                max_pairs=body.max_pairs,
+                use_image_fallback=body.use_image_fallback,
+                tolerance_m=body.tolerance_m,
+                moved_m=body.moved_m,
+                time_window_sec=body.time_window_sec,
+                sync_tolerance_m=body.sync_tolerance_m,
+            )
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/batch/{task_id}")
+async def batch_change_status(
+    task_id: str,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(batch_cd.status, task_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/batch/{task_id}/abort")
+async def batch_change_abort(
+    task_id: str,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(batch_cd.abort, task_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 def _safe_export_name(ext: str) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     return f"muravei_change_report_{stamp}.{ext}"
+
+
+@router.get("/batch/{task_id}/export")
+async def batch_change_export(
+    task_id: str,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> Response:
+    try:
+        st = await asyncio.to_thread(batch_cd.status, task_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if st.get("status") != "done":
+        raise HTTPException(
+            status_code=409,
+            detail=f"batch not done (status={st.get('status')})",
+        )
+    meta = {
+        "video_before": st.get("video_before"),
+        "video_after": st.get("video_after"),
+        "sync_method": st.get("sync_method"),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        body = await asyncio.to_thread(
+            build_batch_change_html,
+            st.get("aggregate"),
+            list(st.get("results") or []),
+            meta,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"export failed: {exc}") from exc
+    filename = _safe_export_name("html").replace("change_report", "batch_change_report")
+    safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in Path(filename).name)
+    return Response(
+        content=body,
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{safe}"'},
+    )
 
 
 @router.get("/export")

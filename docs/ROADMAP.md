@@ -63,6 +63,7 @@
 14b. Auto Time Sync (P3.15.2) — **DONE** (`8279f8f`): GPS tracks → detections fallback → сегменты, CompareSyncModal.  
 14c. HTML/KML Export (P3.15.3) — **DONE** (`8f93bb1`): `GET /export`, Inspector кнопки, `change_export` / `build_change_kml`.  
 14d. Diff Heatmap (P3.15.4) — **DONE** (`8b2ff99`): `image_diff.heatmap_b64` + Viewer «Теплокарта».  
+14e. Batch Change Detection (P3.15.5) — **DONE**: subsample `auto_sync` pairs → `analyze_pair`, aggregate unique IDs, HTML export.
 15. Audio cue по bbox — **DONE** (RulesPanel: beep/alarm/none)  
 16. USB offline model manager — **DONE** (4.1, scan + validate + confirm + force_load)  
 

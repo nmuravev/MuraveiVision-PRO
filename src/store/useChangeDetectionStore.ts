@@ -111,6 +111,10 @@ interface ChangeDetectionState {
   showHeatmap: boolean;
   setShowHeatmap: (v: boolean) => void;
   runAnalysis: (params: LastAnalyzeParams) => Promise<void>;
+  applyPairResult: (
+    result: ChangeDetectionResult,
+    params: LastAnalyzeParams,
+  ) => void;
   runSync: (params: {
     videoBefore: string;
     videoAfter: string;
@@ -164,6 +168,17 @@ export const useChangeDetectionStore = create<ChangeDetectionState>((set, get) =
         epoch: (s.seekTargets?.epoch ?? 0) + 1,
       },
     })),
+
+  applyPairResult: (result, params) =>
+    set({
+      result,
+      loading: false,
+      error: null,
+      activeHighlight: null,
+      showHeatmap: false,
+      lastAnalyze: params,
+      exportError: null,
+    }),
 
   runAnalysis: async ({
     videoBefore,

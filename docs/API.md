@@ -78,6 +78,10 @@
 | POST | `/analyze` | GPS-matching детекций ± `time_window_sec` + ORB/diff fallback |
 | POST | `/sync` | Auto time sync: GPS tracks → detections fallback → сегменты |
 | GET | `/export` | HTML или KML отчёт (re-run `analyze_pair` по query params) |
+| POST | `/batch` | P3.15.5 пакетный CD: `auto_sync` → subsample пар → `analyze_pair` |
+| GET | `/batch/{task_id}` | прогресс; при terminal — `results[]` + `aggregate` |
+| POST | `/batch/{task_id}/abort` | прервать |
+| GET | `/batch/{task_id}/export` | HTML отчёт агрегата (только `status=done`) |
 
 `GET /export` query: `format=html|kml`, `video_before`, `video_after`, `time_before`, `time_after`, опционально `tolerance_m`, `moved_m`, `time_window_sec`. Ответ — attachment (`text/html` или `application/vnd.google-earth.kml+xml`).
 
@@ -118,6 +122,23 @@
 - `image_diff` (только image/ORB path): `{ inlier_ratio, regions[], heatmap_b64? }` — `heatmap_b64` это PNG (JET colormap) в base64 без `data:`-префикса (P3.15.4)
 - Классификация: stable (<3 m), moved (3–10 m), new/removed (нет GPS-пары)
 - Frontend при Sync передаёт `time_window_sec=0.5`, без Sync — `2.0`
+
+### Batch CD (P3.15.5)
+
+Тело `POST /batch`:
+
+```json
+{
+  "video_before": "clip_a.mp4",
+  "video_after": "clip_b.mp4",
+  "source": "auto",
+  "pair_stride": 1,
+  "max_pairs": 50,
+  "use_image_fallback": false
+}
+```
+
+Один in-memory job (409 если уже `running`). По умолчанию ORB off. `aggregate`: `unique_new/removed/moved` + суммы по парам. `heatmap_b64` из результатов стрипается. UI: кнопка «Пакетный CD» в Compare Sync.
 
 ### Response Validator (defense-in-depth)
 

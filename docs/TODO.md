@@ -34,6 +34,7 @@
 - [x] Auto Time Sync (P3.15.2) (`8279f8f`)
 - [x] HTML/KML export (P3.15.3) (`8f93bb1`)
 - [x] Diff heatmap (P3.15.4) (`8b2ff99`)
+- [x] Batch Change Detection (P3.15.5)
 - [x] Playwright E2E seg/CD (`4aa75af`)
 - [x] Error reference system (`7a30f1d`)
 

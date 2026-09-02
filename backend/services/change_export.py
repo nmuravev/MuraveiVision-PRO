@@ -258,3 +258,88 @@ def build_change_html(result: dict[str, Any], meta: dict[str, Any]) -> str:
 </body>
 </html>
 """
+
+
+def build_batch_change_html(
+    aggregate: dict[str, Any] | None,
+    results: list[dict[str, Any]],
+    meta: dict[str, Any],
+) -> str:
+    """HTML report for P3.15.5 batch CD (aggregate + per-pair table)."""
+    generated = meta.get("generated_at") or datetime.now(timezone.utc).isoformat()
+    video_before = _esc(meta.get("video_before") or "—")
+    video_after = _esc(meta.get("video_after") or "—")
+    agg = aggregate or {}
+    sync_method = _esc(agg.get("sync_method") or meta.get("sync_method") or "—")
+
+    pair_rows: list[str] = []
+    if not results:
+        pair_rows.append("<tr><td colspan='7'>нет пар</td></tr>")
+    else:
+        for row in results:
+            summary = row.get("summary") or {}
+            pair_rows.append(
+                "<tr>"
+                f"<td>{_esc(row.get('time_before'))}</td>"
+                f"<td>{_esc(row.get('time_after'))}</td>"
+                f"<td>{_esc(row.get('method'))}</td>"
+                f"<td>{_esc(summary.get('new', 0))}</td>"
+                f"<td>{_esc(summary.get('removed', 0))}</td>"
+                f"<td>{_esc(summary.get('moved', 0))}</td>"
+                f"<td>{_esc(summary.get('stable', 0))}</td>"
+                "</tr>"
+            )
+
+    return f"""<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<title>MuraveiVision — пакетный отчёт изменений</title>
+<style>
+  :root {{ --bg:#0f1115; --panel:#1a1d24; --border:#2a2f3a; --text:#e8eaed; --muted:#9aa3b2; --accent:#e87d0d; }}
+  body {{ margin:0; font-family: ui-sans-serif, system-ui, sans-serif; background:var(--bg); color:var(--text); }}
+  main {{ max-width:960px; margin:0 auto; padding:24px 16px 48px; }}
+  h1 {{ font-size:1.35rem; margin:0 0 8px; color:var(--accent); }}
+  h2 {{ font-size:1rem; margin:24px 0 8px; border-bottom:1px solid var(--border); padding-bottom:4px; }}
+  .meta {{ color:var(--muted); font-size:0.85rem; line-height:1.5; }}
+  table {{ width:100%; border-collapse:collapse; background:var(--panel); font-size:0.8rem; }}
+  th, td {{ border:1px solid var(--border); padding:6px 8px; text-align:left; }}
+  th {{ background:#12151b; color:var(--muted); font-weight:600; }}
+  .summary td:first-child {{ width:50%; color:var(--muted); }}
+</style>
+</head>
+<body>
+<main>
+  <h1>Пакетный отчёт изменений (Batch CD)</h1>
+  <div class="meta">
+    <div>Сформирован: {_esc(generated)}</div>
+    <div>Было: {video_before}</div>
+    <div>Стало: {video_after}</div>
+    <div>Синхронизация: {sync_method}</div>
+  </div>
+
+  <h2>Сводка (уникальные ID)</h2>
+  <table class="summary">
+    <tr><td>Пар обработано</td><td>{_esc(agg.get('pair_count', len(results)))}</td></tr>
+    <tr><td>Уник. новые</td><td>{_esc(agg.get('unique_new', 0))}</td></tr>
+    <tr><td>Уник. исчезли</td><td>{_esc(agg.get('unique_removed', 0))}</td></tr>
+    <tr><td>Уник. перемещены</td><td>{_esc(agg.get('unique_moved', 0))}</td></tr>
+    <tr><td>Сумма new (по парам)</td><td>{_esc(agg.get('sum_new', 0))}</td></tr>
+    <tr><td>Сумма removed (по парам)</td><td>{_esc(agg.get('sum_removed', 0))}</td></tr>
+    <tr><td>Сумма moved (по парам)</td><td>{_esc(agg.get('sum_moved', 0))}</td></tr>
+  </table>
+
+  <h2>Пары</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>t было, с</th><th>t стало, с</th><th>Метод</th>
+        <th>New</th><th>Removed</th><th>Moved</th><th>Stable</th>
+      </tr>
+    </thead>
+    <tbody>{"".join(pair_rows)}</tbody>
+  </table>
+</main>
+</body>
+</html>
+"""
