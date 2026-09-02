@@ -8,25 +8,34 @@
 
 На данный момент открытых критических багов нет.
 
-## Следующий спринт (P3 v2)
+## Следующий спринт
 
-Фаза 3.1 (сеть), 3.2 (4×Live), P0.1, P0.4, P1.6, P1.8, **P3.13 v1** и **P3.15 v1** закрыты. Ретроспектива: [PHASE4_RETRO.md](PHASE4_RETRO.md).
+**P3.15 v2** (Auto Sync + HTML/KML Export) закрыт — 98 unit-тестов, workflow sync → analyze → export. Ретроспектива: [PHASE4_RETRO.md](PHASE4_RETRO.md#sprint-2-p315-v2-completion).
 
-### P3.15 v2 (Change Detection)
+Следующий фокус: **Playwright E2E**.
 
-- [x] Auto time sync (P3.15.2): GPS tracks → detections fallback → сегменты (`time_sync.py`, `POST /sync`, CompareSyncModal)
-- [x] HTML/KML export (P3.15.3): `GET /export`, Inspector кнопки, `change_export` / `build_change_kml`
-- [ ] Diff heatmap overlay (canvas, optional toggle) — P1, отдельный PR
+### 1. E2E (Playwright) — P0
 
-### P3.13 v2 (Segmentation)
+- [ ] `tests/test_segmentation_ui.test.ts` — seg load → infer → polygon visible
+- [ ] `tests/test_change_detection_ui.test.ts` — Compare mode → sync → analyze → Inspector
+
+### 2. P3.15.4 Diff heatmap — P1
+
+- [ ] Diff heatmap overlay (canvas, optional toggle)
+
+### 3. P3.13.2 Batch segmentation — P1
 
 - [ ] Batch seg scan (аналог batch_scan, без train)
 - [ ] Экспорт масок GeoTIFF/KML — по запросу
 
-### E2E (Playwright)
+### 4. P3.13.3 SAM2 — P2
 
-- [ ] `tests/test_change_detection_ui.test.ts` — Compare mode → analyze → Inspector
-- [ ] `tests/test_segmentation_ui.test.ts` — seg load → infer → polygon visible
+- [ ] SAM2 / realtime seg / маски в SQLite (см. также «Фичи будущего»)
+
+### P3.15 v2 — DONE
+
+- [x] Auto time sync (P3.15.2): GPS tracks → detections fallback → сегменты (`8279f8f`)
+- [x] HTML/KML export (P3.15.3): `GET /export`, Inspector кнопки (`8f93bb1`)
 
 ## Улучшения / оптимизация (потом)
 

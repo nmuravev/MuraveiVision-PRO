@@ -71,10 +71,18 @@ flowchart LR
 
 - Canvas overlay областей `image_diff.regions`; toggle в Viewer compare mode.
 
-**Не в v2.0:** batch seg, SAM2, Playwright E2E (отдельные пункты backlog в [TODO.md](TODO.md)).
+**Не в v2.0 (перенесено в Next Sprint):** batch seg, SAM2, Playwright E2E, diff heatmap — см. [TODO.md](TODO.md).
+
+## Sprint 2: P3.15 v2 Completion
+
+Closed Auto Sync (`8279f8f`) and Export (`8f93bb1`). 98 unit tests.
+Full sync → analyze → export workflow operational.
+Architecture kept clean (separate `time_sync.py`, reuse of `geo_export.py` / `change_export.py`).
+
+**Next:** Playwright E2E for Segmentation + Change Detection UI.
 
 ## Связанные документы
 
-- [ROADMAP.md](ROADMAP.md) — P3 v1 DONE, v2 backlog
-- [TODO.md](TODO.md) — чеклисты следующего спринта
+- [ROADMAP.md](ROADMAP.md) — P3 v1+v2 core DONE; Next Sprint = E2E first
+- [TODO.md](TODO.md) — чеклисты следующего спринта (E2E → heatmap → batch seg → SAM2)
 - [ARCHITECTURE.md](ARCHITECTURE.md) — инварианты seg / change detection (часть B)

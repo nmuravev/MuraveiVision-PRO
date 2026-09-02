@@ -52,27 +52,27 @@
 11. KML/GeoJSON + PDF — **DONE** (Stage 1 / 3.3)  
 12. Hotkeys оператора — **DONE** (Stage 1 / 3.4)  
 
-## P3 — DONE (v1)
+## P3 — DONE (v1 + v2 core)
 
 13. Seg-маски (P3.13 v1.1) — **DONE** (`ea881fc`): archive-only, load/unload VRAM, кнопка кадра, полигоны SVG. Не в `/ws/detect`, не в 4×Live, не в train.  
 14. Change Detection (P3.15 v1) — **DONE** (`a798b15`): Compare Sync, GPS-matching + ORB fallback, Inspector, цветные bbox.  
+14b. Auto Time Sync (P3.15.2) — **DONE** (`8279f8f`): GPS tracks → detections fallback → сегменты, CompareSyncModal.  
+14c. HTML/KML Export (P3.15.3) — **DONE** (`8f93bb1`): `GET /export`, Inspector кнопки, `change_export` / `build_change_kml`.  
 15. Audio cue по bbox — **DONE** (RulesPanel: beep/alarm/none)  
 16. USB offline model manager — **DONE** (4.1, scan + validate + confirm + force_load)  
 
-Ретроспектива Фазы 4: [PHASE4_RETRO.md](PHASE4_RETRO.md).
+Ретроспектива: [PHASE4_RETRO.md](PHASE4_RETRO.md) (Sprint 1 + Sprint 2).
 
-## P3 v2 — следующий спринт (приоритет)
+## Next Sprint / Backlog
 
-| ID | Задача | Приоритет |
-|----|--------|-----------|
-| P3.15.2 | Auto time sync по flight track GPS | **DONE** |
-| P3.15.3 | HTML/KML export отчёта изменений | **DONE** |
-| P3.15.4 | Diff heatmap canvas overlay | P1 |
-| P3.13.2 | Batch-сегментация ролика | P1 |
-| E2E | Playwright: seg toggle + change analyze | P1 |
-| P3.13.3 | SAM2 (если модель) | P2 |
+| # | ID | Задача | Приоритет |
+|---|-----|--------|-----------|
+| 1 | E2E | Playwright: seg toggle + change analyze UI | P0 |
+| 2 | P3.15.4 | Diff heatmap canvas overlay | P1 |
+| 3 | P3.13.2 | Batch-сегментация ролика | P1 |
+| 4 | P3.13.3 | SAM2 (если модель) | P2 |
 
-Детали и черновик P3.15 v2: [PHASE4_RETRO.md](PHASE4_RETRO.md#следующий-спринт--черновик-p315-v2). Чеклисты: [TODO.md](TODO.md).
+Чеклисты: [TODO.md](TODO.md). Детали Sprint 2: [PHASE4_RETRO.md](PHASE4_RETRO.md#sprint-2-p315-v2-completion).
 
 ## Вне скоупа
 
