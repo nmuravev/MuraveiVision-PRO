@@ -63,6 +63,7 @@ class Sam3InferRequest(BaseModel):
     image_base64: str | None = None
     points: list[Sam3Point] | None = None
     bboxes: list[Sam3BBox] | None = None
+    text: list[str] | None = None
 
 
 class Sam3PropagateRequest(BaseModel):
@@ -71,6 +72,7 @@ class Sam3PropagateRequest(BaseModel):
     max_frames: int = Field(default=30, ge=1, le=30)
     points: list[Sam3Point] | None = None
     bboxes: list[Sam3BBox] | None = None
+    text: list[str] | None = None
     persist: bool = False
 
 
@@ -249,9 +251,19 @@ async def sam3_infer(
         raise HTTPException(status_code=400, detail="image required")
     points = [p.model_dump() for p in (body.points or [])]
     bboxes = [b.model_dump() for b in (body.bboxes or [])]
-    if not points and not bboxes:
-        raise HTTPException(status_code=400, detail="points or bboxes required")
+    texts = list(body.text or [])
+    has_visual = bool(points or bboxes)
+    has_text = bool(any(str(t or "").strip() for t in texts))
+    if has_visual == has_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either visual prompts (points/bboxes) OR text, not both/neither",
+        )
     try:
+        if has_text:
+            return await asyncio.to_thread(
+                lambda: engine.infer_text(jpeg, texts)
+            )
         return await asyncio.to_thread(
             lambda: engine.infer_prompts(jpeg, points_norm=points, bboxes_norm=bboxes)
         )
@@ -268,16 +280,23 @@ async def sam3_propagate_start(
 ) -> dict[str, Any]:
     points = [p.model_dump() for p in (body.points or [])]
     bboxes = [b.model_dump() for b in (body.bboxes or [])]
-    if not points and not bboxes:
-        raise HTTPException(status_code=400, detail="points or bboxes required")
+    texts = list(body.text or [])
+    has_visual = bool(points or bboxes)
+    has_text = bool(any(str(t or "").strip() for t in texts))
+    if has_visual == has_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either visual prompts (points/bboxes) OR text, not both/neither",
+        )
     try:
         return await asyncio.to_thread(
             lambda: sam3_propagate.start(
                 video_path=body.video_path,
                 time_sec=body.time_sec,
                 max_frames=body.max_frames,
-                points=points,
-                bboxes=bboxes,
+                points=points if has_visual else [],
+                bboxes=bboxes if has_visual else [],
+                texts=texts if has_text else None,
                 persist=body.persist,
             )
         )

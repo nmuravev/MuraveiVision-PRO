@@ -12,7 +12,16 @@ export type Sam3Mask = {
 export type Sam3Prompt = {
   points?: { x: number; y: number; label: number }[];
   bboxes?: { x1: number; y1: number; x2: number; y2: number }[];
+  text?: string[];
 };
+
+export function parseSam3TextPrompt(raw: string): string[] {
+  return raw
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
 
 export type Sam3PropFrame = {
   time_sec: number;
@@ -44,6 +53,7 @@ interface Sam3State {
   hint: string;
   lastUnloadNotice: string | null;
   lastPrompt: Sam3Prompt | null;
+  textPrompt: string;
   persistEnabled: boolean;
   propTaskId: string | null;
   propStatus: Sam3PropStatus;
@@ -63,6 +73,7 @@ interface Sam3State {
   markUnloadedForBatch: () => void;
   markUnloadedByYolo: () => void;
   setPersistEnabled: (v: boolean) => void;
+  setTextPrompt: (v: string) => void;
   setLastPrompt: (p: Sam3Prompt | null) => void;
   clearPropagate: () => void;
   startPropagate: (params: {
@@ -76,6 +87,7 @@ interface Sam3State {
     imageBase64: string;
     points?: { x: number; y: number; label: number }[];
     bboxes?: { x1: number; y1: number; x2: number; y2: number }[];
+    text?: string[];
   }) => Promise<Sam3Mask[]>;
 }
 
@@ -116,6 +128,7 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
   hint: '',
   lastUnloadNotice: null,
   lastPrompt: null,
+  textPrompt: '',
   persistEnabled: false,
   propTaskId: null,
   propStatus: 'idle',
@@ -130,6 +143,7 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
 
   clearNotice: () => set({ lastUnloadNotice: null }),
   setPersistEnabled: (persistEnabled) => set({ persistEnabled }),
+  setTextPrompt: (textPrompt) => set({ textPrompt }),
   setLastPrompt: (lastPrompt) => set({ lastPrompt }),
   setTool: (tool) => set({ tool }),
 
@@ -243,21 +257,25 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
     });
   },
 
-  infer: async ({ imageBase64, points, bboxes }) => {
+  infer: async ({ imageBase64, points, bboxes, text }) => {
     set({ busy: true });
     try {
-      const prompt: Sam3Prompt = {
-        points: points?.length ? points : undefined,
-        bboxes: bboxes?.length ? bboxes : undefined,
-      };
+      const texts = text?.length ? text : undefined;
+      const prompt: Sam3Prompt = texts?.length
+        ? { text: texts }
+        : {
+            points: points?.length ? points : undefined,
+            bboxes: bboxes?.length ? bboxes : undefined,
+          };
       set({ lastPrompt: prompt });
       const res = await fetch('/api/seg/sam3/infer', {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({
           image_base64: imageBase64,
-          points: points || [],
-          bboxes: bboxes || [],
+          points: texts?.length ? [] : points || [],
+          bboxes: texts?.length ? [] : bboxes || [],
+          text: texts || [],
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -275,8 +293,13 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
 
   startPropagate: async ({ videoPath, timeSec, maxFrames = 30, persist }) => {
     const prompt = get().lastPrompt;
-    if (!prompt?.points?.length && !prompt?.bboxes?.length) {
-      set({ propStatus: 'error', propError: 'Нет seed (точка или bbox)' });
+    const hasVisual = Boolean(prompt?.points?.length || prompt?.bboxes?.length);
+    const hasText = Boolean(prompt?.text?.length);
+    if (hasVisual === hasText) {
+      set({
+        propStatus: 'error',
+        propError: 'Нет seed (точка/bbox или текст)',
+      });
       return;
     }
     stopPropPoll();
@@ -301,8 +324,9 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
           video_path: videoPath,
           time_sec: timeSec,
           max_frames: maxFrames,
-          points: prompt.points || [],
-          bboxes: prompt.bboxes || [],
+          points: hasVisual ? prompt?.points || [] : [],
+          bboxes: hasVisual ? prompt?.bboxes || [] : [],
+          text: hasText ? prompt?.text || [] : [],
           persist: usePersist,
         }),
       });

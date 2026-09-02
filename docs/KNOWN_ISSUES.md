@@ -20,7 +20,7 @@
 
 - **SAHI** добавляет N инференсов на кадр (по слайсам). По умолчанию выключен; включать только для тяжёлых 4K-кадров БПЛА.
 - **Seg-модель** занимает ~2–4 ГБ VRAM. На RTX 5060 Laptop (8 ГБ) не держать seg и detect одновременно: выгружайте seg (Viewer «Выгрузить» / SEG→Детекция / Admin) перед live-детекцией.
-- **SAM3** (`sam3.pt`, ~3.5 ГБ) и YOLO-seg взаимно исключают VRAM. Batch seg выгружает SAM3 без auto-reload. Propagate ограничен ≤30 кадрами (temp clip); VideoPredictor может кратковно увеличить VRAM.
+- **SAM3** (`sam3.pt`, ~3.5 ГБ) и YOLO-seg взаимно исключают VRAM; **Detect (YOLO) не выгружается** при load SAM3. Batch seg выгружает SAM3 без auto-reload. Propagate ограничен ≤30 кадрами (temp clip); VideoPredictor / VideoSemanticPredictor могут кратковно увеличить VRAM. Live SAM = только freeze-кадр (не continuous).
 
 ## Совместимость
 

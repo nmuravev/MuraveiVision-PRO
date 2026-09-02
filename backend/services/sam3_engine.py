@@ -1,7 +1,9 @@
-"""P3.13.3a: archive-only SAM3 interactive refine (Ultralytics SAM).
+"""P3.13.3a/c: archive SAM3 refine + text prompts (Ultralytics SAM).
 
 Detect ≠ YOLO-seg ≠ SAM3. Does not write detections/train.
+Does NOT unload YOLO-detect (4×Live invariant).
 Uses: from ultralytics import SAM; SAM(\"sam3.pt\")
+Text: from ultralytics.models.sam import SAM3SemanticPredictor
 """
 from __future__ import annotations
 
@@ -20,6 +22,27 @@ from services.db import BASE_DIR
 MODELS_DIR = BASE_DIR / "assets" / "models"
 SAM3_WEIGHT_NAMES = ("sam3.pt",)
 MAX_POLY_POINTS = 256
+MAX_TEXT_PROMPTS = 3
+MAX_TEXT_LEN = 64
+
+
+def normalize_text_prompts(raw: list[str] | None) -> list[str]:
+    """1–3 non-empty strings, each ≤64 chars."""
+    if not raw:
+        raise ValueError("text prompts required")
+    cleaned: list[str] = []
+    for item in raw:
+        s = str(item or "").strip()
+        if not s:
+            continue
+        if len(s) > MAX_TEXT_LEN:
+            raise ValueError(f"text prompt too long (max {MAX_TEXT_LEN})")
+        cleaned.append(s)
+    if not cleaned:
+        raise ValueError("text prompts required")
+    if len(cleaned) > MAX_TEXT_PROMPTS:
+        raise ValueError(f"at most {MAX_TEXT_PROMPTS} text prompts")
+    return cleaned
 
 _engine: Sam3Engine | None = None
 _engine_lock = threading.Lock()
@@ -110,6 +133,20 @@ def _load_sam(path: Path) -> Any:
     return SAM(str(path))
 
 
+def _load_semantic_predictor(path: Path, conf: float = 0.25) -> Any:
+    from ultralytics.models.sam import SAM3SemanticPredictor
+
+    return SAM3SemanticPredictor(
+        overrides={
+            "conf": float(conf),
+            "task": "segment",
+            "mode": "predict",
+            "model": str(path),
+            "verbose": False,
+        }
+    )
+
+
 def _masks_from_sam_results(results: Any, h: int, w: int) -> list[dict[str, Any]]:
     masks_out: list[dict[str, Any]] = []
     if not results:
@@ -156,11 +193,12 @@ def _masks_from_sam_results(results: Any, h: int, w: int) -> list[dict[str, Any]
 
 
 class Sam3Engine:
-    """SAM3 in VRAM until explicit unload. Mutual exclusion with YOLO-seg."""
+    """SAM3 in VRAM until explicit unload. Mutual exclusion with YOLO-seg only."""
 
     def __init__(self) -> None:
         self._model: Any = None
         self._weight_name: str | None = None
+        self._semantic_predictor: Any = None
         self._lock = threading.Lock()
 
     def status(self) -> dict[str, Any]:
@@ -176,6 +214,7 @@ class Sam3Engine:
         with self._lock:
             self._model = None
             self._weight_name = None
+            self._semantic_predictor = None
         _empty_cache()
 
     def load_model(self, name: str | None = None) -> Path:
@@ -186,10 +225,19 @@ class Sam3Engine:
                 return path
             self._model = None
             self._weight_name = None
+            self._semantic_predictor = None
             _empty_cache()
             self._model = _load_sam(path)
             self._weight_name = path.name
             return path
+
+    def _ensure_semantic(self, conf: float) -> Any:
+        if self._model is None or not self._weight_name:
+            raise RuntimeError("SAM3 model not loaded")
+        path = MODELS_DIR / self._weight_name
+        if self._semantic_predictor is None:
+            self._semantic_predictor = _load_semantic_predictor(path, conf=conf)
+        return self._semantic_predictor
 
     def infer_prompts(
         self,
@@ -242,6 +290,44 @@ class Sam3Engine:
             started = time.perf_counter()
             results = self._model(arr, **kwargs)
             masks = _masks_from_sam_results(results, h, w)
+            ms = int((time.perf_counter() - started) * 1000)
+            return {
+                "masks": masks,
+                "weight": self._weight_name,
+                "ms": ms,
+            }
+
+    def infer_text(
+        self,
+        jpeg: bytes,
+        texts: list[str],
+        *,
+        conf: float = 0.25,
+    ) -> dict[str, Any]:
+        if not jpeg:
+            raise ValueError("image required")
+        concepts = normalize_text_prompts(texts)
+
+        try:
+            img = Image.open(io.BytesIO(jpeg)).convert("RGB")
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError("invalid jpeg") from exc
+        arr = np.asarray(img)
+        h, w = int(arr.shape[0]), int(arr.shape[1])
+        if h < 1 or w < 1:
+            raise ValueError("invalid image size")
+
+        with self._lock:
+            predictor = self._ensure_semantic(conf)
+            started = time.perf_counter()
+            results = predictor(source=arr, text=concepts, verbose=False)
+            if results is not None and not isinstance(results, (list, tuple)):
+                results = list(results) if hasattr(results, "__iter__") else [results]
+            masks = _masks_from_sam_results(results, h, w)
+            label = concepts[0] if concepts else "object"
+            for m in masks:
+                if m.get("class") in (None, "", "object"):
+                    m["class"] = label
             ms = int((time.perf_counter() - started) * 1000)
             return {
                 "masks": masks,

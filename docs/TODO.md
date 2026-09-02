@@ -10,22 +10,17 @@
 
 ## Backlog (после Phase 3)
 
-**Phase 3 / P3 закрыт** — см. [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md). 121+ unit-тестов; Playwright E2E (seg/batch/SAM/CD); error catalog.
+**Phase 3 / P3 закрыт** — см. [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md). SAM3 линия 3a/3b/3c закрыта. Unit + Playwright E2E; error catalog.
 
-### 1. P3.13.3c — SAM3 semantic / Live (P2)
-
-- [ ] Text / concept prompts (`SAM3SemanticPredictor` или эквивалент Ultralytics)
-- [ ] Исследование Live (только после VRAM-профиля; не ломать Detect)
-- [ ] Full-video propagate (сейчас только ≤30 frames)
-
-### 2. Performance (P2)
+### 1. Performance (P2)
 
 - [ ] Profiling batch seg / SAM propagate на 8 ГБ
-- [ ] Полевой smoke: archive SAM3 + Compare Sync на реальных роликах
+- [ ] Полевой smoke: archive SAM3 text + Live «Кадр SAM» + Compare Sync на реальных роликах
 
-### 3. По запросу
+### 2. По запросу
 
 - [ ] GeoTIFF/KML масок batch/propagate
+- [ ] Full-video propagate (сейчас только ≤30 frames)
 - [ ] Новые фичи от пользователей
 
 ## P3.13 / P3.15 — DONE
@@ -34,6 +29,7 @@
 - [x] Batch segmentation (P3.13.2) (`2f7a86c`)
 - [x] SAM3 interactive refine (P3.13.3a) (`8baa39f`)
 - [x] SAM3 short propagate (P3.13.3b) (`b533f0d`)
+- [x] SAM3 text + Live freeze (P3.13.3c)
 - [x] Change Detection v1 (`a798b15`)
 - [x] Auto Time Sync (P3.15.2) (`8279f8f`)
 - [x] HTML/KML export (P3.15.3) (`8f93bb1`)

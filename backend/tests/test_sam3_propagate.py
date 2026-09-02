@@ -150,6 +150,47 @@ class Sam3PropagateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 prop.start(video_path="archive/clip.mp4", time_sec=0.0)
 
+    def test_xor_rejects_both_visual_and_text(self) -> None:
+        engine = mock.MagicMock()
+        engine.status.return_value = {"ready": True, "loaded": True, "weight": "sam3.pt"}
+        with mock.patch.object(prop, "get_sam3_engine", return_value=engine):
+            with self.assertRaises(ValueError):
+                prop.start(
+                    video_path="archive/clip.mp4",
+                    time_sec=0.0,
+                    bboxes=[{"x1": 0.1, "y1": 0.1, "x2": 0.2, "y2": 0.2}],
+                    texts=["trench"],
+                )
+
+    def test_text_propagate_uses_semantic(self) -> None:
+        engine = mock.MagicMock()
+        engine.status.return_value = {"ready": True, "loaded": True, "weight": "sam3.pt"}
+        with (
+            mock.patch.object(prop, "get_sam3_engine", return_value=engine),
+            mock.patch.object(prop, "_resolve_video", return_value=(self._video, "archive/clip.mp4")),
+            mock.patch.object(prop, "resolve_named_weight", return_value=self._tmp / "sam3.pt"),
+            mock.patch.object(prop, "_unload_yolo_seg"),
+            mock.patch.object(
+                prop,
+                "_run_video_semantic_predictor",
+                return_value=[_FakeResult() for _ in range(4)],
+            ) as sem,
+            mock.patch.object(prop, "_run_video_predictor") as visual,
+        ):
+            (self._tmp / "sam3.pt").write_bytes(b"\x00" * 2048)
+            started = prop.start(
+                video_path="archive/clip.mp4",
+                time_sec=0.0,
+                max_frames=4,
+                texts=["trench", "person"],
+                persist=False,
+            )
+            st = self._wait(started["task_id"])
+            self.assertEqual(st["status"], "done")
+            self.assertGreater(st["processed"], 0)
+            sem.assert_called()
+            visual.assert_not_called()
+
     def test_requires_loaded(self) -> None:
         engine = mock.MagicMock()
         engine.status.return_value = {"ready": True, "loaded": False, "weight": "sam3.pt"}

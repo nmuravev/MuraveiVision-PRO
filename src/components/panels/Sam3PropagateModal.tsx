@@ -44,7 +44,14 @@ export const Sam3PropagateModal: React.FC<Sam3PropagateModalProps> = ({
 
   const running = status === 'running';
   const pct = Math.round(Math.min(1, Math.max(0, progress)) * 100);
-  const hasPrompt = Boolean(lastPrompt?.points?.length || lastPrompt?.bboxes?.length);
+  const hasVisual = Boolean(lastPrompt?.points?.length || lastPrompt?.bboxes?.length);
+  const hasText = Boolean(lastPrompt?.text?.length);
+  const hasPrompt = hasVisual || hasText;
+  const seedLabel = hasText
+    ? `text: ${(lastPrompt?.text || []).join('; ')}`
+    : hasVisual
+      ? `visual: ${lastPrompt?.points?.length || 0} pts / ${lastPrompt?.bboxes?.length || 0} bbox`
+      : '';
 
   const onStart = () => {
     void startPropagate({
@@ -98,9 +105,13 @@ export const Sam3PropagateModal: React.FC<Sam3PropagateModalProps> = ({
         </p>
         {!hasPrompt ? (
           <p className="text-[10px] text-dv-danger">
-            Сначала точка или «SAM из детекции» на текущем кадре
+            Сначала точка, «SAM из детекции» или «По тексту» на текущем кадре
           </p>
-        ) : null}
+        ) : (
+          <p className="text-[10px] text-dv-muted font-mono" data-testid="sam3-prop-seed">
+            seed · {seedLabel}
+          </p>
+        )}
 
         <label className="flex items-center gap-2 text-[10px]">
           <input

@@ -38,7 +38,7 @@ import { CompareSyncModal } from './CompareSyncModal';
 import { HeatmapOverlay } from './HeatmapOverlay';
 import { BatchSegModal } from './BatchSegModal';
 import type { BatchSegMask } from '../../store/useBatchSegStore';
-import { useSam3Store } from '../../store/useSam3Store';
+import { parseSam3TextPrompt, useSam3Store } from '../../store/useSam3Store';
 import { Sam3PropagateModal } from './Sam3PropagateModal';
 
 interface ViewerProps {
@@ -414,6 +414,13 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const clearSamNotice = useSam3Store((s) => s.clearNotice);
   const markSamUnloadedByYolo = useSam3Store((s) => s.markUnloadedByYolo);
   const samLastPrompt = useSam3Store((s) => s.lastPrompt);
+  const samTextPrompt = useSam3Store((s) => s.textPrompt);
+  const setSamTextPrompt = useSam3Store((s) => s.setTextPrompt);
+  const hasSamSeed = Boolean(
+    samLastPrompt?.points?.length ||
+      samLastPrompt?.bboxes?.length ||
+      samLastPrompt?.text?.length,
+  );
 
   const isLive = viewer?.sourceMode === 'live' && Boolean(viewer?.liveActive);
   isLiveRef.current = isLive;
@@ -1189,7 +1196,12 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
 
   useEffect(() => {
     if (overlayMode !== 'seg') {
-      setSegMasks([]);
+      // Live freeze SAM keeps temporary masks on detect overlay until play.
+      if (!isLive) {
+        setSegMasks([]);
+        setInferN(0);
+        setInferKind('—');
+      }
       setSegBusy(false);
       setSamTool('none');
       return;
@@ -1229,7 +1241,13 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     return () => {
       cancelled = true;
     };
-  }, [overlayMode, isAuthenticated, refreshSamStatus, setSamTool]);
+  }, [overlayMode, isAuthenticated, refreshSamStatus, setSamTool, isLive]);
+
+  // Live: keep SAM status fresh without entering archive SEG mode.
+  useEffect(() => {
+    if (!isLive || !isAuthenticated) return;
+    void refreshSamStatus();
+  }, [isLive, isAuthenticated, refreshSamStatus]);
 
   const runSegFrame = useCallback(async () => {
     if (overlayMode !== 'seg' || isLive || !segLoaded) return;
@@ -1401,6 +1419,25 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     liveObjects,
     inferSam3,
   ]);
+
+  const runSamText = useCallback(async () => {
+    if (!samLoaded || samBusy) return;
+    const texts = parseSam3TextPrompt(samTextPrompt);
+    if (!texts.length) return;
+    // Archive: require pause. Live freeze-frame does not require pause.
+    if (!isLive && !paused) return;
+    const video = videoRef.current;
+    const jpeg = video ? captureFrame(video) : undefined;
+    if (!jpeg) return;
+    try {
+      const masks = await inferSam3({ imageBase64: jpeg, text: texts });
+      setSegMasks(masks);
+      setInferN(masks.length);
+      setInferKind('sam3');
+    } catch {
+      /* network / 503 */
+    }
+  }, [samLoaded, samBusy, samTextPrompt, isLive, paused, inferSam3]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -1763,6 +1800,12 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     setPlaying(viewerId, true);
     if (editMode) setEditMode(false);
     setFrozenLive([]);
+    // Live freeze SAM overlay must not stick on a moving stream.
+    if (isLive || overlayMode === 'seg') {
+      setSegMasks([]);
+      setInferN(0);
+      setInferKind('—');
+    }
     if (canPublishPlayhead) timelinePlay();
   };
 
@@ -2211,6 +2254,33 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                     >
                       SAM из детекции
                     </Button>
+                    <input
+                      className="bg-dv-deep border border-dv-border px-1 py-0.5 text-[9px] font-mono w-[160px] max-w-[28vw]"
+                      placeholder="trench / окоп; person; vehicle"
+                      value={samTextPrompt}
+                      onChange={(e) => setSamTextPrompt(e.target.value)}
+                      disabled={!isAuthenticated || samBusy}
+                      title="Текстовые промпты через ; (1–3)"
+                      data-testid="sam3-text-input"
+                    />
+                    <Button
+                      size="sm"
+                      disabled={
+                        !isAuthenticated ||
+                        samBusy ||
+                        !parseSam3TextPrompt(samTextPrompt).length ||
+                        (!isLive && !paused)
+                      }
+                      onClick={() => void runSamText()}
+                      title={
+                        isLive
+                          ? 'Freeze-кадр SAM по тексту (detect не останавливается)'
+                          : 'Маска SAM3 по тексту (нужна пауза)'
+                      }
+                      data-testid={isLive ? 'sam3-live-frame' : 'sam3-text-infer'}
+                    >
+                      {isLive ? 'Кадр SAM' : 'По тексту'}
+                    </Button>
                     <Button
                       size="sm"
                       disabled={
@@ -2218,7 +2288,8 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                         samBusy ||
                         !paused ||
                         !viewer?.sourcePath ||
-                        !(samLastPrompt?.points?.length || samLastPrompt?.bboxes?.length)
+                        !hasSamSeed ||
+                        isLive
                       }
                       onClick={() => setSamPropOpen(true)}
                       title="Пропагировать маску вперёд ≤30 кадров"
@@ -2283,6 +2354,76 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                 {liveError}
               </span>
             )}
+          </ToolbarGroup>
+        )}
+
+        {isLive && isAuthenticated && (samReady || samLoaded) && (
+          <ToolbarGroup>
+            {samReady && !samLoaded && (
+              <Button
+                size="sm"
+                disabled={samBusy}
+                onClick={() => void onLoadSam3()}
+                title="Загрузить SAM3 для freeze-кадра (YOLO-detect не выгружается)"
+                data-testid="sam3-load"
+              >
+                {samBusy ? 'SAM…' : 'Загрузить SAM3'}
+              </Button>
+            )}
+            {samLoaded && (
+              <>
+                <input
+                  className="bg-dv-deep border border-dv-border px-1 py-0.5 text-[9px] font-mono w-[160px] max-w-[28vw]"
+                  placeholder="trench / окоп; person; vehicle"
+                  value={samTextPrompt}
+                  onChange={(e) => setSamTextPrompt(e.target.value)}
+                  disabled={samBusy}
+                  title="Текстовые промпты через ; (1–3)"
+                  data-testid="sam3-text-input"
+                />
+                <Button
+                  size="sm"
+                  disabled={samBusy || !parseSam3TextPrompt(samTextPrompt).length}
+                  onClick={() => void runSamText()}
+                  title="Freeze-кадр SAM по тексту (detect продолжает работать)"
+                  data-testid="sam3-live-frame"
+                >
+                  {samBusy ? 'SAM…' : 'Кадр SAM'}
+                </Button>
+                {segMasks.length > 0 && (
+                  <Button
+                    size="sm"
+                    disabled={samBusy}
+                    onClick={() => {
+                      setSegMasks([]);
+                      setInferN(0);
+                      setInferKind('—');
+                    }}
+                    title="Снять временный SAM overlay"
+                    data-testid="sam3-live-clear"
+                  >
+                    Сброс SAM
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  disabled={samBusy}
+                  onClick={() => void unloadSam3()}
+                  title="Выгрузить SAM3 из VRAM"
+                >
+                  Выгрузить SAM
+                </Button>
+              </>
+            )}
+            <span
+              className={`text-[9px] font-mono max-w-[100px] truncate ${
+                samLoaded ? 'text-dv-muted' : 'text-dv-danger'
+              }`}
+              title={samHint || ''}
+              data-testid="sam3-hint"
+            >
+              {samHint || (samReady ? 'sam3' : '')}
+            </span>
           </ToolbarGroup>
         )}
 
@@ -2752,7 +2893,9 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                       </g>
                     );
                   })
-                : overlayObjects.map((obj) => {
+                : (
+                  <>
+                    {overlayObjects.map((obj) => {
                 const { x1, y1, x2, y2 } = obj.bbox;
                 const selected = obj.id === activeDetectionId;
                 const color = obj.color || ACCENT;
@@ -2830,6 +2973,37 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                   </g>
                 );
               })}
+                    {segMasks.map((mask, idx) => {
+                      const pts = mask.polygon_norm
+                        .filter((p) => Array.isArray(p) && p.length >= 2)
+                        .map(([x, y]) => `${x},${y}`)
+                        .join(' ');
+                      if (!pts) return null;
+                      const labelX = mask.polygon_norm[0]?.[0] ?? 0.02;
+                      const labelY = mask.polygon_norm[0]?.[1] ?? 0.02;
+                      return (
+                        <g key={`sam-freeze-${idx}`} style={{ pointerEvents: 'none' }}>
+                          <polygon
+                            points={pts}
+                            fill="rgba(232,125,13,0.28)"
+                            stroke={ACCENT}
+                            strokeWidth={1.25}
+                            vectorEffect="non-scaling-stroke"
+                          />
+                          <text
+                            x={Math.min(0.92, Math.max(0.01, labelX + 0.006))}
+                            y={Math.min(0.98, Math.max(0.018, labelY - 0.008))}
+                            fill={ACCENT}
+                            fontSize={0.012}
+                            fontFamily="ui-sans-serif, system-ui, sans-serif"
+                          >
+                            {mask.class} {(mask.conf * 100).toFixed(0)}%
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </>
+                )}
               {compareMode &&
                 changeOverlays.map((co) => {
                   const { x1, y1, x2, y2 } = co.bbox;

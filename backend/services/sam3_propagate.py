@@ -21,6 +21,7 @@ from services.sam3_engine import (
     _unload_yolo_seg,
     get_sam3_engine,
     mask_to_polygon_norm,
+    normalize_text_prompts,
     resolve_named_weight,
 )
 
@@ -243,6 +244,25 @@ def _run_video_predictor(
     return list(stream)
 
 
+def _run_video_semantic_predictor(
+    clip_path: Path, weight_path: Path, texts: list[str]
+) -> list[Any]:
+    from ultralytics.models.sam import SAM3VideoSemanticPredictor
+
+    predictor = SAM3VideoSemanticPredictor(
+        overrides={
+            "conf": 0.25,
+            "task": "segment",
+            "mode": "predict",
+            "imgsz": 640,
+            "model": str(weight_path),
+            "verbose": False,
+        }
+    )
+    stream = predictor(source=str(clip_path), text=texts, stream=True)
+    return list(stream)
+
+
 def _results_to_frame_masks(result: Any, h: int, w: int) -> list[dict[str, Any]]:
     masks = _masks_from_sam_results([result], h, w)
     if masks:
@@ -303,6 +323,7 @@ def _run(
     max_frames: int,
     points_norm: list[dict[str, Any]],
     bboxes_norm: list[dict[str, Any]],
+    texts: list[str] | None,
     persist: bool,
 ) -> None:
     clip_path: Path | None = None
@@ -337,12 +358,8 @@ def _run(
         if total > 0:
             start_frame = min(start_frame, max(0, total - 1))
 
-        seed_boxes = _seed_bboxes_norm(
-            video_abs=video_abs,
-            start_frame=start_frame,
-            points_norm=points_norm,
-            bboxes_norm=bboxes_norm,
-        )
+        use_text = bool(texts)
+        concepts = normalize_text_prompts(texts) if use_text else []
 
         clip_path, clip_fps, w, h, written = _write_temp_clip(
             video_abs, start_frame, max_frames
@@ -365,8 +382,19 @@ def _run(
             )
             return
 
-        bboxes_px = _norm_bboxes_to_px(seed_boxes, w, h)
-        stream_results = _run_video_predictor(clip_path, weight_path, bboxes_px)
+        if use_text:
+            stream_results = _run_video_semantic_predictor(clip_path, weight_path, concepts)
+            default_label = concepts[0] if concepts else "object"
+        else:
+            seed_boxes = _seed_bboxes_norm(
+                video_abs=video_abs,
+                start_frame=start_frame,
+                points_norm=points_norm,
+                bboxes_norm=bboxes_norm,
+            )
+            bboxes_px = _norm_bboxes_to_px(seed_boxes, w, h)
+            stream_results = _run_video_predictor(clip_path, weight_path, bboxes_px)
+            default_label = "object"
 
         for i, result in enumerate(stream_results):
             if _abort.is_set():
@@ -382,6 +410,10 @@ def _run(
             frame_idx = start_frame + i
             t = float(frame_idx) / clip_fps
             masks = _results_to_frame_masks(result, h, w)
+            if use_text:
+                for m in masks:
+                    if m.get("class") in (None, "", "object"):
+                        m["class"] = default_label
             results.append(
                 {
                     "time_sec": round(t, 3),
@@ -447,13 +479,18 @@ def start(
     max_frames: int = MAX_PROPAGATE_FRAMES,
     points: list[dict[str, Any]] | None = None,
     bboxes: list[dict[str, Any]] | None = None,
+    texts: list[str] | None = None,
     persist: bool = False,
 ) -> dict[str, Any]:
     global _thread
     points = points or []
     bboxes = bboxes or []
-    if not points and not bboxes:
-        raise ValueError("points or bboxes required")
+    texts_raw = texts or []
+    has_visual = bool(points or bboxes)
+    has_text = bool(any(str(t or "").strip() for t in texts_raw))
+    if has_visual == has_text:
+        raise ValueError("points/bboxes OR text required (XOR)")
+    concepts = normalize_text_prompts(texts_raw) if has_text else None
 
     engine = get_sam3_engine()
     st = engine.status()
@@ -496,8 +533,9 @@ def start(
                 source_key,
                 t,
                 frames,
-                points,
-                bboxes,
+                points if has_visual else [],
+                bboxes if has_visual else [],
+                concepts,
                 bool(persist),
             ),
             name=f"sam3-prop-{task_id}",

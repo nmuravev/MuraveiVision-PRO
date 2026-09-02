@@ -60,8 +60,8 @@
 | GET | `/sam3/status` | `{ready, loaded, weight, available[]}` — файл `sam3.pt` vs модель в VRAM |
 | POST | `/sam3/load` | `{weight?}` — только `sam3.pt`; выгружает YOLO-seg (`yolo_seg_unloaded`) |
 | POST | `/sam3/unload` | выгрузить SAM3 |
-| POST | `/sam3/infer` | JPEG + `points`/`bboxes` (norm) → `{masks, ms, weight}` |
-| POST | `/sam3/propagate` | `{video_path, time_sec, max_frames≤30, points?, bboxes?, persist?=false}` → job |
+| POST | `/sam3/infer` | JPEG + (`points`/`bboxes` **XOR** `text` 1–3) → `{masks, ms, weight}` |
+| POST | `/sam3/propagate` | `{video_path, time_sec, max_frames≤30, points?/bboxes? **XOR** text?, persist?=false}` → job |
 | GET | `/sam3/propagate/{task_id}` | прогресс; terminal → `results`, `persisted` |
 | POST | `/sam3/propagate/{task_id}/abort` | прервать |
 

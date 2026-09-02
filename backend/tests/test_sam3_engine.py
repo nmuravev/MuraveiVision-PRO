@@ -144,6 +144,59 @@ class Sam3EngineTests(unittest.TestCase):
         self.assertTrue(self.seg_engine.status()["loaded"])
         self.assertFalse(self.engine.status()["loaded"])
 
+    def test_normalize_text_prompts(self) -> None:
+        self.assertEqual(sam.normalize_text_prompts([" trench ", "person"]), ["trench", "person"])
+        with self.assertRaises(ValueError):
+            sam.normalize_text_prompts([])
+        with self.assertRaises(ValueError):
+            sam.normalize_text_prompts(["a", "b", "c", "d"])
+        with self.assertRaises(ValueError):
+            sam.normalize_text_prompts(["x" * 65])
+
+    def test_infer_text(self) -> None:
+        (self._tmp / "sam3.pt").write_bytes(b"\x00" * 2048)
+        fake_pred = mock.MagicMock(
+            return_value=[
+                _FakeResult(
+                    _FakeMasks(
+                        xyn=[
+                            np.array(
+                                [[0.2, 0.2], [0.8, 0.2], [0.5, 0.8]],
+                                dtype=np.float64,
+                            )
+                        ]
+                    )
+                )
+            ]
+        )
+        with (
+            mock.patch.object(sam, "_load_sam", return_value=mock.MagicMock()),
+            mock.patch.object(sam, "_load_semantic_predictor", return_value=fake_pred),
+        ):
+            self.engine.load_model()
+            out = self.engine.infer_text(self._jpeg(), ["trench", "person"])
+        self.assertEqual(len(out["masks"]), 1)
+        self.assertEqual(out["masks"][0]["class"], "trench")
+        fake_pred.assert_called()
+        kwargs = fake_pred.call_args.kwargs
+        self.assertEqual(kwargs.get("text"), ["trench", "person"])
+
+    def test_semantic_cache_cleared_on_unload(self) -> None:
+        (self._tmp / "sam3.pt").write_bytes(b"\x00" * 2048)
+        fake_pred = mock.MagicMock(return_value=[])
+        with (
+            mock.patch.object(sam, "_load_sam", return_value=mock.MagicMock()),
+            mock.patch.object(sam, "_load_semantic_predictor", return_value=fake_pred) as load_sem,
+        ):
+            self.engine.load_model()
+            self.engine.infer_text(self._jpeg(), ["person"])
+            self.assertIsNotNone(self.engine._semantic_predictor)
+            self.engine.unload_model()
+            self.assertIsNone(self.engine._semantic_predictor)
+            self.engine.load_model()
+            self.engine.infer_text(self._jpeg(), ["vehicle"])
+            self.assertEqual(load_sem.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
