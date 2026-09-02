@@ -20,6 +20,7 @@
 | [PORTABLE.md](PORTABLE.md) | Сборка / поле | Portable ZIP, embeddable Python, состав комплекта |
 | [FEATURES.md](FEATURES.md) | Все | Что реализовано (с примерами использования) |
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | Все | Ограничения, flaky-зоны, вне скоупа |
+| [ERROR_REFERENCE.md](ERROR_REFERENCE.md) | Оператор / инженер | HTTP-ошибки: причины, решения, полевой справочник |
 | [TODO.md](TODO.md) | Продукт / инженеры | Приоритизированный план оставшейся работы |
 | [ROADMAP.md](ROADMAP.md) | Продукт | Бэклог P0–P3, 3D-траектория, Full Kit |
 | [PHASE4_RETRO.md](PHASE4_RETRO.md) | Продукт / инженеры | Ретроспектива Фазы 4, v2 backlog, черновик P3.15 v2 |

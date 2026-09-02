@@ -19,6 +19,12 @@ import { useTimelineStore } from './store/timeline-store';
 import { useViewerStore } from './store/useViewerStore';
 import { useMuraveiStore } from './store/useMuraveiStore';
 import { SplashScreen, shouldShowSplash } from './components/SplashScreen';
+import { ErrorDetailsModal } from './components/ErrorDetailsModal';
+import {
+  SHOW_ERROR_MODAL_EVENT,
+  installApiErrorReporter,
+  type ApiErrorDetails,
+} from './lib/apiError';
 import { logger } from './services/logger';
 
 function App() {
@@ -32,9 +38,21 @@ function App() {
   const [layoutHydrated, setLayoutHydrated] = useState(
     () => usePanelLayoutStore.persist.hasHydrated(),
   );
+  const [apiError, setApiError] = useState<ApiErrorDetails | null>(null);
 
   usePlaybackClock();
   useHotkeys();
+
+  useEffect(() => installApiErrorReporter(), []);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<ApiErrorDetails>).detail;
+      if (detail) setApiError(detail);
+    };
+    window.addEventListener(SHOW_ERROR_MODAL_EVENT, handler);
+    return () => window.removeEventListener(SHOW_ERROR_MODAL_EVENT, handler);
+  }, []);
 
   useEffect(() => {
     if (workspaceMode !== 'liveQuad') return;
@@ -141,6 +159,7 @@ function App() {
           </>
         )}
       </div>
+      <ErrorDetailsModal error={apiError} onClose={() => setApiError(null)} />
     </div>
   );
 }

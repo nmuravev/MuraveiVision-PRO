@@ -5,10 +5,12 @@ import site
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # 1. Air-Gapped: block user site-packages
 site.USER_SITE = None
@@ -110,6 +112,41 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def catalog_http_exception_handler(
+    _request: Request, exc: StarletteHTTPException
+) -> JSONResponse:
+    from services.error_catalog import build_error_payload
+
+    payload = build_error_payload(exc.status_code, exc.detail)
+    return JSONResponse(status_code=exc.status_code, content=payload)
+
+
+@app.exception_handler(RequestValidationError)
+async def catalog_validation_exception_handler(
+    _request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    from services.error_catalog import build_error_payload
+
+    payload = build_error_payload(422, exc.errors())
+    return JSONResponse(status_code=422, content=payload)
+
+
+@app.exception_handler(Exception)
+async def catalog_unhandled_exception_handler(
+    _request: Request, exc: Exception
+) -> JSONResponse:
+    import logging
+
+    from services.error_catalog import build_error_payload
+
+    logging.getLogger("uvicorn.error").error("Unhandled error: %s", exc, exc_info=True)
+    payload = build_error_payload(500, str(exc) or "Internal server error")
+    # Prefer stable catalog title for operators; keep exception text in message via detail.
+    return JSONResponse(status_code=500, content=payload)
+
 
 # Local-only CORS (dev Vite + same-origin production)
 app.add_middleware(
