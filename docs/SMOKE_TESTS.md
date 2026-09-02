@@ -24,6 +24,10 @@
 | `test_sahi_inference.py` | Сравнение `infer()` vs `infer_sahi()`, проверка SAHI-пути | `PASS` (`sahi=true`) |
 | `test_sahi_field.py` | Полевой тест SAHI на сыром кадре из дрон-видео (`archive/video_2026-08-25_09-17-15.mp4`): fast vs SAHI 512×512/0.2 vs 640×640/0.2, per-class counts | `PASS`, пишет `logs/sahi_field_test.json` + `logs/sahi_field_frame.jpg`, печатает вердикт (`SAHI GAIN` / `NO GAIN / NEUTRAL` / `SAHI LOSS`). Observational — не ассертит прирост |
 
+## Field / UI
+
+- [SMOKE_TEST_RESULTS.md](SMOKE_TEST_RESULTS.md) — Playwright ephemeral UI smoke on real drone video (2026-09-02). Heavy SAM3/CD steps mocked; detect path real. Ephemeral test file not kept in git.
+
 ## Категории
 
 - **YOLO/инференс:** `smoke_lbs_ft`, `smoke_video_s3`, `smoke_video_s3_deep`, `test_sahi_inference`, `test_sahi_field`.
