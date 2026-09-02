@@ -3,10 +3,12 @@
 Единая папка проектной документации. Корневой [`README.md`](../README.md) — краткий вход; детали здесь.
 
 **Источник истины для AI-агентов** (читать по порядку, см. [`AGENTS.md`](../AGENTS.md)):
-[`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) → [`ARCHITECTURE.md`](ARCHITECTURE.md) → [`DEVELOPMENT.md`](DEVELOPMENT.md).
+[`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) → [`ARCHITECTURE.md`](ARCHITECTURE.md) → [`DEVELOPMENT.md`](DEVELOPMENT.md) → [`MASTER_PLAN.md`](MASTER_PLAN.md).
 
 | Документ | Для кого | Содержание |
 |----------|----------|------------|
+| [MASTER_PLAN.md](MASTER_PLAN.md) | Продукт / инженеры / ИИ | Сводка статуса, инварианты, backlog, правила auto-sync docs |
+| [DOCS_SYNC_CHECKLIST.md](DOCS_SYNC_CHECKLIST.md) | Все | Чеклист синхронизации документации после изменений |
 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) | ИИ-агенты, новые разработчики | Паспорт проекта: стек, дерево, запреты, быстрый ориентир |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Инженеры + ИИ-агенты | Слои, потоки, UI mosaic (часть A) и инварианты air-gap / detect≠seg (часть B) |
 | [ARCHITECTURE_FOR_AI.md](ARCHITECTURE_FOR_AI.md) | ИИ-агенты | Stub → [ARCHITECTURE.md](ARCHITECTURE.md) |

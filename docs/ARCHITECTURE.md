@@ -1,5 +1,7 @@
 # Архитектура MuraveiVision PRO
 
+> **Invariants:** See [`MASTER_PLAN.md`](MASTER_PLAN.md#2-архитектурные-инварианты) for the complete product-level list; part B below is the agent-facing detail.
+
 Единый документ: **часть A** — слои и потоки для инженера; **часть B** — инварианты для ИИ-агентов. Старый [`ARCHITECTURE_FOR_AI.md`](ARCHITECTURE_FOR_AI.md) — только перенаправление сюда.
 
 ---

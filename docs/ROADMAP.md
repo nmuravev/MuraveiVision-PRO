@@ -1,5 +1,7 @@
 # Roadmap (P0–P3)
 
+> **Master Plan:** See [`MASTER_PLAN.md`](MASTER_PLAN.md) for comprehensive overview (status, invariants, backlog, docs auto-sync).
+
 Согласованное направление: реализовать весь бэклог поэтапно. Этот файл отражает фактический статус исходников; рабочие планы Cursor не являются документацией продукта.
 
 ## Уже сделано (база)
