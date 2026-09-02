@@ -67,11 +67,11 @@ flowchart TB
 | `tracker.py` / `motion.py` | track_id, vx/vy, ego-motion |
 | `trainer.py` | quick finetune + SSE |
 | `classes.py` | 238 YAML + overrides |
-| `similarity.py` | hist+class find-similar (air-gap) |
+| `similarity.py` | find-similar: CLIP image + hist fallback, кэш SQLite |
 | `ollama_proxy.py` | tags/generate, ranking vision/chat |
 | `live_stream.py` / `recorder.py` | RTSP/UDP + REC |
 | `reporter.py` | автономный HTML-отчёт |
-| `db.py` | detections, crops, auth, network, overrides |
+| `db.py` | detections, crops, embeddings, auth, network, overrides |
 | `network_sync.py` | клиентский worker хаба |
 | `usb_models.py` | сканирование USB + безопасный импорт `.pt`/YAML |
 | `telemetry.py` | SRT/CSV → трек, `attach_gps` / backfill на детекциях |
@@ -107,9 +107,9 @@ Commit detections → POST /api/detections/commit
 ### Дообучение
 
 ```
-UpdatePanel → POST /api/train/start
-  → trainer builds YOLO dataset from crops
-  → ultralytics.train(device=cuda|cpu)
+UpdatePanel → POST /api/train/start {epochs, imgsz, batch, resume_from?}
+  → trainer (detect-only, empty_cache)
+  → ultralytics.train(resume=True | fresh)
   → promote yolo26n-ft.pt → force_load
 ```
 

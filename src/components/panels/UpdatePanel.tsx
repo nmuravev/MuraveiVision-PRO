@@ -1,10 +1,26 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Check, Download, Film, LifeBuoy, Package, Square, X, Zap } from 'lucide-react';
 import { downloadAuthorized } from '../../lib/download';
 import { readSse } from '../../lib/readSse';
 import { batchScanProgressPct, useBatchScanStore } from '../../store/useBatchScanStore';
 import { authHeaders, useMuraveiStore } from '../../store/useMuraveiStore';
 import { useViewerStore } from '../../store/useViewerStore';
+
+type TrainCheckpoint = {
+  name: string;
+  size_mb: number;
+  mtime: number;
+  resumable: boolean;
+  metrics?: { epoch?: number; map50?: number } | null;
+};
+
+function vramRisk(imgsz: number, batch: number, vramMb: number): 'ok' | 'warn' | 'danger' {
+  if (vramMb >= 12000) return 'ok';
+  if (imgsz <= 640 && batch <= 4) return 'ok';
+  if (imgsz <= 640 && batch <= 8) return 'warn';
+  if (imgsz <= 800 && batch <= 4) return 'warn';
+  return 'danger';
+}
 
 type ActiveLearningSample = {
   id: string;
@@ -30,6 +46,11 @@ export const UpdatePanel: React.FC = () => {
   const [trainEpoch, setTrainEpoch] = useState(0);
   const [trainEpochs, setTrainEpochs] = useState(10);
   const [trainLog, setTrainLog] = useState<string[]>([]);
+  const [trainImgsz, setTrainImgsz] = useState(640);
+  const [trainBatch, setTrainBatch] = useState(4);
+  const [checkpoints, setCheckpoints] = useState<TrainCheckpoint[]>([]);
+  const [canResume, setCanResume] = useState(false);
+  const [vramMb, setVramMb] = useState(8192);
   const [reviewSamples, setReviewSamples] = useState<ActiveLearningSample[]>([]);
   const [reviewBusy, setReviewBusy] = useState(false);
   const scanStatus = useBatchScanStore((s) => s.status);
@@ -61,14 +82,37 @@ export const UpdatePanel: React.FC = () => {
     setTrainLog((prev) => [...prev.slice(-40), line]);
   };
 
-  const startTrain = async () => {
+  const loadCheckpoints = useCallback(async () => {
+    if (!isAuthenticated) {
+      setCheckpoints([]);
+      setCanResume(false);
+      return;
+    }
+    const res = await fetch('/api/train/checkpoints', { headers: authHeaders() });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      checkpoints?: TrainCheckpoint[];
+      can_resume?: boolean;
+      vram_mb?: number;
+    };
+    setCheckpoints(Array.isArray(data.checkpoints) ? data.checkpoints : []);
+    setCanResume(Boolean(data.can_resume));
+    if (typeof data.vram_mb === 'number') setVramMb(data.vram_mb);
+  }, [isAuthenticated]);
+
+  const startTrain = async (opts?: { resumeFrom?: string }) => {
     setError(null);
     setInfo(null);
     setTrainLog([]);
     const res = await fetch('/api/train/start', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ epochs: 10 }),
+      body: JSON.stringify({
+        epochs: 10,
+        imgsz: trainImgsz,
+        batch: trainBatch,
+        resume_from: opts?.resumeFrom ?? null,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -89,7 +133,10 @@ export const UpdatePanel: React.FC = () => {
           `loss box=${ev.box_loss ?? '—'} cls=${ev.cls_loss ?? '—'} mAP50=${ev.map50 ?? '—'}`,
         );
       }
-      if (ev.status === 'done') setInfo('Дообучение завершено. Модель обновлена.');
+      if (ev.status === 'done') {
+        setInfo('Дообучение завершено. Модель обновлена.');
+        void loadCheckpoints();
+      }
       if (ev.status === 'error') setError(String(ev.error || ev.message || 'Train error'));
     });
   };
@@ -127,6 +174,10 @@ export const UpdatePanel: React.FC = () => {
     void loadReviewQueue();
   }, [loadReviewQueue]);
 
+  useEffect(() => {
+    void loadCheckpoints();
+  }, [loadCheckpoints]);
+
   const collectReviewQueue = async () => {
     setReviewBusy(true);
     try {
@@ -163,6 +214,11 @@ export const UpdatePanel: React.FC = () => {
       setReviewBusy(false);
     }
   };
+
+  const risk = useMemo(
+    () => vramRisk(trainImgsz, trainBatch, vramMb),
+    [trainImgsz, trainBatch, vramMb],
+  );
 
   const pct =
     trainEpochs > 0 && trainEpoch > 0
@@ -309,9 +365,70 @@ export const UpdatePanel: React.FC = () => {
           <span className="font-semibold">Быстрое улучшение</span>
         </div>
         <p className="text-[11px] text-[var(--dv-text-muted)]">
-          Detect-only YOLO26n/ft (SGD/MuSGD, ProgLoss close_mosaic, STAL-style copy_paste).
-          imgsz=1024. Нужно ≥3 детекции с кропами. Без YOLOE/seg.
+          Detect-only YOLO26n/ft. По умолчанию imgsz=640, batch=4 (безопасно для 8 ГБ VRAM).
+          Без YOLOE/seg. Resume подхватывает last.pt прерванного прогона.
         </p>
+        <div className="grid grid-cols-2 gap-2 text-[11px]">
+          <label className="space-y-0.5">
+            <span className="text-[var(--dv-text-muted)]">imgsz ({trainImgsz})</span>
+            <input
+              type="range"
+              min={320}
+              max={1024}
+              step={32}
+              value={trainImgsz}
+              disabled={trainStatus === 'running'}
+              onChange={(e) => setTrainImgsz(Number(e.target.value))}
+              className="w-full"
+            />
+          </label>
+          <label className="space-y-0.5">
+            <span className="text-[var(--dv-text-muted)]">batch ({trainBatch})</span>
+            <input
+              type="range"
+              min={1}
+              max={8}
+              step={1}
+              value={trainBatch}
+              disabled={trainStatus === 'running'}
+              onChange={(e) => setTrainBatch(Number(e.target.value))}
+              className="w-full"
+            />
+          </label>
+        </div>
+        {risk !== 'ok' && (
+          <div
+            className={`text-[10px] flex items-center gap-1 ${
+              risk === 'danger' ? 'text-red-400' : 'text-amber-400'
+            }`}
+          >
+            <AlertTriangle size={12} />
+            {risk === 'danger'
+              ? `Риск OOM на ${vramMb} МБ VRAM. Опустите imgsz до 640 и batch до 4.`
+              : `Повышенная нагрузка на ${vramMb} МБ VRAM. При обрыве — «Продолжить обучение».`}
+          </div>
+        )}
+        <div className="border border-[var(--dv-border)] p-2 space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-[var(--dv-text-muted)]">
+            Точки восстановления
+          </div>
+          {checkpoints.length === 0 ? (
+            <div className="text-[10px] text-[var(--dv-text-muted)]">
+              Нет last.pt / best.pt. Сначала запустите быстрое улучшение.
+            </div>
+          ) : (
+            <ul className="text-[10px] font-mono space-y-0.5 max-h-20 overflow-auto">
+              {checkpoints.slice(0, 8).map((ck) => (
+                <li key={`${ck.name}-${ck.mtime}`}>
+                  {ck.name}
+                  {ck.resumable ? ' · resume' : ''}
+                  {ck.metrics?.map50 != null ? ` · mAP50 ${ck.metrics.map50}` : ''}
+                  {` · ${ck.size_mb} МБ`}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <div className="flex gap-2 flex-wrap">
           <button
             type="button"
@@ -322,9 +439,23 @@ export const UpdatePanel: React.FC = () => {
               busy !== null
             }
             className="px-3 py-1.5 bg-[var(--dv-accent)] text-black rounded-sm disabled:opacity-40 font-medium"
-            onClick={() => void run('train', startTrain)}
+            onClick={() => void run('train', () => startTrain())}
           >
             {trainStatus === 'running' ? 'Обучение…' : 'Быстрое улучшение'}
+          </button>
+          <button
+            type="button"
+            disabled={
+              !isAuthenticated ||
+              !canResume ||
+              trainStatus === 'running' ||
+              scanStatus === 'running' ||
+              busy !== null
+            }
+            className="px-3 py-1.5 bg-sky-700 text-white rounded-sm disabled:opacity-40 font-medium"
+            onClick={() => void run('train', () => startTrain({ resumeFrom: 'last.pt' }))}
+          >
+            Продолжить обучение
           </button>
           <button
             type="button"

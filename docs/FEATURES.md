@@ -31,6 +31,7 @@
 - **CRUD** — создание/правка/удаление, soft-delete, bulk «Очистить».
 - **Scoped-фильтр по видео** — Inspector/Gallery/Viewer/TopBar показывают N текущего ролика.
 - **Inspector** — список детекций, заметки (debounce), флаг, выбор класса при рисовании.
+- **Find-similar** — Inspector «Найти похожие»: CLIP `encode_image` если веса уже на диске, иначе гистограмма. Превью кропа, переход на другой ролик. Кэш векторов в SQLite. `mobileclip2_b.ts` для YOLOE-text, не для поиска кропов.
 - **Compare Sync** — два Viewer, drift-correction 500мс, синхронизация воспроизведения.
 
 ## AI / аналитика
@@ -62,7 +63,7 @@
 - **PDF** — `GET /api/report/pdf`: таблица + примитивная lon/lat-схема (не карта Google Earth).
 - **Гео v1** — sidecar `.SRT`/`.CSV` рядом с роликом в `archive/` → `flight_tracks` и `gps_*` на детекциях (фиксация кадра, ручная рамка, batch-scan). `POST /api/geo/import` дописывает GPS на старые строки. Открытие ролика в Viewer: если у детекций нет GPS — импорт sidecar и повторная загрузка.
 - **KML / GeoJSON** — `GET /api/export/kml?source_video=…` и `/api/export/geojson?source_video=…`. Детекции без GPS пропускаются. KML — основной геоформат (Google Earth). Dropdown «Экспорт» в TopBar.
-- **Training/fine-tune** — `.pt.backup` + `empty_cache`, один callback, promote.
+- **Training/fine-tune** — detect-only, дефолт imgsz 640 / batch 4, resume `last.pt`, `.pt.backup` + `empty_cache`, promote.
 
 ## Portable
 

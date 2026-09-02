@@ -44,6 +44,8 @@ cd backend
 - `test_colmap_poses.py` — COLMAP camera models, `_quat_to_rot`, `nearest_pose`.
 - `test_geo_export.py` — KML XML (escape, lon/lat/alt), GeoJSON FeatureCollection, skip без GPS, детерминированный цвет класса.
 - `test_geo_persist.py` — attach_gps (интерполяция, keep explicit, no-track), persist в SQLite, backfill только null.
+- `test_similarity.py` — cosine ranking, кэш embedding по mtime, 404 без кропа, hist-путь без CLIP.
+- `test_trainer_resume.py` — список last/best/epoch, skip seg, 404 без last.pt, clamp imgsz/batch.
 - `test_usb_import.py` — валидация .pt (nc 12/238) и YAML, dry-run без копии, confirm + `.backup`.
 
 ## SAHI

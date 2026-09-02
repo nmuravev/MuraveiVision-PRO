@@ -28,9 +28,9 @@
 ## P1 — модель и разметка
 
 5. Ollama-assisted autolabel на 238 (confirm UI) — **сделано**  
-6. Find-similar на mobileclip  
+6. Find-similar (CLIP image + hist fallback, кэш векторов) — **сделано**  
 7. Per-class conf в словаре — **сделано**  
-8. Resume train UI (imgsz/batch/VRAM)
+8. Resume train UI (imgsz/batch/VRAM, last.pt) — **сделано**  
 
 ## Portable Full Kit (связка с п.5)
 

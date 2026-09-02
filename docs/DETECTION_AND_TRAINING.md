@@ -31,7 +31,9 @@ UI словарь: панель SYSTEM → ClassDictionary. Soft floors / scene 
 
 UpdatePanel → кропы из SQLite → Ultralytics detect train → promote `yolo26n-ft.pt`.
 
-Параметры (ориентир): SGD, imgsz 640–1024, copy_paste/mosaic, device auto CUDA.
+Параметры по умолчанию (8 ГБ VRAM / RTX 5060): **imgsz=640**, **batch=4** (слайдеры до 1024 / 8 с предупреждением OOM). Только detect: `yolo26n.pt` / `yolo26n-ft.pt`, не YOLOE-seg.
+
+**Resume:** `GET /api/train/checkpoints` показывает `last.pt` / `best.pt` / `epoch*.pt`. Кнопка «Продолжить обучение» шлёт `resume_from=last.pt` (`model.train(resume=True)`). Перед стартом — `torch.cuda.empty_cache()`. Нет чекпоинта → 404, обучение не стартует.
 
 ## Offline / backup finetune
 

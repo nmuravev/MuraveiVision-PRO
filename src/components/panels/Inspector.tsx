@@ -30,6 +30,16 @@ import type { ClassCatalogItem, PersistedDetection } from '../../types/muravei';
 const AI_UNAVAILABLE = 'ИИ недоступен. Проверьте запуск Ollama';
 const FOLDS_KEY = 'muravei-inspector-folds';
 
+type SimilarHit = {
+  id: string;
+  class_name: string;
+  class_id?: number;
+  similarity: number;
+  time_sec: number;
+  source_video: string;
+  crop_path?: string | null;
+};
+
 type FoldKey = 'active' | 'recon' | 'similar' | 'ai' | 'detections';
 
 type FoldState = Record<FoldKey, boolean>;
@@ -233,6 +243,7 @@ export const Inspector: React.FC = () => {
   const classCatalog = useMuraveiStore((s) => s.classCatalog);
   const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
   const setActiveDetection = useMuraveiStore((s) => s.setActiveDetection);
+  const setActiveDetectionId = useMuraveiStore((s) => s.setActiveDetectionId);
   const hydrateDetections = useMuraveiStore((s) => s.hydrateDetections);
   const clearDetections = useMuraveiStore((s) => s.clearDetections);
   const deleteAllForSource = useMuraveiStore((s) => s.deleteAllForSource);
@@ -262,9 +273,8 @@ export const Inspector: React.FC = () => {
     reason: string;
   } | null>(null);
   const [similarBusy, setSimilarBusy] = useState(false);
-  const [similar, setSimilar] = useState<
-    { id: string; class_name: string; similarity: number; time_sec: number; source_video: string }[]
-  >([]);
+  const [similar, setSimilar] = useState<SimilarHit[]>([]);
+  const [similarMethod, setSimilarMethod] = useState<string | null>(null);
   const [similarError, setSimilarError] = useState<string | null>(null);
   const [show3dBusy, setShow3dBusy] = useState(false);
   const [folds, setFolds] = useState<FoldState>(() => loadFolds());
@@ -493,9 +503,11 @@ export const Inspector: React.FC = () => {
       if (!res.ok) {
         setSimilarError(typeof data.detail === 'string' ? data.detail : 'find-similar failed');
         setSimilar([]);
+        setSimilarMethod(null);
         return;
       }
       setSimilar(Array.isArray(data.results) ? data.results : []);
+      setSimilarMethod(typeof data.method === 'string' ? data.method : null);
     } catch {
       setSimilarError('find-similar failed');
     } finally {
@@ -518,6 +530,33 @@ export const Inspector: React.FC = () => {
     useTimelineStore.getState().setPendingJump(row.time_sec);
     seekTo(row.time_sec);
     setActiveDetection(toDetectedObject(row, classCatalog));
+  };
+
+  const jumpToSimilar = async (row: SimilarHit) => {
+    const stub: PersistedDetection = {
+      id: row.id,
+      created_at: 0,
+      source_video: row.source_video || '',
+      time_sec: row.time_sec,
+      frame_idx: 0,
+      class_id: row.class_id ?? 0,
+      class_name: row.class_name,
+      confidence: 0,
+      bbox_x: 0,
+      bbox_y: 0,
+      bbox_w: 0.1,
+      bbox_h: 0.1,
+      crop_path: row.crop_path,
+      is_edited: false,
+      user_notes: '',
+      is_deleted: false,
+      origin: 'auto',
+    };
+    jumpToDetection(stub);
+    if (row.source_video) {
+      await hydrateDetections(row.source_video);
+      setActiveDetectionId(row.id);
+    }
   };
 
   const runAnalyze = async () => {
@@ -621,7 +660,14 @@ export const Inspector: React.FC = () => {
     : reconManifest
       ? reconManifest.status
       : 'нет сцены';
-  const similarStatus = similar.length > 0 ? String(similar.length) : undefined;
+  const similarStatus =
+    similar.length > 0
+      ? `${similar.length}${similarMethod === 'clip' ? ' · CLIP' : similarMethod === 'hist+class' ? ' · гист.' : ''}`
+      : similarMethod === 'clip'
+        ? 'CLIP'
+        : similarMethod === 'hist+class'
+          ? 'гист.'
+          : undefined;
   const aiStatus = aiBusy ? '…' : aiText ? 'готово' : undefined;
 
   return (
@@ -875,23 +921,32 @@ export const Inspector: React.FC = () => {
             <Images size={12} />
             {similarBusy ? 'Поиск…' : 'Найти похожие'}
           </button>
+          {similarMethod ? (
+            <div className="text-[10px] text-dv-muted">
+              Метод: {similarMethod === 'clip' ? 'CLIP (изображение)' : 'гистограмма'}
+            </div>
+          ) : null}
           {similarError && <div className="text-[10px] text-dv-danger">{similarError}</div>}
           {similar.length > 0 && (
-            <div className="max-h-28 overflow-auto space-y-0.5">
+            <div className="max-h-40 overflow-auto space-y-0.5">
               {similar.map((row) => (
                 <button
                   key={row.id}
                   type="button"
-                  className="w-full text-left text-[10px] px-1 py-0.5 hover:bg-dv-surface rounded-sm"
-                  onClick={() => {
-                    const full = detections.find((d) => d.id === row.id);
-                    if (full) jumpToDetection(full);
-                  }}
+                  className="w-full text-left text-[10px] px-1 py-0.5 hover:bg-dv-surface rounded-sm flex items-center gap-1.5"
+                  onClick={() => void jumpToSimilar(row)}
                 >
-                  <span className="font-mono text-dv-muted mr-1">
-                    {(row.similarity * 100).toFixed(0)}%
+                  <img
+                    src={detectionCropSrc(row.id, row.crop_path)}
+                    alt=""
+                    className="w-8 h-8 object-cover bg-dv-deep border border-dv-border shrink-0"
+                  />
+                  <span className="min-w-0 truncate">
+                    <span className="font-mono text-dv-muted mr-1">
+                      {(row.similarity * 100).toFixed(0)}%
+                    </span>
+                    {classLabelRu(undefined, row.class_name, classCatalog)} · {formatTs(row.time_sec)}
                   </span>
-                  {classLabelRu(undefined, row.class_name, classCatalog)} · {formatTs(row.time_sec)}
                 </button>
               ))}
             </div>

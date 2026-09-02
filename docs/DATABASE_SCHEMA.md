@@ -136,11 +136,24 @@
 
 `UNIQUE(detection_id, feedback_type)`. Индекс: `idx_active_learning_status(status, created_at DESC)`.
 
+### `detection_embeddings` — кэш векторов find-similar
+
+| Столбец | Тип | Описание |
+|---------|-----|----------|
+| `detection_id` | TEXT PK | id детекции |
+| `method` | TEXT | `clip` или `hist+class` (не смешивать) |
+| `crop_mtime` | REAL | mtime файла кропа; смена → пересчёт |
+| `dim` | INTEGER | длина вектора |
+| `embedding` | BLOB | float32 little-endian, L2-norm |
+| `computed_at` | REAL | epoch |
+
 ## Миграции
 
 `init_db()` после создания таблиц проверяет `PRAGMA table_info` и добивает недостающие столбцы через `ALTER TABLE`:
 - `detections`: `ai_class_name`, `gps_lat`, `gps_lon`, `gps_alt`
 - `network_targets`: `source_video`, `synced_at`
 - `network_config`: `hub_pin`, `base_id`
+- `detection_embeddings`: `CREATE TABLE IF NOT EXISTS` (кэш find-similar)
+- `detection_embeddings`: `CREATE TABLE IF NOT EXISTS` (кэш CLIP/hist векторов)
 
 Обновление схемы — только аддитивное; явных drop-миграций нет.

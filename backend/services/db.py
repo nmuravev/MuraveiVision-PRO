@@ -195,6 +195,14 @@ def init_db() -> None:
                 );
                 CREATE INDEX IF NOT EXISTS idx_active_learning_status
                     ON active_learning_samples(status, created_at DESC);
+                CREATE TABLE IF NOT EXISTS detection_embeddings (
+                    detection_id TEXT PRIMARY KEY,
+                    method TEXT NOT NULL,
+                    crop_mtime REAL NOT NULL,
+                    dim INTEGER NOT NULL,
+                    embedding BLOB NOT NULL,
+                    computed_at REAL NOT NULL
+                );
                 """
             )
             cols = {r[1] for r in conn.execute("PRAGMA table_info(detections)").fetchall()}
@@ -1079,5 +1087,83 @@ def get_flight_track(video_path: str) -> dict[str, Any] | None:
             "created_at": row["created_at"],
             "point_count": len(points),
         }
+    finally:
+        conn.close()
+
+
+def get_embedding(detection_id: str) -> dict[str, Any] | None:
+    init_db()
+    det_id = str(detection_id or "")
+    if not det_id:
+        return None
+    conn = _connect()
+    try:
+        row = conn.execute(
+            """
+            SELECT detection_id, method, crop_mtime, dim, embedding, computed_at
+            FROM detection_embeddings WHERE detection_id = ?
+            """,
+            (det_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "detection_id": row["detection_id"],
+            "method": row["method"],
+            "crop_mtime": float(row["crop_mtime"] or 0),
+            "dim": int(row["dim"] or 0),
+            "embedding": bytes(row["embedding"] or b""),
+            "computed_at": float(row["computed_at"] or 0),
+        }
+    finally:
+        conn.close()
+
+
+def upsert_embedding(
+    detection_id: str,
+    method: str,
+    crop_mtime: float,
+    embedding: bytes,
+    dim: int,
+) -> None:
+    init_db()
+    det_id = str(detection_id or "")
+    if not det_id:
+        raise ValueError("detection_id пуст")
+    blob = bytes(embedding or b"")
+    now = time.time()
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO detection_embeddings
+                (detection_id, method, crop_mtime, dim, embedding, computed_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(detection_id) DO UPDATE SET
+                method = excluded.method,
+                crop_mtime = excluded.crop_mtime,
+                dim = excluded.dim,
+                embedding = excluded.embedding,
+                computed_at = excluded.computed_at
+            """,
+            (det_id, str(method), float(crop_mtime), int(dim), blob, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_embedding(detection_id: str) -> bool:
+    init_db()
+    det_id = str(detection_id or "")
+    if not det_id:
+        return False
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "DELETE FROM detection_embeddings WHERE detection_id = ?", (det_id,)
+        )
+        conn.commit()
+        return cur.rowcount > 0
     finally:
         conn.close()

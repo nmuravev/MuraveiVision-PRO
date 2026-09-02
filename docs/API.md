@@ -114,7 +114,9 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 
 ## Detections — `/api/detections`
 
-`GET` требует `source_video` (без него возвращает пустой список; `all_videos=true` только для служебных инструментов). CRUD + `POST /commit` (пакет кадра + crops), `GET /{id}/crop`, `GET /{id}/similar`. Массовый soft-delete: `DELETE ?source_video=...&all=true`.
+`GET` требует `source_video` (без него возвращает пустой список; `all_videos=true` только для служебных инструментов). CRUD + `POST /commit` (пакет кадра + crops), `GET /{id}/crop`. Массовый soft-delete: `DELETE ?source_video=...&all=true`.
+
+`POST /find-similar` — `{ detection_id, top_k?, same_class? }`. Ищет похожие кропы по CLIP `encode_image` (если пакет `clip` и локальный кэш `ViT-B-32.pt` уже есть) иначе `hist+class`. Ответ: `{ query_id, method, same_class, results[] }` где `method` = `clip` | `hist+class`. Векторы кэшируются в `detection_embeddings`. `mobileclip2_b.ts` — текстовый энкодер YOLOE, кропы им не кодируются.
 
 `POST /` и `POST /commit` при наличии sidecar/трека пишут `gps_lat` / `gps_lon` / `gps_alt` (интерполяция по `time_sec`). Ошибка гео не блокирует фиксацию.
 
@@ -122,7 +124,8 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| POST | `/api/train/start` | `{ epochs }` |
+| POST | `/api/train/start` | `{ epochs?, resume_from?, imgsz?, batch? }` |
+| GET | `/api/train/checkpoints` | last/best/epoch*.pt, `can_resume`, `vram_mb` |
 | POST | `/api/train/stop` | остановка |
 | GET | `/api/train/status` | состояние |
 | GET | `/api/train/stream` | SSE прогресс |

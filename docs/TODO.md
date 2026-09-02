@@ -10,7 +10,7 @@
 
 ## Важный функционал (1–2 недели)
 
-Фаза 3.1 (сеть) и 3.2 (4×Live + Event Timeline) закрыты. P0.1 (batch-скан) и P0.4 (гео v1 на детекциях) закрыты. Дальше P1.6 / P1.8 или Фаза 4.
+Фаза 3.1 (сеть) и 3.2 (4×Live + Event Timeline) закрыты. P0.1, P0.4, P1.6 и **P1.8 (resume train)** закрыты. Дальше Фаза 4 (seg / change detection).
 
 ## Улучшения / оптимизация (потом)
 
@@ -73,3 +73,9 @@
 - **Гео v1 на всех детекциях (P0.4)** — DONE:
   - Sidecar SRT/CSV → `gps_*` при create/commit/batch-scan; `POST /api/geo/import` backfill старых строк.
   - `test_geo_persist.py`.
+- **Find-similar (P1.6)** — DONE:
+  - CLIP `encode_image` при локальном `ViT-B-32.pt`, иначе `hist+class`; кэш `detection_embeddings`.
+  - Inspector: превью кропа, jump на другой ролик, бейдж метода. `test_similarity.py`.
+- **Resume train UI (P1.8)** — DONE:
+  - `GET /api/train/checkpoints`, `POST /api/train/start` принимает `resume_from` / `imgsz` / `batch`.
+  - Detect-only, empty_cache, дефолт 640/4. `test_trainer_resume.py`.
