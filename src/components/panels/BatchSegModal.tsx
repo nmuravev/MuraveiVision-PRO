@@ -30,6 +30,7 @@ export const BatchSegModal: React.FC<BatchSegModalProps> = ({
   const message = useBatchSegStore((s) => s.message);
   const error = useBatchSegStore((s) => s.error);
   const frames = useBatchSegStore((s) => s.frames);
+  const samUnloaded = useBatchSegStore((s) => s.samUnloaded);
   const startBatch = useBatchSegStore((s) => s.startBatch);
   const abortBatch = useBatchSegStore((s) => s.abortBatch);
   const clear = useBatchSegStore((s) => s.clear);
@@ -135,6 +136,11 @@ export const BatchSegModal: React.FC<BatchSegModalProps> = ({
         )}
 
         {message ? <p className="text-[10px] text-dv-muted">{message}</p> : null}
+        {samUnloaded ? (
+          <p className="text-[10px] text-dv-accent" data-testid="batch-seg-sam-unloaded">
+            SAM выгружен для запуска batch сегментации
+          </p>
+        ) : null}
         {error ? <p className="text-[10px] text-dv-danger">{error}</p> : null}
 
         {(status === 'done' || status === 'aborted') && (

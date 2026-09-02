@@ -33,6 +33,7 @@ _state: dict[str, Any] = {
     "confidence": DEFAULT_CONF,
     "results": [],
     "owned_load": False,
+    "sam_unloaded": False,
 }
 
 
@@ -50,6 +51,7 @@ def _snapshot(*, include_results: bool = False) -> dict[str, Any]:
             "video_path": _state["video_path"],
             "frame_step": int(_state["frame_step"]),
             "confidence": float(_state["confidence"]),
+            "sam_unloaded": bool(_state.get("sam_unloaded")),
         }
         if include_results or _state["status"] in ("done", "aborted", "error"):
             out["results"] = list(_state["results"])
@@ -214,6 +216,17 @@ def start(
     step = max(1, min(300, int(frame_step)))
     conf = float(max(0.05, min(0.99, confidence)))
 
+    sam_unloaded = False
+    try:
+        from services.sam3_engine import get_sam3_engine
+
+        eng = get_sam3_engine()
+        if eng.status().get("loaded"):
+            eng.unload_model()
+            sam_unloaded = True
+    except Exception:  # noqa: BLE001
+        pass
+
     with _lock:
         if _state["status"] == "running" or (_thread is not None and _thread.is_alive()):
             raise RuntimeError("Batch сегментация уже выполняется")
@@ -234,6 +247,7 @@ def start(
                 "confidence": conf,
                 "results": [],
                 "owned_load": False,
+                "sam_unloaded": sam_unloaded,
             }
         )
         thr = threading.Thread(
@@ -245,7 +259,9 @@ def start(
         _thread = thr
         thr.start()
 
-    return _snapshot(include_results=False)
+    out = _snapshot(include_results=False)
+    out["sam_unloaded"] = sam_unloaded
+    return out
 
 
 def abort(task_id: str) -> dict[str, Any]:

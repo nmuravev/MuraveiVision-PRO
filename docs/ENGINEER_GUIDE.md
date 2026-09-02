@@ -46,6 +46,7 @@ npm install
 - Система → «Сегментация (архив)»: выбрать вес → **Загрузить** / **Выгрузить**. API: `POST /api/seg/load` `{weight}`, `POST /api/seg/unload`. JWT operator+ (engineer `0000000` и master тоже).
 - Infer (`POST /api/seg/infer`) требует `loaded=true`. Модель остаётся в VRAM до unload или переключения Viewer SEG→Детекция.
 - На 8 ГБ не держать seg и detect одновременно. Смена ролика в SEG-режиме unload не вызывает.
+- **SAM3 (P3.13.3a):** `assets/models/sam3.pt` (офлайн). Viewer: «Загрузить SAM3» / «Точка» / «SAM из детекции». API: `/api/seg/sam3/{status,load,unload,infer}`. Загрузка SAM3 выгружает YOLO-seg и наоборот. Batch seg выгружает SAM3 (toast), без auto-reload.
 
 ## Импорт модели с USB
 

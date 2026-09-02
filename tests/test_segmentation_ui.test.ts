@@ -189,3 +189,77 @@ test('Batch segmentation modal opens and shows progress', async ({ page, request
   await expect(page.getByTestId('batch-seg-summary')).toContainText('Обработано 10 кадров');
   await expect(page.getByTestId('batch-seg-summary')).toContainText('найдено 3 масок');
 });
+
+test('SAM3 toolbar load and point tool', async ({ page, request }) => {
+  const authResponse = await request.post('http://127.0.0.1:8000/api/auth/login', {
+    data: { pin: '0000000', role: 'engineer' },
+  });
+  expect(authResponse.ok()).toBeTruthy();
+  const auth = (await authResponse.json()) as { token: string };
+
+  let samStatus = {
+    ready: true,
+    loaded: false,
+    weight: null as string | null,
+    available: ['sam3.pt'],
+  };
+
+  await page.route('**/api/seg/status**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ready: true,
+        loaded: false,
+        weight: null,
+        available: ['yolo26n-seg.pt'],
+      }),
+    });
+  });
+
+  await page.route('**/api/seg/sam3/status**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(samStatus),
+    });
+  });
+
+  await page.route('**/api/seg/sam3/load**', async (route) => {
+    samStatus = {
+      ready: true,
+      loaded: true,
+      weight: 'sam3.pt',
+      available: ['sam3.pt'],
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        ...samStatus,
+        yolo_seg_unloaded: false,
+      }),
+    });
+  });
+
+  await page.addInitScript((token) => {
+    localStorage.setItem('muravei-token', token);
+    localStorage.setItem('muravei-splash-done-v1', '1');
+    localStorage.removeItem('muraveivision-layout-v3');
+    localStorage.removeItem('muraveivision-layout-v2');
+    localStorage.removeItem('muraveivision-layout-v1');
+  }, auth.token);
+
+  await page.goto('/');
+  const viewer1 = page.getByTestId('viewer-1');
+  await expect(viewer1).toBeVisible({ timeout: 15_000 });
+
+  await viewer1.getByRole('button', { name: 'Сегментация' }).click();
+  const loadSam = viewer1.getByTestId('sam3-load');
+  await expect(loadSam).toBeVisible();
+  await loadSam.click();
+  await expect(viewer1.getByTestId('sam3-tool-point')).toBeVisible();
+  await expect(viewer1.getByTestId('sam3-from-detection')).toBeVisible();
+  await expect(viewer1.getByTestId('sam3-hint')).toContainText('sam3');
+});

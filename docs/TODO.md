@@ -12,16 +12,17 @@
 
 **Phase 3 / P3 закрыт** — см. [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md). 104 unit-теста; P3.15 v2 + E2E + error catalog.
 
-Следующий фокус: **P3.13.3 SAM2** (P2) или полевой smoke batch seg.
+Следующий фокус: **P3.13.3b SAM3 video/text** (P2) или полевой smoke.
 
-### 1. P3.13.3 SAM2 — P2
+### 1. P3.13.3b SAM3 — P2 (deferred)
 
-- [ ] SAM2 / realtime seg / маски в SQLite (см. также «Фичи будущего»)
+- [ ] Video propagate / text prompts / SQLite masks / Live (не 3a)
 
 ### P3.13 / P3.15 — DONE
 
 - [x] Seg v1.1 archive load/unload + frame (`ea881fc`)
 - [x] Batch segmentation (P3.13.2): `/api/seg/batch`, modal, in-memory results
+- [x] SAM3 interactive refine (P3.13.3a): `sam3_engine`, `/api/seg/sam3/*`, Viewer point/bbox
 - [x] Change Detection v2 + E2E + error catalog (см. [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md))
 
 ## Улучшения / оптимизация (потом)

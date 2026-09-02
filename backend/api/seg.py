@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from services import batch_segmentation
 from services.security import require_role
+from services.sam3_engine import get_sam3_engine
 from services.segmentation_engine import DEFAULT_CONF, get_seg_engine
 
 router = APIRouter(prefix="/api/seg", tags=["seg"])
@@ -20,6 +21,8 @@ _MISSING = (
 _NOT_LOADED = (
     "Сегментация: модель не в VRAM. Загрузите через POST /api/seg/load или панель Система."
 )
+_SAM3_MISSING = "SAM3 недоступен: нет assets/models/sam3.pt. Скопируйте вес офлайн."
+_SAM3_NOT_LOADED = "SAM3: модель не в VRAM. Загрузите через POST /api/seg/sam3/load."
 
 
 class SegInferRequest(BaseModel):
@@ -36,6 +39,29 @@ class BatchSegRequest(BaseModel):
     frame_step: int = Field(default=30, ge=1, le=300)
     confidence: float = Field(default=0.5, ge=0.05, le=0.99)
     weight: str | None = None
+
+
+class Sam3LoadRequest(BaseModel):
+    weight: str | None = None
+
+
+class Sam3Point(BaseModel):
+    x: float = Field(..., ge=0.0, le=1.0)
+    y: float = Field(..., ge=0.0, le=1.0)
+    label: int = Field(default=1, ge=0, le=1)
+
+
+class Sam3BBox(BaseModel):
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+
+class Sam3InferRequest(BaseModel):
+    image_base64: str | None = None
+    points: list[Sam3Point] | None = None
+    bboxes: list[Sam3BBox] | None = None
 
 
 def _decode_image(raw: str | None) -> bytes:
@@ -61,13 +87,19 @@ async def seg_load(
 ) -> dict[str, Any]:
     engine = get_seg_engine()
     name = (body.weight if body else None) or None
+    sam_was = bool(get_sam3_engine().status().get("loaded"))
     try:
         path = await asyncio.to_thread(engine.load_model, name)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=_MISSING) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "ok", **engine.status(), "weight": path.name}
+    return {
+        "status": "ok",
+        **engine.status(),
+        "weight": path.name,
+        "sam_unloaded": sam_was,
+    }
 
 
 @router.post("/unload")
@@ -148,3 +180,72 @@ async def seg_batch_abort(
         return await asyncio.to_thread(batch_segmentation.abort, task_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/sam3/status")
+async def sam3_status(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    return get_sam3_engine().status()
+
+
+@router.post("/sam3/load")
+async def sam3_load(
+    body: Sam3LoadRequest | None = None,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    engine = get_sam3_engine()
+    name = (body.weight if body else None) or None
+    yolo_was = bool(get_seg_engine().status().get("loaded"))
+    try:
+        path = await asyncio.to_thread(engine.load_model, name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=_SAM3_MISSING) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "status": "ok",
+        **engine.status(),
+        "weight": path.name,
+        "yolo_seg_unloaded": yolo_was,
+    }
+
+
+@router.post("/sam3/unload")
+async def sam3_unload(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    engine = get_sam3_engine()
+    await asyncio.to_thread(engine.unload_model)
+    return {"status": "ok", **engine.status()}
+
+
+@router.post("/sam3/infer")
+async def sam3_infer(
+    body: Sam3InferRequest,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    engine = get_sam3_engine()
+    st = engine.status()
+    if not st["ready"]:
+        raise HTTPException(status_code=503, detail=_SAM3_MISSING)
+    if not st["loaded"]:
+        raise HTTPException(status_code=503, detail=_SAM3_NOT_LOADED)
+    try:
+        jpeg = _decode_image(body.image_base64)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="invalid image") from exc
+    if not jpeg:
+        raise HTTPException(status_code=400, detail="image required")
+    points = [p.model_dump() for p in (body.points or [])]
+    bboxes = [b.model_dump() for b in (body.bboxes or [])]
+    if not points and not bboxes:
+        raise HTTPException(status_code=400, detail="points or bboxes required")
+    try:
+        return await asyncio.to_thread(
+            lambda: engine.infer_prompts(jpeg, points_norm=points, bboxes_norm=bboxes)
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=_SAM3_NOT_LOADED) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

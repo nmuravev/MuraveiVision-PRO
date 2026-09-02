@@ -67,6 +67,7 @@ class BatchSegmentationTests(unittest.TestCase):
                     "confidence": 0.5,
                     "results": [],
                     "owned_load": False,
+                    "sam_unloaded": False,
                 }
             )
 
@@ -126,6 +127,25 @@ class BatchSegmentationTests(unittest.TestCase):
             # Prefer aborted when stop was requested mid-run
             st = self._wait_terminal(task_id)
             self.assertIn(st["status"], ("aborted", "done"))
+
+    def test_batch_seg_unloads_sam3(self) -> None:
+        engine = mock.MagicMock()
+        engine.status.return_value = {"loaded": True, "ready": True}
+        engine.infer_jpeg.return_value = {"masks": [], "ms": 1}
+        sam_eng = mock.MagicMock()
+        sam_eng.status.return_value = {"loaded": True}
+
+        with (
+            mock.patch.object(bs, "get_seg_engine", return_value=engine),
+            mock.patch.object(bs, "_resolve_video", return_value=(Path("archive/clip.mp4"), "archive/clip.mp4")),
+            mock.patch.object(bs.cv2, "VideoCapture", return_value=_FakeCap(60, 30.0)),
+            mock.patch("services.sam3_engine.get_sam3_engine", return_value=sam_eng),
+        ):
+            started = bs.start(video_path="archive/clip.mp4", frame_step=30, confidence=0.5)
+            self.assertTrue(started.get("sam_unloaded"))
+            sam_eng.unload_model.assert_called()
+            st = self._wait_terminal(started["task_id"])
+            self.assertEqual(st["status"], "done")
 
     def test_batch_seg_unloads_model_when_owned(self) -> None:
         engine = mock.MagicMock()

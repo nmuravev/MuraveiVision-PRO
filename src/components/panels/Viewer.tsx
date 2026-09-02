@@ -38,6 +38,7 @@ import { CompareSyncModal } from './CompareSyncModal';
 import { HeatmapOverlay } from './HeatmapOverlay';
 import { BatchSegModal } from './BatchSegModal';
 import type { BatchSegMask } from '../../store/useBatchSegStore';
+import { useSam3Store } from '../../store/useSam3Store';
 
 interface ViewerProps {
   viewerId: string;
@@ -397,6 +398,19 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const [segBusy, setSegBusy] = useState(false);
   const segGenRef = useRef(0);
   const overlayModeRef = useRef<OverlayMode>('detect');
+  const samReady = useSam3Store((s) => s.ready);
+  const samLoaded = useSam3Store((s) => s.loaded);
+  const samBusy = useSam3Store((s) => s.busy);
+  const samTool = useSam3Store((s) => s.tool);
+  const samHint = useSam3Store((s) => s.hint);
+  const samNotice = useSam3Store((s) => s.lastUnloadNotice);
+  const refreshSamStatus = useSam3Store((s) => s.refreshStatus);
+  const loadSam3 = useSam3Store((s) => s.load);
+  const unloadSam3 = useSam3Store((s) => s.unload);
+  const setSamTool = useSam3Store((s) => s.setTool);
+  const inferSam3 = useSam3Store((s) => s.infer);
+  const clearSamNotice = useSam3Store((s) => s.clearNotice);
+  const markSamUnloadedByYolo = useSam3Store((s) => s.markUnloadedByYolo);
 
   const isLive = viewer?.sourceMode === 'live' && Boolean(viewer?.liveActive);
   isLiveRef.current = isLive;
@@ -1167,12 +1181,14 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
       .catch(() => {
         /* ignore */
       });
-  }, [overlayMode, isAuthenticated]);
+    void unloadSam3();
+  }, [overlayMode, isAuthenticated, unloadSam3]);
 
   useEffect(() => {
     if (overlayMode !== 'seg') {
       setSegMasks([]);
       setSegBusy(false);
+      setSamTool('none');
       return;
     }
     if (!isAuthenticated) return;
@@ -1205,11 +1221,12 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           setSegHint('Нет yolo26n-seg.pt — детекция работает');
         }
       }
+      if (!cancelled) await refreshSamStatus();
     })();
     return () => {
       cancelled = true;
     };
-  }, [overlayMode, isAuthenticated]);
+  }, [overlayMode, isAuthenticated, refreshSamStatus, setSamTool]);
 
   const runSegFrame = useCallback(async () => {
     if (overlayMode !== 'seg' || isLive || !segLoaded) return;
@@ -1293,6 +1310,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
         loaded?: boolean;
         weight?: string;
         detail?: string;
+        sam_unloaded?: boolean;
       };
       if (!res.ok) {
         setSegHint(typeof data.detail === 'string' ? data.detail : 'загрузите модель (Система)');
@@ -1301,12 +1319,85 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
       }
       setSegLoaded(Boolean(data.loaded) || true);
       setSegHint(data.weight || 'yolo26-seg');
+      markSamUnloadedByYolo();
     } catch {
       setSegHint('загрузите модель (Система)');
     } finally {
       setSegBusy(false);
     }
-  }, [isAuthenticated, segReady]);
+  }, [isAuthenticated, segReady, markSamUnloadedByYolo]);
+
+  const onLoadSam3 = useCallback(async () => {
+    if (!isAuthenticated || !samReady) return;
+    await loadSam3();
+    if (useSam3Store.getState().loaded) {
+      setSegLoaded(false);
+      setSegHint(segReady ? 'загрузите модель (Система)' : 'Нет yolo26n-seg.pt — детекция работает');
+    }
+  }, [isAuthenticated, samReady, loadSam3, segReady]);
+
+  const runSamPoint = useCallback(
+    async (e: React.PointerEvent) => {
+      if (!samLoaded || samBusy || !paused) return;
+      const svg = svgRef.current;
+      if (!svg) return;
+      const r = svg.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      const p = {
+        x: clamp01((e.clientX - r.left) / r.width),
+        y: clamp01((e.clientY - r.top) / r.height),
+      };
+      e.stopPropagation();
+      e.preventDefault();
+      const video = videoRef.current;
+      const jpeg = video ? captureFrame(video) : undefined;
+      if (!jpeg) return;
+      const label = e.shiftKey ? 0 : 1;
+      try {
+        const masks = await inferSam3({
+          imageBase64: jpeg,
+          points: [{ x: p.x, y: p.y, label }],
+        });
+        setSegMasks(masks);
+        setInferN(masks.length);
+        setInferKind('sam3');
+      } catch {
+        /* network / 503 */
+      }
+    },
+    [samLoaded, samBusy, paused, inferSam3],
+  );
+
+  const runSamFromDetection = useCallback(async () => {
+    if (!samLoaded || samBusy || !paused || !activeDetectionId) return;
+    const obj =
+      overlayObjects.find((o) => o.id === activeDetectionId) ||
+      liveObjects.find((o) => o.id === activeDetectionId);
+    if (!obj?.bbox) return;
+    const video = videoRef.current;
+    const jpeg = video ? captureFrame(video) : undefined;
+    if (!jpeg) return;
+    const { x1, y1, x2, y2 } = obj.bbox;
+    try {
+      const masks = await inferSam3({
+        imageBase64: jpeg,
+        bboxes: [{ x1, y1, x2, y2 }],
+      });
+      setSegMasks(masks);
+      setInferN(masks.length);
+      setInferKind('sam3');
+    } catch {
+      /* ignore */
+    }
+  }, [
+    samLoaded,
+    samBusy,
+    paused,
+    activeDetectionId,
+    overlayObjects,
+    liveObjects,
+    inferSam3,
+  ]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -2080,6 +2171,72 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                 >
                   {segHint || (segReady ? 'seg' : 'нет весов')}
                 </span>
+                {samReady && !samLoaded && (
+                  <Button
+                    size="sm"
+                    disabled={!isAuthenticated || samBusy || segBusy}
+                    onClick={() => void onLoadSam3()}
+                    title="Загрузить SAM3 (выгрузит YOLO-seg)"
+                    data-testid="sam3-load"
+                  >
+                    {samBusy ? 'SAM…' : 'Загрузить SAM3'}
+                  </Button>
+                )}
+                {samLoaded && (
+                  <>
+                    <Button
+                      size="sm"
+                      active={samTool === 'point'}
+                      disabled={!isAuthenticated || samBusy}
+                      onClick={() => setSamTool(samTool === 'point' ? 'none' : 'point')}
+                      title="Точка: ЛКМ — объект, Shift+ЛКМ — фон. Пауза."
+                      data-testid="sam3-tool-point"
+                    >
+                      Точка
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={
+                        !isAuthenticated ||
+                        samBusy ||
+                        !paused ||
+                        !activeDetectionId
+                      }
+                      onClick={() => void runSamFromDetection()}
+                      title="Маска SAM3 по bbox активной детекции"
+                      data-testid="sam3-from-detection"
+                    >
+                      SAM из детекции
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={!isAuthenticated || samBusy}
+                      onClick={() => void unloadSam3()}
+                      title="Выгрузить SAM3 из VRAM"
+                    >
+                      Выгрузить SAM
+                    </Button>
+                  </>
+                )}
+                <span
+                  className={`text-[9px] font-mono max-w-[120px] truncate ${
+                    samLoaded ? 'text-dv-muted' : 'text-dv-danger'
+                  }`}
+                  title={samHint || ''}
+                  data-testid="sam3-hint"
+                >
+                  {samHint || (samReady ? 'sam3' : '')}
+                </span>
+                {samNotice ? (
+                  <span
+                    className="text-[9px] text-dv-accent max-w-[180px] truncate"
+                    title={samNotice}
+                    data-testid="sam3-notice"
+                    onClick={() => clearSamNotice()}
+                  >
+                    {samNotice}
+                  </span>
+                ) : null}
               </>
             )}
           </ToolbarGroup>
@@ -2510,15 +2667,25 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
             <svg
               ref={svgRef}
               className={`absolute inset-0 w-full h-full ${
-                overlayMode === 'seg' || viewTool === 'pan'
-                  ? 'pointer-events-none'
-                  : editMode
+                overlayMode === 'seg'
+                  ? samTool === 'point'
                     ? 'cursor-crosshair'
-                    : 'cursor-pointer'
+                    : 'pointer-events-none'
+                  : viewTool === 'pan'
+                    ? 'pointer-events-none'
+                    : editMode
+                      ? 'cursor-crosshair'
+                      : 'cursor-pointer'
               }`}
               viewBox="0 0 1 1"
               preserveAspectRatio="none"
-              onPointerDown={(e) => onOverlayPointerDown(e, null, 'draw')}
+              onPointerDown={(e) => {
+                if (overlayMode === 'seg' && samTool === 'point') {
+                  void runSamPoint(e);
+                  return;
+                }
+                onOverlayPointerDown(e, null, 'draw');
+              }}
               onPointerMove={onOverlayPointerMove}
               onPointerUp={(e) => void onOverlayPointerUp(e)}
               onPointerCancel={(e) => void onOverlayPointerUp(e)}

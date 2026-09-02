@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { authHeaders } from './useMuraveiStore';
+import { useSam3Store } from './useSam3Store';
 
 export type BatchSegMask = {
   class: string;
@@ -24,6 +25,7 @@ type BatchSegApiState = {
   message: string;
   error: string | null;
   results: BatchSegFrame[] | null;
+  sam_unloaded?: boolean;
 };
 
 interface BatchSegStore {
@@ -36,6 +38,7 @@ interface BatchSegStore {
   message: string;
   error: string | null;
   frames: BatchSegFrame[];
+  samUnloaded: boolean;
   startBatch: (params: {
     videoPath: string;
     frameStep: number;
@@ -56,6 +59,7 @@ function stopPoll() {
 
 function applyApi(set: (partial: Partial<BatchSegStore>) => void, data: BatchSegApiState) {
   const status = (data.status || 'idle') as BatchSegStatus;
+  const samUnloaded = Boolean(data.sam_unloaded);
   set({
     taskId: data.task_id,
     status,
@@ -66,7 +70,11 @@ function applyApi(set: (partial: Partial<BatchSegStore>) => void, data: BatchSeg
     message: data.message || '',
     error: data.error,
     frames: Array.isArray(data.results) ? data.results : [],
+    ...(data.sam_unloaded != null ? { samUnloaded } : {}),
   });
+  if (samUnloaded) {
+    useSam3Store.getState().markUnloadedForBatch();
+  }
   if (status === 'done' || status === 'error' || status === 'aborted') {
     stopPoll();
   }
@@ -82,6 +90,7 @@ export const useBatchSegStore = create<BatchSegStore>((set, get) => ({
   message: '',
   error: null,
   frames: [],
+  samUnloaded: false,
 
   clear: () => {
     stopPoll();
@@ -95,6 +104,7 @@ export const useBatchSegStore = create<BatchSegStore>((set, get) => ({
       message: '',
       error: null,
       frames: [],
+      samUnloaded: false,
     });
   },
 
@@ -109,6 +119,7 @@ export const useBatchSegStore = create<BatchSegStore>((set, get) => ({
       message: 'Запуск…',
       error: null,
       frames: [],
+      samUnloaded: false,
     });
     try {
       const res = await fetch('/api/seg/batch', {

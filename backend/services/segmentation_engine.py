@@ -180,6 +180,13 @@ class SegmentationEngine:
             path = resolve_seg_weights()
             if path is None:
                 raise FileNotFoundError("seg weights missing")
+        # Mutual VRAM exclusion with SAM3
+        try:
+            from services.sam3_engine import get_sam3_engine
+
+            get_sam3_engine().unload_model()
+        except Exception:  # noqa: BLE001
+            pass
         with self._lock:
             if self._model is not None and self._weight_name == path.name:
                 return path

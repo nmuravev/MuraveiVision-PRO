@@ -57,8 +57,14 @@
 | POST | `/batch` | batch по ролику: `{video_path, frame_step=30, confidence=0.5, weight?}` → `{task_id, status, progress…}` (один job; 409 если уже running) |
 | GET | `/batch/{task_id}` | прогресс; при `done`/`aborted`/`error` — `results: [{time_sec, masks[]}]` |
 | POST | `/batch/{task_id}/abort` | прервать job |
+| GET | `/sam3/status` | `{ready, loaded, weight, available[]}` — файл `sam3.pt` vs модель в VRAM |
+| POST | `/sam3/load` | `{weight?}` — только `sam3.pt`; выгружает YOLO-seg (`yolo_seg_unloaded`) |
+| POST | `/sam3/unload` | выгрузить SAM3 |
+| POST | `/sam3/infer` | JPEG + `points[{x,y,label}]` и/или `bboxes[{x1,y1,x2,y2}]` (norm) → `{masks, ms, weight}` |
 
-`ready` = файл есть; `loaded` = модель в памяти. **Infer требует `loaded`** (иначе 503). Batch: если модель уже в VRAM — оставляет; если batch сам загрузил — выгружает в `finally`. Нет файла → 503, детекция не меняется. `imgsz=640`. Маски batch **не** пишутся в SQLite (in-memory на время задачи).
+`ready` = файл есть; `loaded` = модель в памяти. **Infer требует `loaded`** (иначе 503). Batch: если модель уже в VRAM — оставляет; если batch сам загрузил — выгружает в `finally`. Старт batch выгружает SAM3 (`sam_unloaded`) — UI toast, без auto-reload. Нет файла → 503, детекция не меняется. `imgsz=640`. Маски batch **не** пишутся в SQLite (in-memory на время задачи).
+
+**SAM3 (P3.13.3a):** interactive refine в архиве (точка / bbox). Mutual VRAM с YOLO-seg. Не Live, не SQLite, не train. Вес офлайн: `assets/models/sam3.pt` (`from ultralytics import SAM`).
 
 ## Change Detection — `/api/change-detection` (Compare Sync)
 
