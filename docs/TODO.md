@@ -10,9 +10,9 @@
 
 ## Следующий спринт
 
-**P3.15 v2** закрыт (sync + export + heatmap + E2E). Ретроспектива: [PHASE4_RETRO.md](PHASE4_RETRO.md#sprint-2-p315-v2-completion).
+**Phase 3 / P3 закрыт** — см. [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md). 104 unit-теста; P3.15 v2 + E2E + error catalog.
 
-Следующий фокус: **P3.13.2 Batch segmentation** или финальная ретро Phase 3.
+Следующий фокус: **P3.13.2 Batch segmentation**.
 
 ### 1. P3.13.2 Batch segmentation — P1
 
@@ -27,8 +27,10 @@
 
 - [x] Auto time sync (P3.15.2): GPS tracks → detections fallback → сегменты (`8279f8f`)
 - [x] HTML/KML export (P3.15.3): `GET /export`, Inspector кнопки (`8f93bb1`)
-- [x] Diff heatmap (P3.15.4): `image_diff.heatmap_b64` + Viewer «Теплокарта»
-- [x] Playwright E2E: seg UI + change analyze / heatmap
+- [x] Diff heatmap (P3.15.4): `image_diff.heatmap_b64` + Viewer «Теплокарта» (`8b2ff99`)
+- [x] Playwright E2E: seg UI + change analyze / heatmap (`4aa75af`)
+- [x] Error reference system (`7a30f1d`)
+- [x] Final Phase 3 retrospective ([PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md))
 
 ## Улучшения / оптимизация (потом)
 

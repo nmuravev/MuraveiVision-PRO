@@ -62,7 +62,7 @@
 15. Audio cue по bbox — **DONE** (RulesPanel: beep/alarm/none)  
 16. USB offline model manager — **DONE** (4.1, scan + validate + confirm + force_load)  
 
-Ретроспектива: [PHASE4_RETRO.md](PHASE4_RETRO.md) (Sprint 1 + Sprint 2).
+Ретроспектива: [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md) (итог); детали спринтов — [PHASE4_RETRO.md](PHASE4_RETRO.md).
 
 ## Next Sprint / Backlog
 
@@ -70,9 +70,8 @@
 |---|-----|--------|-----------|
 | 1 | P3.13.2 | Batch-сегментация ролика | P1 |
 | 2 | P3.13.3 | SAM2 (если модель) | P2 |
-| 3 | Retro | Финальная ретроспектива Phase 3 | — |
 
-Чеклисты: [TODO.md](TODO.md). Детали Sprint 2: [PHASE4_RETRO.md](PHASE4_RETRO.md#sprint-2-p315-v2-completion).
+Чеклисты: [TODO.md](TODO.md).
 
 ## Вне скоупа
 

@@ -23,7 +23,8 @@
 | [ERROR_REFERENCE.md](ERROR_REFERENCE.md) | Оператор / инженер | HTTP-ошибки: причины, решения, полевой справочник |
 | [TODO.md](TODO.md) | Продукт / инженеры | Приоритизированный план оставшейся работы |
 | [ROADMAP.md](ROADMAP.md) | Продукт | Бэклог P0–P3, 3D-траектория, Full Kit |
-| [PHASE4_RETRO.md](PHASE4_RETRO.md) | Продукт / инженеры | Ретроспектива Фазы 4, v2 backlog, черновик P3.15 v2 |
+| [PHASE4_RETRO.md](PHASE4_RETRO.md) | Продукт / инженеры | Sprint notes P3.13/P3.15 |
+| [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md) | Продукт / инженеры | Финальная ретроспектива Phase 3 / P3 |
 | [TESTING.md](TESTING.md) | Все | Запуск тестов (Playwright + unittest + SAHI + build) |
 | [SMOKE_TESTS.md](SMOKE_TESTS.md) | Все | Инвентарь smoke-скриптов |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Разработчики | Окружение Python 3.12, запуск, smoke, правила |

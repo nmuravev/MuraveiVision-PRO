@@ -79,10 +79,15 @@ Closed Auto Sync (`8279f8f`), Export (`8f93bb1`), E2E (`4aa75af`), Heatmap (P3.1
 Full sync → analyze → export → heatmap workflow operational.
 Architecture kept clean (separate `time_sync.py`, reuse of `geo_export.py` / `change_export.py`).
 
-**Next:** финальная ретроспектива Phase 3 или P3.13.2 Batch segmentation.
+**Next:** см. [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md) — Phase 3 закрыт; дальше P3.13.2 Batch segmentation.
+
+## Финальная ретроспектива
+
+**Готово:** [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md) (метрики, уроки, решение по мастер-плану).
 
 ## Связанные документы
 
-- [ROADMAP.md](ROADMAP.md) — P3.15 v2 DONE; Next = batch seg / SAM2 / retro
+- [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md) — финальная ретро Phase 3 / P3
+- [ROADMAP.md](ROADMAP.md) — P3 DONE; Next = batch seg / SAM2
 - [TODO.md](TODO.md) — чеклисты следующего спринта
 - [ARCHITECTURE.md](ARCHITECTURE.md) — инварианты seg / change detection (часть B)
