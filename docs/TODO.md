@@ -12,25 +12,17 @@
 
 **Phase 3 / P3 закрыт** — см. [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md). 104 unit-теста; P3.15 v2 + E2E + error catalog.
 
-Следующий фокус: **P3.13.2 Batch segmentation**.
+Следующий фокус: **P3.13.3 SAM2** (P2) или полевой smoke batch seg.
 
-### 1. P3.13.2 Batch segmentation — P1
-
-- [ ] Batch seg scan (аналог batch_scan, без train)
-- [ ] Экспорт масок GeoTIFF/KML — по запросу
-
-### 2. P3.13.3 SAM2 — P2
+### 1. P3.13.3 SAM2 — P2
 
 - [ ] SAM2 / realtime seg / маски в SQLite (см. также «Фичи будущего»)
 
-### P3.15 v2 — DONE
+### P3.13 / P3.15 — DONE
 
-- [x] Auto time sync (P3.15.2): GPS tracks → detections fallback → сегменты (`8279f8f`)
-- [x] HTML/KML export (P3.15.3): `GET /export`, Inspector кнопки (`8f93bb1`)
-- [x] Diff heatmap (P3.15.4): `image_diff.heatmap_b64` + Viewer «Теплокарта» (`8b2ff99`)
-- [x] Playwright E2E: seg UI + change analyze / heatmap (`4aa75af`)
-- [x] Error reference system (`7a30f1d`)
-- [x] Final Phase 3 retrospective ([PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md))
+- [x] Seg v1.1 archive load/unload + frame (`ea881fc`)
+- [x] Batch segmentation (P3.13.2): `/api/seg/batch`, modal, in-memory results
+- [x] Change Detection v2 + E2E + error catalog (см. [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md))
 
 ## Улучшения / оптимизация (потом)
 

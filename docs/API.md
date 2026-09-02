@@ -54,8 +54,11 @@
 | POST | `/load` | `{weight?}` — whitelist имён; без имени — nano, затем small. 400 если не whitelist, 503 если файла нет |
 | POST | `/unload` | выгрузить из VRAM (`empty_cache`) |
 | POST | `/infer` | кадр JPEG (base64) + `confidence` → `{masks: [{class, conf, polygon_norm}], ms, weight}` |
+| POST | `/batch` | batch по ролику: `{video_path, frame_step=30, confidence=0.5, weight?}` → `{task_id, status, progress…}` (один job; 409 если уже running) |
+| GET | `/batch/{task_id}` | прогресс; при `done`/`aborted`/`error` — `results: [{time_sec, masks[]}]` |
+| POST | `/batch/{task_id}/abort` | прервать job |
 
-`ready` = файл есть; `loaded` = модель в памяти. **Infer требует `loaded`** (иначе 503). Нет файла → 503, детекция не меняется. `imgsz=640`. Модель остаётся в VRAM до `unload` или переключения Viewer SEG→Детекция.
+`ready` = файл есть; `loaded` = модель в памяти. **Infer требует `loaded`** (иначе 503). Batch: если модель уже в VRAM — оставляет; если batch сам загрузил — выгружает в `finally`. Нет файла → 503, детекция не меняется. `imgsz=640`. Маски batch **не** пишутся в SQLite (in-memory на время задачи).
 
 ## Change Detection — `/api/change-detection` (Compare Sync)
 

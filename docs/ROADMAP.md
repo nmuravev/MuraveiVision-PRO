@@ -55,6 +55,7 @@
 ## P3 — DONE (v1 + v2 core)
 
 13. Seg-маски (P3.13 v1.1) — **DONE** (`ea881fc`): archive-only, load/unload VRAM, кнопка кадра, полигоны SVG. Не в `/ws/detect`, не в 4×Live, не в train.  
+13b. Batch segmentation (P3.13.2) — **DONE**: `POST /api/seg/batch`, modal, frame_step, in-memory results + seek.  
 14. Change Detection (P3.15 v1) — **DONE** (`a798b15`): Compare Sync, GPS-matching + ORB fallback, Inspector, цветные bbox.  
 14b. Auto Time Sync (P3.15.2) — **DONE** (`8279f8f`): GPS tracks → detections fallback → сегменты, CompareSyncModal.  
 14c. HTML/KML Export (P3.15.3) — **DONE** (`8f93bb1`): `GET /export`, Inspector кнопки, `change_export` / `build_change_kml`.  
@@ -68,8 +69,8 @@
 
 | # | ID | Задача | Приоритет |
 |---|-----|--------|-----------|
-| 1 | P3.13.2 | Batch-сегментация ролика | P1 |
-| 2 | P3.13.3 | SAM2 (если модель) | P2 |
+| 1 | P3.13.3 | SAM2 (если модель) | P2 |
+| 2 | Export | GeoTIFF/KML масок batch seg | по запросу |
 
 Чеклисты: [TODO.md](TODO.md).
 

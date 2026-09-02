@@ -36,6 +36,8 @@ import {
 } from '../../store/useChangeDetectionStore';
 import { CompareSyncModal } from './CompareSyncModal';
 import { HeatmapOverlay } from './HeatmapOverlay';
+import { BatchSegModal } from './BatchSegModal';
+import type { BatchSegMask } from '../../store/useBatchSegStore';
 
 interface ViewerProps {
   viewerId: string;
@@ -274,6 +276,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const showHeatmap = useChangeDetectionStore((s) => s.showHeatmap);
   const setShowHeatmap = useChangeDetectionStore((s) => s.setShowHeatmap);
   const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [batchSegOpen, setBatchSegOpen] = useState(false);
   const analysisConfig = useMuraveiStore((s) => s.analysisConfig);
   const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
   useAutoBatchScan(viewer?.sourcePath ?? undefined, isAuthenticated);
@@ -2049,6 +2052,20 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                 </Button>
                 <Button
                   size="sm"
+                  disabled={
+                    !isAuthenticated ||
+                    !segLoaded ||
+                    !viewer?.sourcePath ||
+                    segBusy ||
+                    isLive
+                  }
+                  onClick={() => setBatchSegOpen(true)}
+                  title="Пакетная сегментация ролика (шаг кадров)"
+                >
+                  Batch сегментация
+                </Button>
+                <Button
+                  size="sm"
                   disabled={!isAuthenticated || !segLoaded || segBusy}
                   onClick={() => void unloadSegModel()}
                   title="Выгрузить seg-модель из VRAM"
@@ -2752,6 +2769,25 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           videoAfter={useViewerStore.getState().viewers['viewer-2']?.sourcePath || ''}
           onSyncComplete={({ timeBefore, timeAfter }) => {
             cdRequestSeek(timeBefore, timeAfter);
+          }}
+        />
+      ) : null}
+      {overlayMode === 'seg' && batchSegOpen ? (
+        <BatchSegModal
+          open={batchSegOpen}
+          videoPath={viewer?.sourcePath || ''}
+          onClose={() => setBatchSegOpen(false)}
+          onPickFrame={(timeSec, masks) => {
+            setPaused(true);
+            seekTo(timeSec);
+            applyVideoSeek(timeSec, { force: true });
+            const mapped: SegMask[] = (masks as BatchSegMask[]).map((m) => ({
+              class: m.class,
+              conf: m.conf,
+              polygon_norm: m.polygon_norm,
+            }));
+            setSegMasks(mapped);
+            setOverlayMode('seg');
           }}
         />
       ) : null}

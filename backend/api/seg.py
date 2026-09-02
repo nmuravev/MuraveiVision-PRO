@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from services import batch_segmentation
 from services.security import require_role
 from services.segmentation_engine import DEFAULT_CONF, get_seg_engine
 
@@ -27,6 +28,13 @@ class SegInferRequest(BaseModel):
 
 
 class SegLoadRequest(BaseModel):
+    weight: str | None = None
+
+
+class BatchSegRequest(BaseModel):
+    video_path: str = Field(..., min_length=1)
+    frame_step: int = Field(default=30, ge=1, le=300)
+    confidence: float = Field(default=0.5, ge=0.05, le=0.99)
     weight: str | None = None
 
 
@@ -96,3 +104,47 @@ async def seg_infer(
         raise HTTPException(status_code=503, detail=_MISSING) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/batch")
+async def seg_batch_start(
+    body: BatchSegRequest,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(
+            lambda: batch_segmentation.start(
+                video_path=body.video_path,
+                frame_step=body.frame_step,
+                confidence=body.confidence,
+                weight=body.weight,
+            )
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/batch/{task_id}")
+async def seg_batch_status(
+    task_id: str,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(batch_segmentation.status, task_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/batch/{task_id}/abort")
+async def seg_batch_abort(
+    task_id: str,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(batch_segmentation.abort, task_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
