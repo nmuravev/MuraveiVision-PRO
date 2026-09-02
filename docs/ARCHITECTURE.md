@@ -74,7 +74,7 @@ flowchart TB
 | `ollama_proxy.py` | tags/generate, ranking vision/chat |
 | `live_stream.py` / `recorder.py` | RTSP/UDP + REC |
 | `reporter.py` | автономный HTML-отчёт |
-| `db.py` | detections, crops, embeddings, auth, network, overrides |
+| `db.py` | detections, crops, embeddings, auth, network, overrides, **seg_masks** (opt-in, не train) |
 | `network_sync.py` | клиентский worker хаба |
 | `usb_models.py` | сканирование USB + безопасный импорт `.pt`/YAML |
 | `telemetry.py` | SRT/CSV → трек, `attach_gps` / backfill на детекциях |
@@ -153,8 +153,10 @@ Viewer поддерживает до 4 инстансов, Архив|Live, pan/
 1. **Air-gap first** — нет обязательных внешних вызовов в рантайме оператора. Сборка Portable может качать embeddable Python только на машине сборки.
 2. **Monolith local** — один FastAPI-процесс + статика `dist/` (или Vite dev). UI не ходит на `:11434` напрямую.
 3. **Mosaic IDE** — раскладка `react-mosaic-component`, не фиксированный Mini/Pro из legacy.
-4. **Detect ≠ Segment ≠ SAM3** — быстрое обучение и `yolo26n-ft` — box-detect; YOLOE-seg не использовать как train base. Archive-only сегментация (`segmentation_engine.py`, веса `yolo26n-seg.pt` / `yolo26s-seg.pt`) не грузится в `yolo_engine` / `trainer`, не пишет SQLite detections. SAM3 (`sam3_engine.py` / `sam3_propagate.py`, `sam3.pt`) — interactive refine + short propagate; opt-in таблица `seg_masks` (не `detections`, trainer/AL игнорируют). YOLO-seg ↔ SAM3 взаимно выгружают VRAM. Нет файла или модель не в VRAM → `POST /api/seg/infer` / `/sam3/infer` / `/sam3/propagate` = 503, детекция без изменений. Явные `load`/`unload`.
-5. **Change detection read-only** — `change_detection.py` + `POST /api/change-detection/analyze`: читает SQLite detections + optional ORB/diff fallback; **не пишет** в БД, не вызывает YOLO infer, не импортирует `yolo_engine` / `trainer` / `segmentation_engine`. UI: отдельный слой `changeOverlays`, не мутировать YOLO `overlayObjects`.
+4. **Detect ≠ Segment ≠ SAM3** — быстрое обучение и `yolo26n-ft` — box-detect; YOLOE-seg не использовать как train base. Archive-only сегментация (`segmentation_engine.py`, веса `yolo26n-seg.pt` / `yolo26s-seg.pt`) не грузится в `yolo_engine` / `trainer`, не пишет SQLite detections. SAM3 (`sam3_engine.py` / `sam3_propagate.py`, `sam3.pt`) — interactive refine + short propagate. YOLO-seg ↔ SAM3 взаимно выгружают VRAM. Нет файла или модель не в VRAM → `POST /api/seg/infer` / `/sam3/infer` / `/sam3/propagate` = 503, детекция без изменений. Явные `load`/`unload`.
+5. **`seg_masks` изолирована от `detections`** — opt-in таблица для SAM/seg полигонов (`persist=true` на propagate). Active Learning, trainer и `/api/detections*` **не читают и не пишут** `seg_masks`. Soft-delete по `track_id`. Не смешивать с bbox-обучением.
+6. **SAM3 propagate = temp clip** — `SAM3VideoPredictor` получает короткий клип (≤30 кадров вперёд от playhead), не весь ролик в VRAM/на диске как source для сканирования. После job клип удаляется; image SAM остаётся отдельным контуром от video predictor.
+7. **Change detection read-only** — `change_detection.py` + `POST /api/change-detection/analyze`: читает SQLite detections + optional ORB/diff fallback; **не пишет** в БД, не вызывает YOLO infer, не импортирует `yolo_engine` / `trainer` / `segmentation_engine`. UI: отдельный слой `changeOverlays`, не мутировать YOLO `overlayObjects`.
 
 ## 2. Инференс (обязательное поведение)
 

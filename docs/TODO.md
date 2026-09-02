@@ -1,6 +1,6 @@
 # TODO — приоритизированный план
 
-Оба мастерплана (`masterplan_field_readiness` A–I, `mosaic_yolo_davinci` Фазы 0–10), **Response Validator** и **Masterplan v3 Фаза 1+2** завершены и подтверждены тестами. Ниже — оставшаяся работа по приоритетам. Ограничения без плана — в [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
+Оба мастерплана (`masterplan_field_readiness` A–I, `mosaic_yolo_davinci` Фазы 0–10), **Response Validator**, **Masterplan v3**, и **Phase 3 / P3** (seg + change detection + SAM3 3a/3b) завершены и подтверждены тестами. Ниже — оставшаяся работа по приоритетам. Ограничения без плана — в [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
 
 > Примечание: предыдущий `REMAINING_WORK.md` ошибочно отмечал Response Validator как нереализованный — **исправлено**: валидатор реализован, протестирован (15 unit-тестов), задокументирован в [API.md](API.md).
 
@@ -8,30 +8,44 @@
 
 На данный момент открытых критических багов нет.
 
-## Следующий спринт
+## Backlog (после Phase 3)
 
-**Phase 3 / P3 закрыт** — см. [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md). 104 unit-теста; P3.15 v2 + E2E + error catalog.
+**Phase 3 / P3 закрыт** — см. [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md). 121+ unit-тестов; Playwright E2E (seg/batch/SAM/CD); error catalog.
 
-Следующий фокус: полевой smoke SAM3 / Phase 3 final retro.
+### 1. P3.13.3c — SAM3 semantic / Live (P2)
 
-### 1. P3.13.3c (deferred)
+- [ ] Text / concept prompts (`SAM3SemanticPredictor` или эквивалент Ultralytics)
+- [ ] Исследование Live (только после VRAM-профиля; не ломать Detect)
+- [ ] Full-video propagate (сейчас только ≤30 frames)
 
-- [ ] Text prompts / Live / full-video propagate
+### 2. Performance (P2)
 
-### P3.13 / P3.15 — DONE
+- [ ] Profiling batch seg / SAM propagate на 8 ГБ
+- [ ] Полевой smoke: archive SAM3 + Compare Sync на реальных роликах
+
+### 3. По запросу
+
+- [ ] GeoTIFF/KML масок batch/propagate
+- [ ] Новые фичи от пользователей
+
+## P3.13 / P3.15 — DONE
 
 - [x] Seg v1.1 archive load/unload + frame (`ea881fc`)
-- [x] Batch segmentation (P3.13.2): `/api/seg/batch`, modal, in-memory results
-- [x] SAM3 interactive refine (P3.13.3a): `sam3_engine`, `/api/seg/sam3/*`, Viewer point/bbox
-- [x] SAM3 short propagate (P3.13.3b): `SAM3VideoPredictor`, temp clip ≤30, opt-in `seg_masks`
-- [x] Change Detection v2 + E2E + error catalog (см. [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md))
+- [x] Batch segmentation (P3.13.2) (`2f7a86c`)
+- [x] SAM3 interactive refine (P3.13.3a) (`8baa39f`)
+- [x] SAM3 short propagate (P3.13.3b) (`b533f0d`)
+- [x] Change Detection v1 (`a798b15`)
+- [x] Auto Time Sync (P3.15.2) (`8279f8f`)
+- [x] HTML/KML export (P3.15.3) (`8f93bb1`)
+- [x] Diff heatmap (P3.15.4) (`8b2ff99`)
+- [x] Playwright E2E seg/CD (`4aa75af`)
+- [x] Error reference system (`7a30f1d`)
 
 ## Улучшения / оптимизация (потом)
 
 Открытых пунктов техдолга 5.2 / 5.3 нет — оба закрыты (см. ниже).
 
-- Performance profiling при 8 GB VRAM
-- Quick-start guide для полевых инженеров
+- Quick-start guide для полевых инженеров (по желанию)
 
 ## Фичи будущего (когда остальное готово)
 
@@ -39,12 +53,11 @@
 - Native multi-monitor windows.
 - OCR-only телеметрия (расширение geo-scope).
 - Cloud/SaaS-режим (если потребуется).
-- SAM2 / realtime seg / маски в SQLite.
 
 ## Закрыто (контекст)
 
 - Мастерпланы A–I, mosaic Фазы 0–10 — DONE.
-- SAHI — DONE (`test_sahi_inference.py` PASS). **Баг SAHI исправлен** (`slice_image` kwargs для 0.12.6) — `test_sahi_field.py` PASS на сыром кадре из дрон-видео.
+- SAHI — DONE (`test_sahi_inference.py` PASS). **Баг SAHI исправлен** (`slice_image` patch для 0.12.6) — `test_sahi_field.py` PASS на сыром кадре из дрон-видео.
 - Response Validator — DONE (15 unit-тестов PASS, интеграция в `_finalize_sync`).
 - **Masterplan v3 Фаза 1** — DONE:
   - 1.1 Полевой тест SAHI на сыром 4K-кадре БПЛА — `backend/scripts/test_sahi_field.py`, `logs/sahi_field_test.json`.
@@ -99,12 +112,6 @@
 - **Archive seg (P3.13)** — DONE:
   - `segmentation_engine.py` + `/api/seg` status/load/unload/infer; Viewer кнопка кадра; Admin load.
   - Полигоны SVG, не train. `test_segmentation.py`.
-- **Change detection (P3.15 v1)** — DONE:
-  - `change_detection.py` + `POST /api/change-detection/analyze`; Compare Sync UI (кнопка, Inspector, changeOverlays).
-  - GPS stable/moved/new/removed + ORB fallback. `test_change_detection.py`.
-- **Auto time sync (P3.15.2)** — DONE:
-  - `time_sync.py` + `POST /api/change-detection/sync`; CompareSyncModal (сегменты, Auto/GPS/Детекции).
-  - Fallback tracks → detections → manual hint. `test_time_sync.py`.
-- **Change export (P3.15.3)** — DONE:
-  - `GET /api/change-detection/export`; HTML (`change_export.py`) + KML (`geo_export.build_change_kml`).
-  - Inspector «Экспорт HTML/KML». `test_change_export.py`.
+  - Batch + SAM3 3a/3b — см. таблицу выше и [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md).
+- **Change detection (P3.15)** — DONE:
+  - v1 analyze + v2 sync/export/heatmap — см. коммиты в [ROADMAP.md](ROADMAP.md).

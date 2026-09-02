@@ -52,27 +52,31 @@
 11. KML/GeoJSON + PDF — **DONE** (Stage 1 / 3.3)  
 12. Hotkeys оператора — **DONE** (Stage 1 / 3.4)  
 
-## P3 — DONE (v1 + v2 core)
+## P3 — DONE (segmentation + change detection + field UX)
 
 13. Seg-маски (P3.13 v1.1) — **DONE** (`ea881fc`): archive-only, load/unload VRAM, кнопка кадра, полигоны SVG. Не в `/ws/detect`, не в 4×Live, не в train.  
-13b. Batch segmentation (P3.13.2) — **DONE**: `POST /api/seg/batch`, modal, frame_step, in-memory results + seek.
-13c. SAM3 interactive refine (P3.13.3a) — **DONE**: `sam3.pt`, point/bbox, mutual VRAM YOLO-seg.
-13d. SAM3 short propagate (P3.13.3b) — **DONE**: ≤30 fwd, temp clip, opt-in `seg_masks`.  
+13b. Batch segmentation (P3.13.2) — **DONE** (`2f7a86c`): `POST /api/seg/batch`, modal, frame_step, in-memory results + seek.  
+13c. SAM3 interactive refine (P3.13.3a) — **DONE** (`8baa39f`): `sam3.pt`, point/bbox, mutual VRAM YOLO-seg.  
+13d. SAM3 short propagate (P3.13.3b) — **DONE** (`b533f0d`): ≤30 fwd, temp clip, opt-in `seg_masks`.  
 14. Change Detection (P3.15 v1) — **DONE** (`a798b15`): Compare Sync, GPS-matching + ORB fallback, Inspector, цветные bbox.  
 14b. Auto Time Sync (P3.15.2) — **DONE** (`8279f8f`): GPS tracks → detections fallback → сегменты, CompareSyncModal.  
 14c. HTML/KML Export (P3.15.3) — **DONE** (`8f93bb1`): `GET /export`, Inspector кнопки, `change_export` / `build_change_kml`.  
-14d. Diff Heatmap (P3.15.4) — **DONE**: `image_diff.heatmap_b64` + Viewer «Теплокарта» (canvas под bbox).  
+14d. Diff Heatmap (P3.15.4) — **DONE** (`8b2ff99`): `image_diff.heatmap_b64` + Viewer «Теплокарта».  
 15. Audio cue по bbox — **DONE** (RulesPanel: beep/alarm/none)  
 16. USB offline model manager — **DONE** (4.1, scan + validate + confirm + force_load)  
 
-Ретроспектива: [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md) (итог); детали спринтов — [PHASE4_RETRO.md](PHASE4_RETRO.md).
+Инфраструктура сессии: Playwright E2E (`4aa75af`), error catalog (`7a30f1d`).
 
-## Next Sprint / Backlog
+Ретроспектива: [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md). Sprint notes: [PHASE4_RETRO.md](PHASE4_RETRO.md).
 
-| # | ID | Задача | Приоритет |
-|---|-----|--------|-----------|
-| 1 | P3.13.3c | SAM3 text/Live/full-video (после 3b) | P2 |
-| 2 | Export | GeoTIFF/KML масок batch seg | по запросу |
+## Future / Backlog
+
+| # | ID | Задача | Приоритет | Заметки |
+|---|-----|--------|-----------|---------|
+| 1 | P3.13.3c | SAM3 semantic/text (`SAM3SemanticPredictor` / text prompts) + исследование Live | P2 | Высокая сложность; нужен VRAM-профиль на 8 ГБ |
+| 2 | Perf | Profiling batch seg / propagate / dual-viewer на edge GPU | P2 | Полевой smoke + метрики ms/VRAM |
+| 3 | Export | GeoTIFF/KML масок batch/propagate | по запросу | Не блокирует Phase 3 |
+| 4 | — | Новые фичи | по запросу пользователя | Placeholder |
 
 Чеклисты: [TODO.md](TODO.md).
 
