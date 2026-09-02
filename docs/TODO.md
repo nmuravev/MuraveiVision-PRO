@@ -10,25 +10,16 @@
 
 ## Следующий спринт
 
-**P3.15 v2** (Auto Sync + HTML/KML Export) закрыт — 98 unit-тестов, workflow sync → analyze → export. Ретроспектива: [PHASE4_RETRO.md](PHASE4_RETRO.md#sprint-2-p315-v2-completion).
+**P3.15 v2** закрыт (sync + export + heatmap + E2E). Ретроспектива: [PHASE4_RETRO.md](PHASE4_RETRO.md#sprint-2-p315-v2-completion).
 
-Следующий фокус: **Playwright E2E**.
+Следующий фокус: **P3.13.2 Batch segmentation** или финальная ретро Phase 3.
 
-### 1. E2E (Playwright) — P0
-
-- [ ] `tests/test_segmentation_ui.test.ts` — seg load → infer → polygon visible
-- [ ] `tests/test_change_detection_ui.test.ts` — Compare mode → sync → analyze → Inspector
-
-### 2. P3.15.4 Diff heatmap — P1
-
-- [ ] Diff heatmap overlay (canvas, optional toggle)
-
-### 3. P3.13.2 Batch segmentation — P1
+### 1. P3.13.2 Batch segmentation — P1
 
 - [ ] Batch seg scan (аналог batch_scan, без train)
 - [ ] Экспорт масок GeoTIFF/KML — по запросу
 
-### 4. P3.13.3 SAM2 — P2
+### 2. P3.13.3 SAM2 — P2
 
 - [ ] SAM2 / realtime seg / маски в SQLite (см. также «Фичи будущего»)
 
@@ -36,6 +27,8 @@
 
 - [x] Auto time sync (P3.15.2): GPS tracks → detections fallback → сегменты (`8279f8f`)
 - [x] HTML/KML export (P3.15.3): `GET /export`, Inspector кнопки (`8f93bb1`)
+- [x] Diff heatmap (P3.15.4): `image_diff.heatmap_b64` + Viewer «Теплокарта»
+- [x] Playwright E2E: seg UI + change analyze / heatmap
 
 ## Улучшения / оптимизация (потом)
 

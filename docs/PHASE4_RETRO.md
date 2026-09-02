@@ -67,22 +67,22 @@ flowchart LR
 - `GET /api/change-detection/export`; HTML (`change_export.py`) + KML (`geo_export.build_change_kml`).
 - Inspector кнопки «Экспорт HTML / KML» через `downloadAuthorized`.
 
-### P3.15.4 — Diff heatmap (P1, отдельный PR)
+### P3.15.4 — Diff heatmap (P1) — DONE
 
-- Canvas overlay областей `image_diff.regions`; toggle в Viewer compare mode.
+- `compute_diff_mask` → `regions` + `heatmap_b64` (JET PNG); Viewer «Теплокарта» под SVG bbox.
 
-**Не в v2.0 (перенесено в Next Sprint):** batch seg, SAM2, Playwright E2E, diff heatmap — см. [TODO.md](TODO.md).
+**P3.15 v2 closed** (sync + export + heatmap + E2E). Дальше: batch seg / SAM2 / финальная ретро — см. [TODO.md](TODO.md).
 
 ## Sprint 2: P3.15 v2 Completion
 
-Closed Auto Sync (`8279f8f`) and Export (`8f93bb1`). 98 unit tests.
-Full sync → analyze → export workflow operational.
+Closed Auto Sync (`8279f8f`), Export (`8f93bb1`), E2E (`4aa75af`), Heatmap (P3.15.4).
+Full sync → analyze → export → heatmap workflow operational.
 Architecture kept clean (separate `time_sync.py`, reuse of `geo_export.py` / `change_export.py`).
 
-**Next:** Playwright E2E for Segmentation + Change Detection UI.
+**Next:** финальная ретроспектива Phase 3 или P3.13.2 Batch segmentation.
 
 ## Связанные документы
 
-- [ROADMAP.md](ROADMAP.md) — P3 v1+v2 core DONE; Next Sprint = E2E first
-- [TODO.md](TODO.md) — чеклисты следующего спринта (E2E → heatmap → batch seg → SAM2)
+- [ROADMAP.md](ROADMAP.md) — P3.15 v2 DONE; Next = batch seg / SAM2 / retro
+- [TODO.md](TODO.md) — чеклисты следующего спринта
 - [ARCHITECTURE.md](ARCHITECTURE.md) — инварианты seg / change detection (часть B)

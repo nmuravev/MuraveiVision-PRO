@@ -20,7 +20,7 @@
 
 - **YOLO26/YOLOE** — closed-set инференс + COCO-fallback + tiling. WebSocket `/ws/detect/{viewer_id}` → overlay bbox на canvas.
 - **Сегментация архива (P3.13)** — тумблер Viewer «Детекция / Сегментация» только в Архиве. Явные `POST /api/seg/load` / `/unload` (VRAM). Кнопка «Сегментировать кадр» → полигоны SVG. Auto-infer нет. Live и `/ws/detect` в SEG выключены. Нет весов / не loaded — кнопка disabled. Маски не идут в train.
-- **Change Detection (P3.15)** — в режиме Было/Стало: «Синхронизировать» (P3.15.2) + «Анализ изменений» (GPS/ORB) + экспорт HTML/KML из Inspector (P3.15.3). Detect/train/seg не затрагиваются.
+- **Change Detection (P3.15)** — в режиме Было/Стало: «Синхронизировать» (P3.15.2) + «Анализ изменений» (GPS/ORB) + экспорт HTML/KML из Inspector (P3.15.3) + тумблер «Теплокарта» (P3.15.4, canvas overlay при `image_diff.heatmap_b64`). Detect/train/seg не затрагиваются.
 - **YOLO scrub gate v2** — suspend YOLO при scrub (400мс cooldown), WS ignore до parse, paused ≤1/500мс, seek debounce 100мс. Debug API: `window.muraveiDebug`, `getYOLOStats`, `printYOLOReport`. Визуальный overlay в dev-режиме.
 - **SAHI** — нарезка кадра для мелких объектов (4K БПЛА). Опционально: per-request `use_sahi` или системный `use_sahi_default`. Переиспользует модель (без дубля VRAM). Полевой тест: `backend/scripts/test_sahi_field.py` на сыром кадре из дрон-видео → `logs/sahi_field_test.json`.
 - **Response Validator** — defense-in-depth фильтр детекций (bbox/conf/area/class_id), JSONL-лог отбросов, graceful degradation. Кэш каталога классов автообновляется после правки `PATCH/DELETE /api/classes/overrides/{id}`.

@@ -1,6 +1,7 @@
 """P3.15 v1: Compare Sync change detection — GPS matching + ORB/diff fallback."""
 from __future__ import annotations
 
+import base64
 import math
 from typing import Any
 
@@ -198,7 +199,7 @@ class ChangeDetectionEngine:
         H: np.ndarray | None = None,
         *,
         threshold: int = 30,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         g1 = cv2.cvtColor(img_before, cv2.COLOR_BGR2GRAY)
         g2 = cv2.cvtColor(img_after, cv2.COLOR_BGR2GRAY)
         h, w = g1.shape[:2]
@@ -235,7 +236,15 @@ class ChangeDetectionEngine:
                     },
                 }
             )
-        return regions
+
+        diff_blurred = cv2.GaussianBlur(diff, (21, 21), 0)
+        heatmap_norm = cv2.normalize(diff_blurred, None, 0, 255, cv2.NORM_MINMAX)
+        heatmap_u8 = np.asarray(heatmap_norm, dtype=np.uint8)
+        heatmap_color = cv2.applyColorMap(heatmap_u8, cv2.COLORMAP_JET)
+        ok, png_buf = cv2.imencode(".png", heatmap_color)
+        heatmap_b64 = base64.b64encode(png_buf.tobytes()).decode("ascii") if ok else ""
+
+        return {"regions": regions, "heatmap_b64": heatmap_b64}
 
 
 _engine: ChangeDetectionEngine | None = None
@@ -331,8 +340,14 @@ def analyze_pair(
             engine = get_change_engine()
             H, inlier_ratio = engine.align_by_features(frame_before, frame_after)
             img_aligned = H is not None and inlier_ratio >= _LOW_INLIER
-            regions = engine.compute_diff_mask(frame_before, frame_after, H if img_aligned else None)
-            image_diff = {"inlier_ratio": round(inlier_ratio, 3), "regions": regions}
+            diff_out = engine.compute_diff_mask(
+                frame_before, frame_after, H if img_aligned else None
+            )
+            image_diff = {
+                "inlier_ratio": round(inlier_ratio, 3),
+                "regions": diff_out["regions"],
+                "heatmap_b64": diff_out.get("heatmap_b64") or None,
+            }
             if img_aligned:
                 aligned = True
                 method = "hybrid" if run_gps else "image"

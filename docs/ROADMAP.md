@@ -58,6 +58,7 @@
 14. Change Detection (P3.15 v1) — **DONE** (`a798b15`): Compare Sync, GPS-matching + ORB fallback, Inspector, цветные bbox.  
 14b. Auto Time Sync (P3.15.2) — **DONE** (`8279f8f`): GPS tracks → detections fallback → сегменты, CompareSyncModal.  
 14c. HTML/KML Export (P3.15.3) — **DONE** (`8f93bb1`): `GET /export`, Inspector кнопки, `change_export` / `build_change_kml`.  
+14d. Diff Heatmap (P3.15.4) — **DONE**: `image_diff.heatmap_b64` + Viewer «Теплокарта» (canvas под bbox).  
 15. Audio cue по bbox — **DONE** (RulesPanel: beep/alarm/none)  
 16. USB offline model manager — **DONE** (4.1, scan + validate + confirm + force_load)  
 
@@ -67,10 +68,9 @@
 
 | # | ID | Задача | Приоритет |
 |---|-----|--------|-----------|
-| 1 | E2E | Playwright: seg toggle + change analyze UI | P0 |
-| 2 | P3.15.4 | Diff heatmap canvas overlay | P1 |
-| 3 | P3.13.2 | Batch-сегментация ролика | P1 |
-| 4 | P3.13.3 | SAM2 (если модель) | P2 |
+| 1 | P3.13.2 | Batch-сегментация ролика | P1 |
+| 2 | P3.13.3 | SAM2 (если модель) | P2 |
+| 3 | Retro | Финальная ретроспектива Phase 3 | — |
 
 Чеклисты: [TODO.md](TODO.md). Детали Sprint 2: [PHASE4_RETRO.md](PHASE4_RETRO.md#sprint-2-p315-v2-completion).
 

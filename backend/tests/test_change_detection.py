@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import unittest
 
+import cv2
 import numpy as np
 
 from services import change_detection as cd
@@ -85,10 +86,31 @@ class DiffMaskTests(unittest.TestCase):
         before = np.zeros((100, 100, 3), dtype=np.uint8)
         after = before.copy()
         after[20:40, 20:40] = 255
-        regions = engine.compute_diff_mask(before, after, None, threshold=30)
+        result = engine.compute_diff_mask(before, after, None, threshold=30)
+        regions = result["regions"]
         self.assertGreaterEqual(len(regions), 1)
         kinds = {r["kind"] for r in regions}
         self.assertIn("new", kinds)
+
+    def test_compute_diff_mask_returns_heatmap(self) -> None:
+        import base64
+
+        engine = cd.ChangeDetectionEngine()
+        before = np.zeros((100, 100, 3), dtype=np.uint8)
+        after = before.copy()
+        after[20:40, 20:40] = 255
+        result = engine.compute_diff_mask(before, after, None, threshold=30)
+        self.assertIn("heatmap_b64", result)
+        b64 = result["heatmap_b64"]
+        self.assertTrue(isinstance(b64, str) and len(b64) > 0)
+        self.assertTrue(b64.startswith("iVBOR"))
+        raw = base64.b64decode(b64)
+        arr = np.frombuffer(raw, dtype=np.uint8)
+        decoded = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        self.assertIsNotNone(decoded)
+        assert decoded is not None
+        self.assertEqual(decoded.shape[0], 100)
+        self.assertEqual(decoded.shape[1], 100)
 
 
 class AlignFeaturesTests(unittest.TestCase):

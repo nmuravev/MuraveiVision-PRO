@@ -35,6 +35,7 @@ import {
   type ChangeType,
 } from '../../store/useChangeDetectionStore';
 import { CompareSyncModal } from './CompareSyncModal';
+import { HeatmapOverlay } from './HeatmapOverlay';
 
 interface ViewerProps {
   viewerId: string;
@@ -270,6 +271,8 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const cdActiveHighlight = useChangeDetectionStore((s) => s.activeHighlight);
   const cdSeekTargets = useChangeDetectionStore((s) => s.seekTargets);
   const cdRequestSeek = useChangeDetectionStore((s) => s.requestSeek);
+  const showHeatmap = useChangeDetectionStore((s) => s.showHeatmap);
+  const setShowHeatmap = useChangeDetectionStore((s) => s.setShowHeatmap);
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const analysisConfig = useMuraveiStore((s) => s.analysisConfig);
   const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
@@ -2180,6 +2183,18 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                   {cdLoading ? 'Анализ…' : 'Анализ изменений'}
                 </Button>
               )}
+              {compareMode &&
+                viewerId === 'viewer-1' &&
+                Boolean(cdResult?.image_diff?.heatmap_b64) && (
+                  <Button
+                    size="sm"
+                    active={showHeatmap}
+                    onClick={() => setShowHeatmap(!showHeatmap)}
+                    title="Тепловая карта изменений (ORB/diff)"
+                  >
+                    Теплокарта
+                  </Button>
+                )}
             </>
           )}
         </ToolbarGroup>
@@ -2468,6 +2483,13 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
               }}
             />
             )}
+            {compareMode && showHeatmap && cdResult?.image_diff?.heatmap_b64 ? (
+              <HeatmapOverlay
+                heatmapB64={cdResult.image_diff.heatmap_b64}
+                opacity={0.5}
+                visible
+              />
+            ) : null}
             <svg
               ref={svgRef}
               className={`absolute inset-0 w-full h-full ${

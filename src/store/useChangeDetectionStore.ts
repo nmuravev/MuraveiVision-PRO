@@ -50,6 +50,7 @@ export type ChangeDetectionResult = {
   image_diff: {
     inlier_ratio: number;
     regions: { kind: string; bbox: BoundingBox }[];
+    heatmap_b64?: string | null;
   } | null;
 };
 
@@ -107,6 +108,8 @@ interface ChangeDetectionState {
   lastAnalyze: LastAnalyzeParams | null;
   exportBusy: boolean;
   exportError: string | null;
+  showHeatmap: boolean;
+  setShowHeatmap: (v: boolean) => void;
   runAnalysis: (params: LastAnalyzeParams) => Promise<void>;
   runSync: (params: {
     videoBefore: string;
@@ -131,6 +134,7 @@ export const useChangeDetectionStore = create<ChangeDetectionState>((set, get) =
   lastAnalyze: null,
   exportBusy: false,
   exportError: null,
+  showHeatmap: false,
 
   clear: () =>
     set({
@@ -145,7 +149,10 @@ export const useChangeDetectionStore = create<ChangeDetectionState>((set, get) =
       lastAnalyze: null,
       exportBusy: false,
       exportError: null,
+      showHeatmap: false,
     }),
+
+  setShowHeatmap: (showHeatmap) => set({ showHeatmap }),
 
   setActiveHighlight: (activeHighlight) => set({ activeHighlight }),
 
@@ -165,7 +172,7 @@ export const useChangeDetectionStore = create<ChangeDetectionState>((set, get) =
     timeAfter,
     timeWindowSec,
   }) => {
-    set({ loading: true, error: null, exportError: null });
+    set({ loading: true, error: null, exportError: null, showHeatmap: false });
     try {
       const res = await fetch('/api/change-detection/analyze', {
         method: 'POST',
@@ -190,6 +197,7 @@ export const useChangeDetectionStore = create<ChangeDetectionState>((set, get) =
         loading: false,
         error: null,
         activeHighlight: null,
+        showHeatmap: false,
         lastAnalyze: {
           videoBefore,
           videoAfter,
@@ -203,6 +211,7 @@ export const useChangeDetectionStore = create<ChangeDetectionState>((set, get) =
         loading: false,
         error: e instanceof Error ? e.message : 'Ошибка анализа',
         result: null,
+        showHeatmap: false,
       });
     }
   },

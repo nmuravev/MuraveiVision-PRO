@@ -103,6 +103,7 @@
 - `method`: `gps` | `image` | `hybrid` | `none`
 - `summary`: `{ total_before, total_after, matched, stable, moved, new, removed }`
 - `matches[]`: `{ before_id, after_id, class_name, distance_m, status, before_bbox, after_bbox }`
+- `image_diff` (только image/ORB path): `{ inlier_ratio, regions[], heatmap_b64? }` — `heatmap_b64` это PNG (JET colormap) в base64 без `data:`-префикса (P3.15.4)
 - Классификация: stable (<3 m), moved (3–10 m), new/removed (нет GPS-пары)
 - Frontend при Sync передаёт `time_window_sec=0.5`, без Sync — `2.0`
 
