@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from services.classes import get_class_catalog, ui_name_by_index
@@ -21,6 +21,7 @@ from services.db import (
     soft_delete_detections_for_source,
     update_detection,
 )
+from services.export_csv import generate_detections_csv
 from services.security import assert_in_archive, require_role
 from services.telemetry import attach_gps
 
@@ -183,6 +184,24 @@ async def detections_list(
     # all_videos=true — for tooling; trainer/reporter use db.list_detections directly
     rows = list_detections(None, class_name, q, include_deleted)
     return {"detections": rows}
+
+
+@router.get("/export")
+async def detections_export_csv(
+    source_video: str = Query(..., min_length=1),
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> Response:
+    key = normalize_media_path(source_video)
+    if not key:
+        raise HTTPException(status_code=400, detail="source_video required")
+    csv_content = generate_detections_csv(key)
+    safe_name = key.replace("/", "_").replace("\\", "_")
+    filename = f"detections_{safe_name}.csv"
+    return Response(
+        content=csv_content,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.delete("")

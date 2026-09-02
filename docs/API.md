@@ -147,7 +147,7 @@ Graceful degradation: при любой ошибке валидатора (ил�
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| GET | `/hardware` | CPU/GPU/VRAM (engineer+) |
+| GET | `/hardware` | CPU/GPU/VRAM (`vram_*_mb` / `vram_*_gb`, `gpu_name`, operator+) |
 | POST | `/selftest` | cuda/model/ollama/disks |
 | GET | `/simulate-failure` | активная симуляция |
 | POST | `/simulate-failure` | `{type: gpu_oom\|model_missing\|ollama_offline\|clear}` |
@@ -190,6 +190,8 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 ## Detections — `/api/detections`
 
 `GET` требует `source_video` (без него возвращает пустой список; `all_videos=true` только для служебных инструментов). CRUD + `POST /commit` (пакет кадра + crops), `GET /{id}/crop`. Массовый soft-delete: `DELETE ?source_video=...&all=true`.
+
+`GET /export?source_video=` — CSV всех неудалённых детекций ролика (operator+). Первая строка-комментарий: `# Coordinates normalized [0-1]…`. Колонки: `time_sec,class_name,confidence,x1,y1,x2,y2,gps_lat,gps_lon` (bbox из `bbox_x/y/w/h` → xyxy в [0–1]). Кнопка «Экспорт CSV» в Inspector.
 
 `POST /find-similar` — `{ detection_id, top_k?, same_class? }`. Ищет похожие кропы по CLIP `encode_image` (если пакет `clip` и локальный кэш `ViT-B-32.pt` уже есть) иначе `hist+class`. Ответ: `{ query_id, method, same_class, results[] }` где `method` = `clip` | `hist+class`. Векторы кэшируются в `detection_embeddings`. `mobileclip2_b.ts` — текстовый энкодер YOLOE, кропы им не кодируются.
 

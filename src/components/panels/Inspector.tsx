@@ -30,6 +30,7 @@ import { classDisplayLine, classLabelRu } from '../../lib/classLabels';
 import { fetchDetectionCropBase64 } from '../../lib/aiVision';
 import { computeReconSegment, useReconBuild } from '../../hooks/useReconBuild';
 import { mediaPathsMatch } from '../../lib/mediaPaths';
+import { downloadAuthorized } from '../../lib/download';
 import type { ClassCatalogItem, PersistedDetection } from '../../types/muravei';
 
 const AI_UNAVAILABLE = 'ИИ недоступен. Проверьте запуск Ollama';
@@ -350,6 +351,8 @@ export const Inspector: React.FC = () => {
   const setSource = useViewerStore((s) => s.setSource);
   const [notes, setNotes] = useState('');
   const [listQuery, setListQuery] = useState('');
+  const [csvBusy, setCsvBusy] = useState(false);
+  const [csvError, setCsvError] = useState<string | null>(null);
   const notesTimer = useRef<number | null>(null);
   const notesTargetIdRef = useRef<string | null>(null);
   const [aiModels, setAiModels] = useState<{ name: string }[]>([]);
@@ -754,6 +757,21 @@ export const Inspector: React.FC = () => {
     if (!sourcePath) return;
     if (!window.confirm('Удалить все детекции этого видео?')) return;
     void deleteAllForSource(sourcePath);
+  };
+
+  const exportDetectionsCsv = () => {
+    if (!sourcePath) return;
+    setCsvBusy(true);
+    setCsvError(null);
+    const q = encodeURIComponent(sourcePath);
+    const safe = sourcePath.replace(/[/\\]/g, '_');
+    void downloadAuthorized(`/api/detections/export?source_video=${q}`, {
+      filename: `detections_${safe}.csv`,
+    })
+      .catch((err: unknown) => {
+        setCsvError(err instanceof Error ? err.message : 'Ошибка экспорта CSV');
+      })
+      .finally(() => setCsvBusy(false));
   };
 
   const activeStatus = active
@@ -1202,6 +1220,15 @@ export const Inspector: React.FC = () => {
               />
               <button
                 type="button"
+                className="shrink-0 px-1.5 py-0.5 text-[10px] text-dv-text hover:bg-dv-hover rounded-sm disabled:opacity-40"
+                title="Экспорт детекций в CSV (координаты 0–1)"
+                disabled={!sourcePath || recent.length === 0 || csvBusy}
+                onClick={exportDetectionsCsv}
+              >
+                {csvBusy ? 'CSV…' : 'Экспорт CSV'}
+              </button>
+              <button
+                type="button"
                 className="shrink-0 px-1.5 py-0.5 text-[10px] text-dv-danger hover:bg-dv-hover rounded-sm disabled:opacity-40"
                 title="Очистить все детекции этого видео"
                 disabled={!sourcePath || recent.length === 0}
@@ -1210,6 +1237,7 @@ export const Inspector: React.FC = () => {
                 Очистить
               </button>
             </div>
+            {csvError ? <div className="mt-1 text-[10px] text-dv-danger">{csvError}</div> : null}
           </div>
           <div className="flex-1 overflow-auto min-h-0">
             {recent.length === 0 && (

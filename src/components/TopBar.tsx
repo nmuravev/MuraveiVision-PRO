@@ -25,7 +25,7 @@ import { useMuraveiStore } from '../store/useMuraveiStore';
 import { useViewerStore } from '../store/useViewerStore';
 import { downloadAuthorized } from '../lib/download';
 import { logger } from '../services/logger';
-import { Button, Menu, MenuItem, Modal } from './ui';
+import { Button, Menu, MenuItem, Modal, VramIndicator } from './ui';
 
 interface TopBarProps {
   activeTab: string;
@@ -324,6 +324,8 @@ export const TopBar: React.FC<TopBarProps> = ({
               </>
             )}
           </div>
+
+          {isAuthenticated && <VramIndicator />}
 
           {isAuthenticated && (
             <div className="relative">
