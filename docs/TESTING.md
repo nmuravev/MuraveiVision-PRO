@@ -48,6 +48,7 @@ cd backend
 - `test_trainer_resume.py` — список last/best/epoch, skip seg, 404 без last.pt, clamp imgsz/batch.
 - `test_segmentation.py` — нет веса → not ready; YOLOE-seg игнорируется; load/unload; infer без load → ошибка; mock predict → polygon_norm 0–1, модель остаётся loaded.
 - `test_sam3_engine.py` — whitelist `sam3.pt`; polygon convert; mock SAM infer; mutual unload YOLO-seg ↔ SAM3.
+- `test_sam3_propagate.py` — max_frames clamp; mock VideoPredictor; persist → seg_masks; soft-delete by track_id.
 - `test_change_detection.py` — haversine, filter_detections_at_time, align_by_gps (stable/moved/new/removed), diff_mask, ORB checkerboard (8 тестов).
 - `test_time_sync.py` — sync_by_gps_track, sync_by_detections, group_into_segments, auto_sync fallback (4 теста).
 - `test_change_export.py` — HTML summary tables; KML folders/Placemarks; no-GPS empty Placemarks (3 теста).

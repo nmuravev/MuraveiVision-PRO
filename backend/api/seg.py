@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from services import batch_segmentation
+from services import sam3_propagate
 from services.security import require_role
 from services.sam3_engine import get_sam3_engine
 from services.segmentation_engine import DEFAULT_CONF, get_seg_engine
@@ -62,6 +63,15 @@ class Sam3InferRequest(BaseModel):
     image_base64: str | None = None
     points: list[Sam3Point] | None = None
     bboxes: list[Sam3BBox] | None = None
+
+
+class Sam3PropagateRequest(BaseModel):
+    video_path: str = Field(..., min_length=1)
+    time_sec: float = Field(..., ge=0.0)
+    max_frames: int = Field(default=30, ge=1, le=30)
+    points: list[Sam3Point] | None = None
+    bboxes: list[Sam3BBox] | None = None
+    persist: bool = False
 
 
 def _decode_image(raw: str | None) -> bytes:
@@ -249,3 +259,58 @@ async def sam3_infer(
         raise HTTPException(status_code=503, detail=_SAM3_NOT_LOADED) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/sam3/propagate")
+async def sam3_propagate_start(
+    body: Sam3PropagateRequest,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    points = [p.model_dump() for p in (body.points or [])]
+    bboxes = [b.model_dump() for b in (body.bboxes or [])]
+    if not points and not bboxes:
+        raise HTTPException(status_code=400, detail="points or bboxes required")
+    try:
+        return await asyncio.to_thread(
+            lambda: sam3_propagate.start(
+                video_path=body.video_path,
+                time_sec=body.time_sec,
+                max_frames=body.max_frames,
+                points=points,
+                bboxes=bboxes,
+                persist=body.persist,
+            )
+        )
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "не в VRAM" in msg or "not loaded" in msg.lower():
+            raise HTTPException(status_code=503, detail=_SAM3_NOT_LOADED) from exc
+        if "уже выполняется" in msg:
+            raise HTTPException(status_code=409, detail=msg) from exc
+        raise HTTPException(status_code=503, detail=msg) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=_SAM3_MISSING) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/sam3/propagate/{task_id}")
+async def sam3_propagate_status(
+    task_id: str,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(sam3_propagate.status, task_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/sam3/propagate/{task_id}/abort")
+async def sam3_propagate_abort(
+    task_id: str,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(sam3_propagate.abort, task_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

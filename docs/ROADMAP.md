@@ -56,7 +56,8 @@
 
 13. Seg-маски (P3.13 v1.1) — **DONE** (`ea881fc`): archive-only, load/unload VRAM, кнопка кадра, полигоны SVG. Не в `/ws/detect`, не в 4×Live, не в train.  
 13b. Batch segmentation (P3.13.2) — **DONE**: `POST /api/seg/batch`, modal, frame_step, in-memory results + seek.
-13c. SAM3 interactive refine (P3.13.3a) — **DONE**: `sam3.pt`, point/bbox, mutual VRAM YOLO-seg.  
+13c. SAM3 interactive refine (P3.13.3a) — **DONE**: `sam3.pt`, point/bbox, mutual VRAM YOLO-seg.
+13d. SAM3 short propagate (P3.13.3b) — **DONE**: ≤30 fwd, temp clip, opt-in `seg_masks`.  
 14. Change Detection (P3.15 v1) — **DONE** (`a798b15`): Compare Sync, GPS-matching + ORB fallback, Inspector, цветные bbox.  
 14b. Auto Time Sync (P3.15.2) — **DONE** (`8279f8f`): GPS tracks → detections fallback → сегменты, CompareSyncModal.  
 14c. HTML/KML Export (P3.15.3) — **DONE** (`8f93bb1`): `GET /export`, Inspector кнопки, `change_export` / `build_change_kml`.  
@@ -70,7 +71,7 @@
 
 | # | ID | Задача | Приоритет |
 |---|-----|--------|-----------|
-| 1 | P3.13.3b | SAM3 video/text/SQLite (после 3a) | P2 |
+| 1 | P3.13.3c | SAM3 text/Live/full-video (после 3b) | P2 |
 | 2 | Export | GeoTIFF/KML масок batch seg | по запросу |
 
 Чеклисты: [TODO.md](TODO.md).

@@ -18,6 +18,7 @@ import { useHotkeys } from './hooks/useHotkeys';
 import { useTimelineStore } from './store/timeline-store';
 import { useViewerStore } from './store/useViewerStore';
 import { useMuraveiStore } from './store/useMuraveiStore';
+import { useSam3Store } from './store/useSam3Store';
 import { SplashScreen, shouldShowSplash } from './components/SplashScreen';
 import { ErrorDetailsModal } from './components/ErrorDetailsModal';
 import {
@@ -69,6 +70,7 @@ function App() {
       timeline: useTimelineStore,
       viewer: useViewerStore,
       muravei: useMuraveiStore,
+      sam3: useSam3Store,
     };
   }, []);
 

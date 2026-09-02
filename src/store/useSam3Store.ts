@@ -9,6 +9,32 @@ export type Sam3Mask = {
   polygon_norm: number[][];
 };
 
+export type Sam3Prompt = {
+  points?: { x: number; y: number; label: number }[];
+  bboxes?: { x1: number; y1: number; x2: number; y2: number }[];
+};
+
+export type Sam3PropFrame = {
+  time_sec: number;
+  frame_idx?: number;
+  masks: Sam3Mask[];
+};
+
+export type Sam3PropStatus = 'idle' | 'running' | 'done' | 'error' | 'aborted';
+
+type PropApiState = {
+  task_id: string | null;
+  status: Sam3PropStatus;
+  progress: number;
+  processed: number;
+  sample_total: number;
+  mask_total: number;
+  persisted?: number;
+  message: string;
+  error: string | null;
+  results: Sam3PropFrame[] | null;
+};
+
 interface Sam3State {
   ready: boolean;
   loaded: boolean;
@@ -17,6 +43,18 @@ interface Sam3State {
   tool: Sam3Tool;
   hint: string;
   lastUnloadNotice: string | null;
+  lastPrompt: Sam3Prompt | null;
+  persistEnabled: boolean;
+  propTaskId: string | null;
+  propStatus: Sam3PropStatus;
+  propProgress: number;
+  propProcessed: number;
+  propSampleTotal: number;
+  propMaskTotal: number;
+  propPersisted: number;
+  propMessage: string;
+  propError: string | null;
+  propFrames: Sam3PropFrame[];
   refreshStatus: () => Promise<void>;
   load: () => Promise<{ yoloSegUnloaded: boolean }>;
   unload: () => Promise<void>;
@@ -24,11 +62,49 @@ interface Sam3State {
   clearNotice: () => void;
   markUnloadedForBatch: () => void;
   markUnloadedByYolo: () => void;
+  setPersistEnabled: (v: boolean) => void;
+  setLastPrompt: (p: Sam3Prompt | null) => void;
+  clearPropagate: () => void;
+  startPropagate: (params: {
+    videoPath: string;
+    timeSec: number;
+    maxFrames?: number;
+    persist?: boolean;
+  }) => Promise<void>;
+  abortPropagate: () => Promise<void>;
   infer: (params: {
     imageBase64: string;
     points?: { x: number; y: number; label: number }[];
     bboxes?: { x1: number; y1: number; x2: number; y2: number }[];
   }) => Promise<Sam3Mask[]>;
+}
+
+let propPoll: ReturnType<typeof setInterval> | null = null;
+
+function stopPropPoll() {
+  if (propPoll != null) {
+    clearInterval(propPoll);
+    propPoll = null;
+  }
+}
+
+function applyProp(set: (partial: Partial<Sam3State>) => void, data: PropApiState) {
+  const status = (data.status || 'idle') as Sam3PropStatus;
+  set({
+    propTaskId: data.task_id,
+    propStatus: status,
+    propProgress: data.progress ?? 0,
+    propProcessed: data.processed ?? 0,
+    propSampleTotal: data.sample_total ?? 0,
+    propMaskTotal: data.mask_total ?? 0,
+    propPersisted: data.persisted ?? 0,
+    propMessage: data.message || '',
+    propError: data.error,
+    propFrames: Array.isArray(data.results) ? data.results : [],
+  });
+  if (status === 'done' || status === 'error' || status === 'aborted') {
+    stopPropPoll();
+  }
 }
 
 export const useSam3Store = create<Sam3State>((set, get) => ({
@@ -39,8 +115,39 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
   tool: 'none',
   hint: '',
   lastUnloadNotice: null,
+  lastPrompt: null,
+  persistEnabled: false,
+  propTaskId: null,
+  propStatus: 'idle',
+  propProgress: 0,
+  propProcessed: 0,
+  propSampleTotal: 0,
+  propMaskTotal: 0,
+  propPersisted: 0,
+  propMessage: '',
+  propError: null,
+  propFrames: [],
 
   clearNotice: () => set({ lastUnloadNotice: null }),
+  setPersistEnabled: (persistEnabled) => set({ persistEnabled }),
+  setLastPrompt: (lastPrompt) => set({ lastPrompt }),
+  setTool: (tool) => set({ tool }),
+
+  clearPropagate: () => {
+    stopPropPoll();
+    set({
+      propTaskId: null,
+      propStatus: 'idle',
+      propProgress: 0,
+      propProcessed: 0,
+      propSampleTotal: 0,
+      propMaskTotal: 0,
+      propPersisted: 0,
+      propMessage: '',
+      propError: null,
+      propFrames: [],
+    });
+  },
 
   markUnloadedForBatch: () =>
     set({
@@ -57,8 +164,6 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
       hint: get().ready ? 'загрузите SAM3' : 'нет sam3.pt',
       lastUnloadNotice: null,
     }),
-
-  setTool: (tool) => set({ tool }),
 
   refreshStatus: async () => {
     try {
@@ -134,12 +239,18 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
       loaded: false,
       tool: 'none',
       hint: get().ready ? 'загрузите SAM3' : 'нет sam3.pt',
+      lastPrompt: null,
     });
   },
 
   infer: async ({ imageBase64, points, bboxes }) => {
     set({ busy: true });
     try {
+      const prompt: Sam3Prompt = {
+        points: points?.length ? points : undefined,
+        bboxes: bboxes?.length ? bboxes : undefined,
+      };
+      set({ lastPrompt: prompt });
       const res = await fetch('/api/seg/sam3/infer', {
         method: 'POST',
         headers: authHeaders(),
@@ -159,6 +270,126 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
       return Array.isArray(data.masks) ? data.masks : [];
     } finally {
       set({ busy: false });
+    }
+  },
+
+  startPropagate: async ({ videoPath, timeSec, maxFrames = 30, persist }) => {
+    const prompt = get().lastPrompt;
+    if (!prompt?.points?.length && !prompt?.bboxes?.length) {
+      set({ propStatus: 'error', propError: 'Нет seed (точка или bbox)' });
+      return;
+    }
+    stopPropPoll();
+    const usePersist = persist ?? get().persistEnabled;
+    set({
+      propStatus: 'running',
+      propProgress: 0,
+      propProcessed: 0,
+      propSampleTotal: maxFrames,
+      propMaskTotal: 0,
+      propPersisted: 0,
+      propMessage: 'Запуск…',
+      propError: null,
+      propFrames: [],
+      busy: true,
+    });
+    try {
+      const res = await fetch('/api/seg/sam3/propagate', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          video_path: videoPath,
+          time_sec: timeSec,
+          max_frames: maxFrames,
+          points: prompt.points || [],
+          bboxes: prompt.bboxes || [],
+          persist: usePersist,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as PropApiState & {
+        detail?: string;
+      };
+      if (!res.ok) {
+        throw new Error(
+          typeof data.detail === 'string' ? data.detail : `HTTP ${res.status}`,
+        );
+      }
+      applyProp(set, data);
+      const taskId = data.task_id;
+      if (!taskId) return;
+
+      propPoll = setInterval(() => {
+        void (async () => {
+          try {
+            const poll = await fetch(`/api/seg/sam3/propagate/${taskId}`, {
+              headers: authHeaders(),
+            });
+            const body = (await poll.json().catch(() => ({}))) as PropApiState & {
+              detail?: string;
+            };
+            if (!poll.ok) {
+              stopPropPoll();
+              set({
+                propStatus: 'error',
+                propError:
+                  typeof body.detail === 'string' ? body.detail : `HTTP ${poll.status}`,
+                busy: false,
+              });
+              return;
+            }
+            applyProp(set, body);
+            if (
+              body.status === 'done' ||
+              body.status === 'error' ||
+              body.status === 'aborted'
+            ) {
+              set({ busy: false });
+            }
+          } catch (e) {
+            stopPropPoll();
+            set({
+              propStatus: 'error',
+              propError: e instanceof Error ? e.message : 'Ошибка опроса',
+              busy: false,
+            });
+          }
+        })();
+      }, 800);
+    } catch (e) {
+      stopPropPoll();
+      set({
+        propStatus: 'error',
+        propError: e instanceof Error ? e.message : 'Ошибка запуска',
+        propMessage: '',
+        busy: false,
+      });
+    }
+  },
+
+  abortPropagate: async () => {
+    const taskId = get().propTaskId;
+    if (!taskId) return;
+    try {
+      const res = await fetch(`/api/seg/sam3/propagate/${taskId}/abort`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      const data = (await res.json().catch(() => ({}))) as PropApiState & {
+        detail?: string;
+      };
+      if (!res.ok) {
+        set({
+          propError: typeof data.detail === 'string' ? data.detail : `HTTP ${res.status}`,
+        });
+        return;
+      }
+      applyProp(set, data);
+      set({ busy: false });
+    } catch (e) {
+      set({
+        propError: e instanceof Error ? e.message : 'Ошибка отмены',
+        busy: false,
+      });
     }
   },
 }));

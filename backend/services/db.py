@@ -203,6 +203,23 @@ def init_db() -> None:
                     embedding BLOB NOT NULL,
                     computed_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS seg_masks (
+                    id TEXT PRIMARY KEY,
+                    created_at REAL NOT NULL,
+                    source_video TEXT NOT NULL,
+                    time_sec REAL NOT NULL,
+                    frame_idx INTEGER NOT NULL DEFAULT 0,
+                    class_name TEXT NOT NULL DEFAULT 'object',
+                    confidence REAL NOT NULL DEFAULT 1.0,
+                    polygon_json TEXT NOT NULL,
+                    origin TEXT NOT NULL DEFAULT 'sam3',
+                    track_id TEXT,
+                    is_deleted INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_seg_masks_source_time
+                    ON seg_masks(source_video, time_sec);
+                CREATE INDEX IF NOT EXISTS idx_seg_masks_track
+                    ON seg_masks(track_id);
                 """
             )
             cols = {r[1] for r in conn.execute("PRAGMA table_info(detections)").fetchall()}
@@ -697,6 +714,128 @@ def soft_delete_detection(det_id: str, edited_by: str | None) -> dict[str, Any] 
             "edited_at": time.time(),
         },
     )
+
+
+def insert_seg_masks_batch(rows: list[dict[str, Any]]) -> int:
+    """Insert SAM/seg polygons. Never touches detections/train."""
+    if not rows:
+        return 0
+    init_db()
+    now = time.time()
+    conn = _connect()
+    n = 0
+    try:
+        for row in rows:
+            poly = row.get("polygon_norm") or []
+            if not isinstance(poly, list) or len(poly) < 3:
+                continue
+            mid = str(row.get("id") or uuid.uuid4())
+            source = normalize_media_path(str(row.get("source_video") or ""))
+            conn.execute(
+                """
+                INSERT INTO seg_masks (
+                    id, created_at, source_video, time_sec, frame_idx,
+                    class_name, confidence, polygon_json, origin, track_id, is_deleted
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                """,
+                (
+                    mid,
+                    now,
+                    source,
+                    float(row.get("time_sec") or 0.0),
+                    int(row.get("frame_idx") or 0),
+                    str(row.get("class_name") or "object"),
+                    float(
+                        row.get("confidence")
+                        if row.get("confidence") is not None
+                        else 1.0
+                    ),
+                    json.dumps(poly, ensure_ascii=False),
+                    str(row.get("origin") or "sam3"),
+                    row.get("track_id"),
+                ),
+            )
+            n += 1
+        conn.commit()
+        return n
+    finally:
+        conn.close()
+
+
+def list_seg_masks(
+    source_video: str,
+    *,
+    time_from: float | None = None,
+    time_to: float | None = None,
+    track_id: str | None = None,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    init_db()
+    key = normalize_media_path(source_video)
+    clauses = ["source_video = ?", "is_deleted = 0"]
+    args: list[Any] = [key]
+    if time_from is not None:
+        clauses.append("time_sec >= ?")
+        args.append(float(time_from))
+    if time_to is not None:
+        clauses.append("time_sec <= ?")
+        args.append(float(time_to))
+    if track_id:
+        clauses.append("track_id = ?")
+        args.append(str(track_id))
+    args.append(max(1, min(5000, int(limit))))
+    where = " AND ".join(clauses)
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            f"""
+            SELECT * FROM seg_masks
+            WHERE {where}
+            ORDER BY time_sec ASC, created_at ASC
+            LIMIT ?
+            """,
+            args,
+        )
+        out: list[dict[str, Any]] = []
+        for row in cur.fetchall():
+            try:
+                poly = json.loads(row["polygon_json"] or "[]")
+            except json.JSONDecodeError:
+                poly = []
+            out.append(
+                {
+                    "id": row["id"],
+                    "created_at": row["created_at"],
+                    "source_video": row["source_video"],
+                    "time_sec": row["time_sec"],
+                    "frame_idx": row["frame_idx"],
+                    "class_name": row["class_name"],
+                    "confidence": row["confidence"],
+                    "polygon_norm": poly,
+                    "origin": row["origin"],
+                    "track_id": row["track_id"],
+                }
+            )
+        return out
+    finally:
+        conn.close()
+
+
+def soft_delete_seg_masks_by_track(track_id: str) -> int:
+    init_db()
+    tid = (track_id or "").strip()
+    if not tid:
+        return 0
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "UPDATE seg_masks SET is_deleted = 1 WHERE track_id = ? AND is_deleted = 0",
+            (tid,),
+        )
+        conn.commit()
+        return int(cur.rowcount or 0)
+    finally:
+        conn.close()
 
 
 def archive_media_exists(source_video: str) -> bool:

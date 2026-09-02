@@ -263,3 +263,148 @@ test('SAM3 toolbar load and point tool', async ({ page, request }) => {
   await expect(viewer1.getByTestId('sam3-from-detection')).toBeVisible();
   await expect(viewer1.getByTestId('sam3-hint')).toContainText('sam3');
 });
+
+test('SAM3 propagate modal progress', async ({ page, request }) => {
+  const authResponse = await request.post('http://127.0.0.1:8000/api/auth/login', {
+    data: { pin: '0000000', role: 'engineer' },
+  });
+  expect(authResponse.ok()).toBeTruthy();
+  const auth = (await authResponse.json()) as { token: string };
+
+  const taskId = 'e2e-prop-1';
+  let pollCount = 0;
+
+  await page.route('**/api/seg/status**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ready: true,
+        loaded: false,
+        weight: null,
+        available: ['yolo26n-seg.pt'],
+      }),
+    });
+  });
+
+  await page.route('**/api/seg/sam3/status**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ready: true,
+        loaded: true,
+        weight: 'sam3.pt',
+        available: ['sam3.pt'],
+      }),
+    });
+  });
+
+  await page.route('**/api/seg/sam3/propagate**', async (route) => {
+    const url = route.request().url();
+    const method = route.request().method();
+    if (method === 'POST' && /\/api\/seg\/sam3\/propagate\/?$/.test(new URL(url).pathname)) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          task_id: taskId,
+          status: 'running',
+          progress: 0,
+          processed: 0,
+          sample_total: 5,
+          mask_total: 0,
+          persisted: 0,
+          message: 'Старт…',
+          results: null,
+        }),
+      });
+      return;
+    }
+    if (method === 'GET' && url.includes(`/api/seg/sam3/propagate/${taskId}`)) {
+      pollCount += 1;
+      const done = pollCount >= 2;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          task_id: taskId,
+          status: done ? 'done' : 'running',
+          progress: done ? 1 : 0.4,
+          processed: done ? 5 : 2,
+          sample_total: 5,
+          mask_total: done ? 5 : 2,
+          persisted: 0,
+          message: done ? 'Готово' : 'В процессе',
+          results: done
+            ? [
+                {
+                  time_sec: 1.0,
+                  frame_idx: 30,
+                  masks: [
+                    {
+                      class: 'object',
+                      conf: 1,
+                      polygon_norm: [
+                        [0.1, 0.1],
+                        [0.2, 0.1],
+                        [0.15, 0.2],
+                      ],
+                    },
+                  ],
+                },
+              ]
+            : null,
+        }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.addInitScript((token) => {
+    localStorage.setItem('muravei-token', token);
+    localStorage.setItem('muravei-splash-done-v1', '1');
+    localStorage.removeItem('muraveivision-layout-v3');
+    localStorage.removeItem('muraveivision-layout-v2');
+    localStorage.removeItem('muraveivision-layout-v1');
+  }, auth.token);
+
+  await page.goto('/');
+  const viewer1 = page.getByTestId('viewer-1');
+  await expect(viewer1).toBeVisible({ timeout: 15_000 });
+
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __muraveiStores?: {
+        viewer?: {
+          getState: () => {
+            setSource: (id: string, path: string | null) => void;
+          };
+        };
+        sam3?: {
+          setState: (partial: Record<string, unknown>) => void;
+        };
+      };
+    };
+    w.__muraveiStores?.viewer?.getState().setSource('viewer-1', 'archive/clip.mp4');
+    w.__muraveiStores?.sam3?.setState({
+      ready: true,
+      loaded: true,
+      weight: 'sam3.pt',
+      hint: 'sam3.pt',
+      lastPrompt: { bboxes: [{ x1: 0.1, y1: 0.1, x2: 0.4, y2: 0.4 }] },
+    });
+  });
+
+  await viewer1.getByRole('button', { name: 'Сегментация' }).click();
+  const propBtn = viewer1.getByTestId('sam3-propagate');
+  await expect(propBtn).toBeEnabled({ timeout: 10_000 });
+  await propBtn.click();
+  const modal = page.getByTestId('sam3-prop-modal');
+  await expect(modal).toBeVisible();
+  await page.getByTestId('sam3-prop-start').click();
+  await expect(page.getByTestId('sam3-prop-progress')).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId('sam3-prop-summary')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('sam3-prop-summary')).toContainText('Обработано 5 кадров');
+});

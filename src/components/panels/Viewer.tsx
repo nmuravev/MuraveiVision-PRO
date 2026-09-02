@@ -39,6 +39,7 @@ import { HeatmapOverlay } from './HeatmapOverlay';
 import { BatchSegModal } from './BatchSegModal';
 import type { BatchSegMask } from '../../store/useBatchSegStore';
 import { useSam3Store } from '../../store/useSam3Store';
+import { Sam3PropagateModal } from './Sam3PropagateModal';
 
 interface ViewerProps {
   viewerId: string;
@@ -278,6 +279,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const setShowHeatmap = useChangeDetectionStore((s) => s.setShowHeatmap);
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [batchSegOpen, setBatchSegOpen] = useState(false);
+  const [samPropOpen, setSamPropOpen] = useState(false);
   const analysisConfig = useMuraveiStore((s) => s.analysisConfig);
   const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
   useAutoBatchScan(viewer?.sourcePath ?? undefined, isAuthenticated);
@@ -411,6 +413,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const inferSam3 = useSam3Store((s) => s.infer);
   const clearSamNotice = useSam3Store((s) => s.clearNotice);
   const markSamUnloadedByYolo = useSam3Store((s) => s.markUnloadedByYolo);
+  const samLastPrompt = useSam3Store((s) => s.lastPrompt);
 
   const isLive = viewer?.sourceMode === 'live' && Boolean(viewer?.liveActive);
   isLiveRef.current = isLive;
@@ -2210,6 +2213,21 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                     </Button>
                     <Button
                       size="sm"
+                      disabled={
+                        !isAuthenticated ||
+                        samBusy ||
+                        !paused ||
+                        !viewer?.sourcePath ||
+                        !(samLastPrompt?.points?.length || samLastPrompt?.bboxes?.length)
+                      }
+                      onClick={() => setSamPropOpen(true)}
+                      title="Пропагировать маску вперёд ≤30 кадров"
+                      data-testid="sam3-propagate"
+                    >
+                      Пропагировать
+                    </Button>
+                    <Button
+                      size="sm"
                       disabled={!isAuthenticated || samBusy}
                       onClick={() => void unloadSam3()}
                       title="Выгрузить SAM3 из VRAM"
@@ -2954,6 +2972,27 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
               polygon_norm: m.polygon_norm,
             }));
             setSegMasks(mapped);
+            setOverlayMode('seg');
+          }}
+        />
+      ) : null}
+      {overlayMode === 'seg' && samPropOpen ? (
+        <Sam3PropagateModal
+          open={samPropOpen}
+          videoPath={viewer?.sourcePath || ''}
+          timeSec={overlayTimeSec}
+          onClose={() => setSamPropOpen(false)}
+          onPickFrame={(timeSec, masks) => {
+            setPaused(true);
+            seekTo(timeSec);
+            applyVideoSeek(timeSec, { force: true });
+            setSegMasks(
+              masks.map((m) => ({
+                class: m.class,
+                conf: m.conf,
+                polygon_norm: m.polygon_norm,
+              })),
+            );
             setOverlayMode('seg');
           }}
         />
