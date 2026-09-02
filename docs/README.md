@@ -22,6 +22,7 @@
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | Все | Ограничения, flaky-зоны, вне скоупа |
 | [TODO.md](TODO.md) | Продукт / инженеры | Приоритизированный план оставшейся работы |
 | [ROADMAP.md](ROADMAP.md) | Продукт | Бэклог P0–P3, 3D-траектория, Full Kit |
+| [PHASE4_RETRO.md](PHASE4_RETRO.md) | Продукт / инженеры | Ретроспектива Фазы 4, v2 backlog, черновик P3.15 v2 |
 | [TESTING.md](TESTING.md) | Все | Запуск тестов (Playwright + unittest + SAHI + build) |
 | [SMOKE_TESTS.md](SMOKE_TESTS.md) | Все | Инвентарь smoke-скриптов |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Разработчики | Окружение Python 3.12, запуск, smoke, правила |

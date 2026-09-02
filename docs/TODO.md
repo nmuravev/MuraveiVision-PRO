@@ -8,13 +8,32 @@
 
 На данный момент открытых критических багов нет.
 
-## Важный функционал (1–2 недели)
+## Следующий спринт (P3 v2)
 
-Фаза 3.1 (сеть) и 3.2 (4×Live + Event Timeline) закрыты. P0.1, P0.4, P1.6, P1.8, **P3.13 v1 (archive seg)** и **P3.15 v1 (change detection)** закрыты.
+Фаза 3.1 (сеть), 3.2 (4×Live), P0.1, P0.4, P1.6, P1.8, **P3.13 v1** и **P3.15 v1** закрыты. Ретроспектива: [PHASE4_RETRO.md](PHASE4_RETRO.md).
+
+### P3.15 v2 (Change Detection)
+
+- [ ] Auto time sync: match moments по GPS track (`telemetry.py` / sidecar) → `delta_sec`
+- [ ] `GET /api/change-detection/export?format=html|kml` (или POST с last result)
+- [ ] Diff heatmap overlay (canvas, optional toggle) — P1, отдельный PR
+
+### P3.13 v2 (Segmentation)
+
+- [ ] Batch seg scan (аналог batch_scan, без train)
+- [ ] Экспорт масок GeoTIFF/KML — по запросу
+
+### E2E (Playwright)
+
+- [ ] `tests/test_change_detection_ui.test.ts` — Compare mode → analyze → Inspector
+- [ ] `tests/test_segmentation_ui.test.ts` — seg load → infer → polygon visible
 
 ## Улучшения / оптимизация (потом)
 
 Открытых пунктов техдолга 5.2 / 5.3 нет — оба закрыты (см. ниже).
+
+- Performance profiling при 8 GB VRAM
+- Quick-start guide для полевых инженеров
 
 ## Фичи будущего (когда остальное готово)
 
@@ -22,7 +41,7 @@
 - Native multi-monitor windows.
 - OCR-only телеметрия (расширение geo-scope).
 - Cloud/SaaS-режим (если потребуется).
-- Фаза 4: change detection двух пролётов; SAM2 / realtime seg / маски в SQLite.
+- SAM2 / realtime seg / маски в SQLite.
 
 ## Закрыто (контекст)
 

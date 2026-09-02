@@ -152,6 +152,7 @@ Viewer поддерживает до 4 инстансов, Архив|Live, pan/
 2. **Monolith local** — один FastAPI-процесс + статика `dist/` (или Vite dev). UI не ходит на `:11434` напрямую.
 3. **Mosaic IDE** — раскладка `react-mosaic-component`, не фиксированный Mini/Pro из legacy.
 4. **Detect ≠ Segment** — быстрое обучение и `yolo26n-ft` — box-detect; YOLOE-seg не использовать как train base. Archive-only сегментация (`segmentation_engine.py`, веса `yolo26n-seg.pt` / `yolo26s-seg.pt`) не грузится в `yolo_engine` / `trainer`, не пишет SQLite detections. Нет файла или модель не в VRAM → `POST /api/seg/infer` = 503, детекция без изменений. Явные `load`/`unload`.
+5. **Change detection read-only** — `change_detection.py` + `POST /api/change-detection/analyze`: читает SQLite detections + optional ORB/diff fallback; **не пишет** в БД, не вызывает YOLO infer, не импортирует `yolo_engine` / `trainer` / `segmentation_engine`. UI: отдельный слой `changeOverlays`, не мутировать YOLO `overlayObjects`.
 
 ## 2. Инференс (обязательное поведение)
 
