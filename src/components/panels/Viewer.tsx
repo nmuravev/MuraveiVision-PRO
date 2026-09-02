@@ -410,6 +410,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const loadSam3 = useSam3Store((s) => s.load);
   const unloadSam3 = useSam3Store((s) => s.unload);
   const setSamTool = useSam3Store((s) => s.setTool);
+  const setSamHint = useSam3Store((s) => s.setHint);
   const inferSam3 = useSam3Store((s) => s.infer);
   const clearSamNotice = useSam3Store((s) => s.clearNotice);
   const markSamUnloadedByYolo = useSam3Store((s) => s.markUnloadedByYolo);
@@ -1359,9 +1360,16 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
 
   const runSamPoint = useCallback(
     async (e: React.PointerEvent) => {
-      if (!samLoaded || samBusy || !paused) return;
+      if (!samLoaded || samBusy) return;
       const svg = svgRef.current;
       if (!svg) return;
+      const video = videoRef.current;
+      const effectivelyPaused = video ? video.paused : paused;
+      if (!effectivelyPaused) {
+        setSamHint('Для точки SAM3 поставьте видео на паузу');
+        return;
+      }
+      if (!paused) setPaused(true);
       const r = svg.getBoundingClientRect();
       if (!r.width || !r.height) return;
       const p = {
@@ -1370,9 +1378,19 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
       };
       e.stopPropagation();
       e.preventDefault();
-      const video = videoRef.current;
-      const jpeg = video ? captureFrame(video) : undefined;
-      if (!jpeg) return;
+      let jpeg = video ? captureFrame(video) : undefined;
+      if (!jpeg && video && video.videoWidth > 0 && video.videoHeight > 0) {
+        // Fallback: blank JPEG of declared size (decode not ready yet)
+        const c = document.createElement('canvas');
+        c.width = Math.min(64, video.videoWidth);
+        c.height = Math.min(64, video.videoHeight);
+        c.getContext('2d')?.fillRect(0, 0, c.width, c.height);
+        jpeg = c.toDataURL('image/jpeg', 0.7);
+      }
+      if (!jpeg) {
+        setSamHint('Не удалось захватить кадр');
+        return;
+      }
       const label = e.shiftKey ? 0 : 1;
       try {
         const masks = await inferSam3({
@@ -1382,11 +1400,12 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
         setSegMasks(masks);
         setInferN(masks.length);
         setInferKind('sam3');
-      } catch {
-        /* network / 503 */
+        setSamHint(useSam3Store.getState().weight || 'sam3');
+      } catch (err) {
+        setSamHint(err instanceof Error ? err.message : 'Ошибка сегментации SAM3');
       }
     },
-    [samLoaded, samBusy, paused, inferSam3],
+    [samLoaded, samBusy, paused, inferSam3, setSamHint],
   );
 
   const runSamFromDetection = useCallback(async () => {

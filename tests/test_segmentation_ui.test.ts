@@ -264,6 +264,144 @@ test('SAM3 toolbar load and point tool', async ({ page, request }) => {
   await expect(viewer1.getByTestId('sam3-hint')).toContainText('sam3');
 });
 
+test('SAM3 point click infers mask when paused', async ({ page, request }) => {
+  const authResponse = await request.post('http://127.0.0.1:8000/api/auth/login', {
+    data: { pin: '0000000', role: 'engineer' },
+  });
+  expect(authResponse.ok()).toBeTruthy();
+  const auth = (await authResponse.json()) as { token: string };
+
+  await page.route('**/api/seg/status**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ready: true,
+        loaded: false,
+        weight: null,
+        available: ['yolo26n-seg.pt'],
+      }),
+    });
+  });
+
+  await page.route('**/api/seg/sam3/status**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ready: true,
+        loaded: true,
+        weight: 'sam3.pt',
+        available: ['sam3.pt'],
+      }),
+    });
+  });
+
+  await page.route('**/api/seg/sam3/infer**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        masks: [
+          {
+            class: 'object',
+            conf: 0.9,
+            polygon_norm: [
+              [0.1, 0.1],
+              [0.2, 0.1],
+              [0.2, 0.2],
+              [0.1, 0.2],
+            ],
+          },
+        ],
+        ms: 12,
+        weight: 'sam3.pt',
+      }),
+    });
+  });
+
+  await page.addInitScript((token) => {
+    localStorage.setItem('muravei-token', token);
+    localStorage.setItem('muravei-splash-done-v1', '1');
+    localStorage.removeItem('muraveivision-layout-v3');
+    localStorage.removeItem('muraveivision-layout-v2');
+    localStorage.removeItem('muraveivision-layout-v1');
+  }, auth.token);
+
+  await page.goto('/');
+  const viewer1 = page.getByTestId('viewer-1');
+  await expect(viewer1).toBeVisible({ timeout: 15_000 });
+
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __muraveiStores?: {
+        viewer?: {
+          getState: () => {
+            setSource: (id: string, path: string | null) => void;
+          };
+        };
+        sam3?: { setState: (s: Record<string, unknown>) => void };
+      };
+    };
+    w.__muraveiStores?.viewer?.getState().setSource('viewer-1', 'archive/clip.mp4');
+    w.__muraveiStores?.sam3?.setState({
+      ready: true,
+      loaded: true,
+      weight: 'sam3.pt',
+      hint: 'sam3.pt',
+      busy: false,
+      tool: 'point',
+    });
+  });
+
+  await viewer1.getByRole('button', { name: 'Сегментация' }).click();
+  await expect(viewer1.getByTestId('sam3-tool-point')).toBeVisible({ timeout: 10_000 });
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __muraveiStores?: { sam3?: { setState: (s: Record<string, unknown>) => void } };
+    };
+    w.__muraveiStores?.sam3?.setState({
+      ready: true,
+      loaded: true,
+      weight: 'sam3.pt',
+      hint: 'sam3.pt',
+      busy: false,
+      tool: 'point',
+    });
+  });
+  await expect(viewer1.getByTestId('sam3-tool-point')).toHaveAttribute('data-active', 'true', {
+    timeout: 5_000,
+  });
+  await expect(viewer1.locator('svg.cursor-crosshair')).toBeVisible({ timeout: 5_000 });
+
+  await page.evaluate(() => {
+    const v = document.querySelector('[data-testid="viewer-1"] video') as HTMLVideoElement | null;
+    if (!v) return;
+    Object.defineProperty(v, 'videoWidth', { configurable: true, get: () => 64 });
+    Object.defineProperty(v, 'videoHeight', { configurable: true, get: () => 64 });
+    Object.defineProperty(v, 'readyState', { configurable: true, get: () => 4 });
+    Object.defineProperty(v, 'paused', { configurable: true, get: () => true });
+    v.dispatchEvent(new Event('pause'));
+  });
+
+  const inferWait = page.waitForRequest(
+    (req) => req.url().includes('/api/seg/sam3/infer') && req.method() === 'POST',
+    { timeout: 15_000 },
+  );
+
+  const svg = viewer1.locator('svg.cursor-crosshair').first();
+  const box = await svg.boundingBox();
+  expect(box).toBeTruthy();
+  await page.mouse.click(box!.x + box!.width * 0.5, box!.y + box!.height * 0.5);
+
+  const inferReq = await inferWait;
+  const body = inferReq.postDataJSON() as { points?: unknown[]; text?: unknown[] };
+  expect(Array.isArray(body.points) && body.points.length).toBeTruthy();
+  expect(body.text ?? []).toEqual([]);
+
+  await expect(viewer1.locator('svg polygon')).toHaveCount(1, { timeout: 10_000 });
+});
+
 test('SAM3 propagate modal progress', async ({ page, request }) => {
   const authResponse = await request.post('http://127.0.0.1:8000/api/auth/login', {
     data: { pin: '0000000', role: 'engineer' },

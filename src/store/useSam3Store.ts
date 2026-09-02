@@ -69,6 +69,7 @@ interface Sam3State {
   load: () => Promise<{ yoloSegUnloaded: boolean }>;
   unload: () => Promise<void>;
   setTool: (t: Sam3Tool) => void;
+  setHint: (hint: string) => void;
   clearNotice: () => void;
   markUnloadedForBatch: () => void;
   markUnloadedByYolo: () => void;
@@ -146,6 +147,7 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
   setTextPrompt: (textPrompt) => set({ textPrompt }),
   setLastPrompt: (lastPrompt) => set({ lastPrompt }),
   setTool: (tool) => set({ tool }),
+  setHint: (hint) => set({ hint }),
 
   clearPropagate: () => {
     stopPropPoll();
