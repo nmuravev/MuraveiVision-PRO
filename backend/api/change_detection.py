@@ -1,13 +1,18 @@
-"""P3.15: Compare Sync change detection + auto time sync API."""
+"""P3.15: Compare Sync change detection + auto time sync + export API."""
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from services.change_detection import analyze_pair
+from services.change_export import build_change_html
+from services.geo_export import build_change_kml
 from services.security import require_role
 from services.time_sync import auto_sync
 
@@ -83,3 +88,67 @@ async def sync_videos(
         "message": result.get("message"),
         "pair_count_total": int(result.get("pair_count_total") or len(pairs)),
     }
+
+
+def _safe_export_name(ext: str) -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    return f"muravei_change_report_{stamp}.{ext}"
+
+
+@router.get("/export")
+async def export_report(
+    format: Literal["html", "kml"] = Query("html"),
+    video_before: str = Query(..., min_length=1),
+    video_after: str = Query(..., min_length=1),
+    time_before: float = Query(..., ge=0),
+    time_after: float = Query(..., ge=0),
+    tolerance_m: float = Query(10.0, ge=1.0, le=500.0),
+    moved_m: float = Query(3.0, ge=0.5, le=100.0),
+    time_window_sec: float = Query(0.5, ge=0.1, le=10.0),
+    use_gps: bool = Query(True),
+    use_image_fallback: bool = Query(True),
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> Response:
+    try:
+        result = await asyncio.to_thread(
+            analyze_pair,
+            video_before=video_before,
+            video_after=video_after,
+            time_before=time_before,
+            time_after=time_after,
+            tolerance_m=tolerance_m,
+            moved_m=moved_m,
+            time_window_sec=time_window_sec,
+            use_gps=use_gps,
+            use_image_fallback=use_image_fallback,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    meta = {
+        "video_before": video_before,
+        "video_after": video_after,
+        "time_before": time_before,
+        "time_after": time_after,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        if format == "html":
+            body = await asyncio.to_thread(build_change_html, result, meta)
+            media = "text/html; charset=utf-8"
+            filename = _safe_export_name("html")
+        else:
+            body = await asyncio.to_thread(build_change_kml, result, meta)
+            media = "application/vnd.google-earth.kml+xml"
+            filename = _safe_export_name("kml")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"export failed: {exc}") from exc
+
+    safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in Path(filename).name)
+    return Response(
+        content=body,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{safe}"'},
+    )

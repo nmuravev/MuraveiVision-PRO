@@ -65,6 +65,9 @@
 |-------|------|----------|
 | POST | `/analyze` | GPS-matching детекций ± `time_window_sec` + ORB/diff fallback |
 | POST | `/sync` | Auto time sync: GPS tracks → detections fallback → сегменты |
+| GET | `/export` | HTML или KML отчёт (re-run `analyze_pair` по query params) |
+
+`GET /export` query: `format=html|kml`, `video_before`, `video_after`, `time_before`, `time_after`, опционально `tolerance_m`, `moved_m`, `time_window_sec`. Ответ — attachment (`text/html` или `application/vnd.google-earth.kml+xml`).
 
 Тело `/sync`:
 

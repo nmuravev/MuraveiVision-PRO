@@ -49,6 +49,7 @@ cd backend
 - `test_segmentation.py` — нет веса → not ready; YOLOE-seg игнорируется; load/unload; infer без load → ошибка; mock predict → polygon_norm 0–1, модель остаётся loaded.
 - `test_change_detection.py` — haversine, filter_detections_at_time, align_by_gps (stable/moved/new/removed), diff_mask, ORB checkerboard (8 тестов).
 - `test_time_sync.py` — sync_by_gps_track, sync_by_detections, group_into_segments, auto_sync fallback (4 теста).
+- `test_change_export.py` — HTML summary tables; KML folders/Placemarks; no-GPS empty Placemarks (3 теста).
 - `test_usb_import.py` — валидация .pt (nc 12/238) и YAML, dry-run без копии, confirm + `.backup`.
 
 ## SAHI

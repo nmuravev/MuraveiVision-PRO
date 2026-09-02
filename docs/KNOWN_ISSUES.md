@@ -36,6 +36,7 @@
 
 - **GPS точность** — matching зависит от качества SRT/CSV и backfill; без GPS (<30% coverage) — ORB fallback, чувствителен к смене освещения/угла камеры.
 - **ORB inlier_ratio** — при `<0.25` alignment помечается как failed; partial GPS result сохраняется если был.
+- **HTML export Leaflet** — карта в HTML-отчёте тянет Leaflet/OSM CDN; в air-gap таблицы отчёта работают, карта — нет.
 
 ## Документация
 

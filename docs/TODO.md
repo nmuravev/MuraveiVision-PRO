@@ -15,7 +15,7 @@
 ### P3.15 v2 (Change Detection)
 
 - [x] Auto time sync (P3.15.2): GPS tracks → detections fallback → сегменты (`time_sync.py`, `POST /sync`, CompareSyncModal)
-- [ ] `GET /api/change-detection/export?format=html|kml` (или POST с last result) — P3.15.3
+- [x] HTML/KML export (P3.15.3): `GET /export`, Inspector кнопки, `change_export` / `build_change_kml`
 - [ ] Diff heatmap overlay (canvas, optional toggle) — P1, отдельный PR
 
 ### P3.13 v2 (Segmentation)
@@ -107,3 +107,6 @@
 - **Auto time sync (P3.15.2)** — DONE:
   - `time_sync.py` + `POST /api/change-detection/sync`; CompareSyncModal (сегменты, Auto/GPS/Детекции).
   - Fallback tracks → detections → manual hint. `test_time_sync.py`.
+- **Change export (P3.15.3)** — DONE:
+  - `GET /api/change-detection/export`; HTML (`change_export.py`) + KML (`geo_export.build_change_kml`).
+  - Inspector «Экспорт HTML/KML». `test_change_export.py`.

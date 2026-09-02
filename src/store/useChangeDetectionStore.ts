@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { authHeaders } from './useMuraveiStore';
+import { downloadAuthorized } from '../lib/download';
 import type { BoundingBox } from '../types/muravei';
 
 export type ChangeType = 'new' | 'removed' | 'moved';
@@ -86,6 +87,14 @@ export type CompareSeekTargets = {
   epoch: number;
 };
 
+export type LastAnalyzeParams = {
+  videoBefore: string;
+  videoAfter: string;
+  timeBefore: number;
+  timeAfter: number;
+  timeWindowSec: number;
+};
+
 interface ChangeDetectionState {
   result: ChangeDetectionResult | null;
   loading: boolean;
@@ -95,24 +104,22 @@ interface ChangeDetectionState {
   syncLoading: boolean;
   syncError: string | null;
   seekTargets: CompareSeekTargets | null;
-  runAnalysis: (params: {
-    videoBefore: string;
-    videoAfter: string;
-    timeBefore: number;
-    timeAfter: number;
-    timeWindowSec: number;
-  }) => Promise<void>;
+  lastAnalyze: LastAnalyzeParams | null;
+  exportBusy: boolean;
+  exportError: string | null;
+  runAnalysis: (params: LastAnalyzeParams) => Promise<void>;
   runSync: (params: {
     videoBefore: string;
     videoAfter: string;
     source: SyncSource;
   }) => Promise<void>;
+  exportReport: (format: 'html' | 'kml') => Promise<void>;
   requestSeek: (timeBefore: number, timeAfter: number) => void;
   setActiveHighlight: (h: ChangeHighlight | null) => void;
   clear: () => void;
 }
 
-export const useChangeDetectionStore = create<ChangeDetectionState>((set) => ({
+export const useChangeDetectionStore = create<ChangeDetectionState>((set, get) => ({
   result: null,
   loading: false,
   error: null,
@@ -121,6 +128,9 @@ export const useChangeDetectionStore = create<ChangeDetectionState>((set) => ({
   syncLoading: false,
   syncError: null,
   seekTargets: null,
+  lastAnalyze: null,
+  exportBusy: false,
+  exportError: null,
 
   clear: () =>
     set({
@@ -132,6 +142,9 @@ export const useChangeDetectionStore = create<ChangeDetectionState>((set) => ({
       syncLoading: false,
       syncError: null,
       seekTargets: null,
+      lastAnalyze: null,
+      exportBusy: false,
+      exportError: null,
     }),
 
   setActiveHighlight: (activeHighlight) => set({ activeHighlight }),
@@ -152,7 +165,7 @@ export const useChangeDetectionStore = create<ChangeDetectionState>((set) => ({
     timeAfter,
     timeWindowSec,
   }) => {
-    set({ loading: true, error: null });
+    set({ loading: true, error: null, exportError: null });
     try {
       const res = await fetch('/api/change-detection/analyze', {
         method: 'POST',
@@ -172,7 +185,19 @@ export const useChangeDetectionStore = create<ChangeDetectionState>((set) => ({
         throw new Error(err.detail || `HTTP ${res.status}`);
       }
       const result = (await res.json()) as ChangeDetectionResult;
-      set({ result, loading: false, error: null, activeHighlight: null });
+      set({
+        result,
+        loading: false,
+        error: null,
+        activeHighlight: null,
+        lastAnalyze: {
+          videoBefore,
+          videoAfter,
+          timeBefore,
+          timeAfter,
+          timeWindowSec,
+        },
+      });
     } catch (e) {
       set({
         loading: false,
@@ -208,6 +233,37 @@ export const useChangeDetectionStore = create<ChangeDetectionState>((set) => ({
         syncLoading: false,
         syncError: e instanceof Error ? e.message : 'Ошибка синхронизации',
         syncResult: null,
+      });
+    }
+  },
+
+  exportReport: async (format) => {
+    const params = get().lastAnalyze;
+    if (!params) {
+      set({ exportError: 'Нет параметров анализа для экспорта' });
+      return;
+    }
+    set({ exportBusy: true, exportError: null });
+    try {
+      const qs = new URLSearchParams({
+        format,
+        video_before: params.videoBefore,
+        video_after: params.videoAfter,
+        time_before: String(params.timeBefore),
+        time_after: String(params.timeAfter),
+        time_window_sec: String(params.timeWindowSec),
+      });
+      await downloadAuthorized(`/api/change-detection/export?${qs.toString()}`, {
+        filename:
+          format === 'html'
+            ? 'muravei_change_report.html'
+            : 'muravei_change_report.kml',
+      });
+      set({ exportBusy: false });
+    } catch (e) {
+      set({
+        exportBusy: false,
+        exportError: e instanceof Error ? e.message : 'Ошибка экспорта',
       });
     }
   },

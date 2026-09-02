@@ -383,6 +383,10 @@ export const Inspector: React.FC = () => {
   const cdLoading = useChangeDetectionStore((s) => s.loading);
   const cdActiveHighlight = useChangeDetectionStore((s) => s.activeHighlight);
   const setCdHighlight = useChangeDetectionStore((s) => s.setActiveHighlight);
+  const cdLastAnalyze = useChangeDetectionStore((s) => s.lastAnalyze);
+  const cdExportBusy = useChangeDetectionStore((s) => s.exportBusy);
+  const cdExportError = useChangeDetectionStore((s) => s.exportError);
+  const cdExportReport = useChangeDetectionStore((s) => s.exportReport);
   const playheadPosition = useTimelineStore((s) => s.playheadPosition);
   const mediaDuration = useTimelineStore((s) => s.mediaDuration);
   const {
@@ -1118,6 +1122,39 @@ export const Inspector: React.FC = () => {
                   {cdResult.summary.total_before} → {cdResult.summary.total_after} obj · {cdResult.method}
                   {cdResult.message ? ` · ${cdResult.message}` : ''}
                 </div>
+                {(() => {
+                  const hasGps =
+                    cdResult.new.some((i) => i.gps_lat != null && i.gps_lon != null) ||
+                    cdResult.removed.some((i) => i.gps_lat != null && i.gps_lon != null);
+                  return (
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        className="px-2 py-0.5 bg-dv-surface hover:bg-dv-hover rounded-sm text-[10px] disabled:opacity-40"
+                        disabled={!cdLastAnalyze || cdExportBusy || cdLoading}
+                        onClick={() => void cdExportReport('html')}
+                      >
+                        {cdExportBusy ? 'Экспорт…' : 'Экспорт HTML'}
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2 py-0.5 bg-dv-surface hover:bg-dv-hover rounded-sm text-[10px] disabled:opacity-40"
+                        disabled={!cdLastAnalyze || cdExportBusy || cdLoading || !hasGps}
+                        title={
+                          hasGps
+                            ? 'KML для Google Earth / QGIS'
+                            : 'Нужны GPS-координаты'
+                        }
+                        onClick={() => void cdExportReport('kml')}
+                      >
+                        Экспорт KML
+                      </button>
+                    </div>
+                  );
+                })()}
+                {cdExportError ? (
+                  <div className="text-[10px] text-dv-danger">{cdExportError}</div>
+                ) : null}
                 <ChangeList
                   title="Новые"
                   empty="нет"

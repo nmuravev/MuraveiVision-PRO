@@ -62,10 +62,10 @@ flowchart LR
 - UI: CompareSyncModal, кнопка «Синхронизировать» в Compare Sync toolbar.
 - API: `POST /api/change-detection/sync`.
 
-### P3.15.3 — HTML/KML export (P0)
+### P3.15.3 — HTML/KML export (P0) — DONE
 
-- `GET /api/change-detection/export?format=html|kml` или POST с телом last result.
-- Переиспользовать [`geo_export.py`](../backend/services/geo_export.py) для KML точек new/moved.
+- `GET /api/change-detection/export`; HTML (`change_export.py`) + KML (`geo_export.build_change_kml`).
+- Inspector кнопки «Экспорт HTML / KML» через `downloadAuthorized`.
 
 ### P3.15.4 — Diff heatmap (P1, отдельный PR)
 
