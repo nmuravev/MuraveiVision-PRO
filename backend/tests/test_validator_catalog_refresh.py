@@ -7,6 +7,7 @@ backend restart.
 """
 from __future__ import annotations
 
+import time
 import unittest
 from unittest import mock
 
@@ -135,6 +136,62 @@ class CatalogRefreshTests(unittest.TestCase):
             )
         self.assertTrue(captured, "refresh_catalog was not called by DELETE handler")
         self.assertTrue(res["ok"])
+
+
+class CatalogTtlTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.validator = ResponseValidator()
+
+    def test_ttl_expiry_reloads_catalog(self) -> None:
+        first = [{"id": 999, "name_en": "x", "enabled": True}]
+        second = [{"id": 1, "name_en": "tank", "enabled": True}]
+        with mock.patch(
+            "services.response_validator.get_class_catalog",
+            side_effect=[first, second],
+        ):
+            known = self.validator._known_ids()
+            self.assertIn(999, known)
+            self.validator._cache_timestamp = time.time() - 400
+            known2 = self.validator._known_ids()
+        self.assertNotIn(999, known2)
+        self.assertIn(1, known2)
+        self.assertGreater(self.validator._cache_timestamp, time.time() - 5)
+
+    def test_within_ttl_keeps_stale_catalog(self) -> None:
+        first = [{"id": 999, "name_en": "x", "enabled": True}]
+        second = [{"id": 1, "name_en": "tank", "enabled": True}]
+        with mock.patch(
+            "services.response_validator.get_class_catalog",
+            side_effect=[first, second],
+        ) as patched:
+            self.validator._known_ids()
+            known = self.validator._known_ids()
+        self.assertIn(999, known)
+        self.assertEqual(patched.call_count, 1)
+
+    def test_refresh_bypasses_ttl(self) -> None:
+        first = [{"id": 999, "name_en": "x", "enabled": True}]
+        second = [{"id": 1, "name_en": "tank", "enabled": True}]
+        with mock.patch(
+            "services.response_validator.get_class_catalog",
+            side_effect=[first, second],
+        ):
+            self.assertIn(999, self.validator._known_ids())
+            self.validator.refresh_catalog()
+            known = self.validator._known_ids()
+        self.assertNotIn(999, known)
+        self.assertIn(1, known)
+
+    def test_failure_keeps_old_cache(self) -> None:
+        self.validator._enabled_ids = {5, 7}
+        self.validator._cache_timestamp = time.time() - 400
+        with mock.patch(
+            "services.response_validator.get_class_catalog",
+            side_effect=RuntimeError("boom"),
+        ):
+            known = self.validator._known_ids()
+        self.assertEqual(known, {5, 7})
+        self.assertGreater(self.validator._cache_timestamp, time.time() - 5)
 
 
 if __name__ == "__main__":

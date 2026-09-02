@@ -69,10 +69,12 @@ async def geo_import(
             status_code=404,
             detail="Sidecar .SRT/.CSV не найден рядом с видео",
         )
+    backfilled = telemetry.backfill_detection_gps(body.video_path) if points else 0
     return {
         "video_path": body.video_path,
         "source_file": str(sidecar) if sidecar else None,
         "point_count": len(points),
+        "backfilled": backfilled,
         "points": points,
     }
 

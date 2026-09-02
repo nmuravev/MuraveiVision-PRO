@@ -65,7 +65,7 @@ class GeoExportTests(unittest.TestCase):
             _det(id="nogps", gps_lat=None, gps_lon=None),
         ]
         with mock.patch("services.geo_export.list_detections", return_value=rows), \
-             mock.patch("services.geo_export.get_flight_track", return_value=None):
+             mock.patch("services.telemetry.load_track_points", return_value=[]):
             out = collect_geotagged_detections("clip.mp4")
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]["id"], "d1")

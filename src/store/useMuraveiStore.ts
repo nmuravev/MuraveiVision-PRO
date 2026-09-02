@@ -284,7 +284,37 @@ export const useMuraveiStore = create<MuraveiState>((set, get) => ({
       const data = await res.json();
       if (signal.aborted) return;
 
-      const rows = (data.detections ?? []) as PersistedDetection[];
+      let rows = (data.detections ?? []) as PersistedDetection[];
+      const needsGps = rows.some(
+        (d) => !d.is_deleted && (d.gps_lat == null || d.gps_lon == null),
+      );
+      if (needsGps) {
+        try {
+          const geoRes = await fetch('/api/geo/import', {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify({ video_path: path }),
+            signal,
+          });
+          if (signal.aborted) return;
+          if (geoRes.ok) {
+            const geo = (await geoRes.json().catch(() => ({}))) as { backfilled?: number };
+            if ((geo.backfilled ?? 0) > 0) {
+              const res2 = await fetch(`/api/detections?${params.toString()}`, {
+                headers: authHeaders(),
+                signal,
+              });
+              if (signal.aborted) return;
+              if (res2.ok) {
+                const data2 = await res2.json();
+                rows = (data2.detections ?? rows) as PersistedDetection[];
+              }
+            }
+          }
+        } catch (geoErr) {
+          if ((geoErr as Error).name === 'AbortError') return;
+        }
+      }
       const live = rows.filter((d) => !d.is_deleted);
       const serverSuppressed = rows.filter((d) => d.is_deleted);
       // Preserve in-memory live-dismiss stubs for this source across remounts

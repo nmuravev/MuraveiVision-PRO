@@ -8,10 +8,10 @@
 
 | Команда | Что запускает |
 |---------|---------------|
-| `npm run test:field` | все 5 приёмочных: `yolo-scrub-gate` + `field-regression` + `recon-raycast` + `test_ui_toggles` + `test_hotkeys` |
+| `npm run test:field` | все 6 приёмочных: `yolo-scrub-gate` + `field-regression` + `recon-raycast` + `test_ui_toggles` + `test_hotkeys` + `test_event_timeline` |
 | `npm run test:yolo-scrub` | только YOLO scrub gate |
 | `npm run test:yolo-scrub-gate` | alias scrub gate |
-| `npm run test:all` | **единый оркестратор** (unit + compileall + build + smoke + E2E) → `reports/test_report.html` |
+| `npm run test` / `npm run test:all` | **единый оркестратор** (unit + compileall + build + smoke + E2E) → `reports/test_report.html` |
 | `npx playwright test` | все тесты из `tests/` |
 
 Тесты в [tests/](../tests/):
@@ -20,6 +20,7 @@
 - `recon-raycast.test.ts` — COLMAP intrinsics, splat pick, miss→toast.
 - `test_ui_toggles.test.ts` — тумблеры SAHI/валидатора в AdminPanel: toggle → save → SQLite → API → переживает F5.
 - `test_hotkeys.test.ts` — Space, стрелки, 1–4, I/O, guard ввода в input, Ctrl+Z undo patch.
+- `test_event_timeline.test.ts` — пресет 4×Live (4 Viewer), лента событий, seek по клику на локальную детекцию.
 
 ## Backend — unittest
 
@@ -38,10 +39,12 @@ cd backend
 
 Файлы в [backend/tests/](../backend/tests/):
 - `test_validator.py` — Response Validator, 15 кейсов (включая graceful degradation, JSONL-запись).
-- `test_validator_catalog_refresh.py` — автообновление кэша валидатора после правки класса (6 кейсов, incl. integration с `classes_api` PUT/DELETE).
+- `test_validator_catalog_refresh.py` — автообновление кэша валидатора после правки класса (6 кейсов PUT/DELETE) + TTL 300 с (expiry, within-TTL, refresh bypass, failure keeps cache).
 - `test_sprint4.py` — `parse_autolabel_result` (catalog scoping, confidence clamp).
 - `test_colmap_poses.py` — COLMAP camera models, `_quat_to_rot`, `nearest_pose`.
 - `test_geo_export.py` — KML XML (escape, lon/lat/alt), GeoJSON FeatureCollection, skip без GPS, детерминированный цвет класса.
+- `test_geo_persist.py` — attach_gps (интерполяция, keep explicit, no-track), persist в SQLite, backfill только null.
+- `test_usb_import.py` — валидация .pt (nc 12/238) и YAML, dry-run без копии, confirm + `.backup`.
 
 ## SAHI
 
@@ -84,8 +87,10 @@ npm run build
 Либо одной командой (оркестратор):
 
 ```powershell
-npm run test:all
+npm run test
 ```
+
+(`npm run test` — алиас `npm run test:all`; тот же `scripts/test_orchestrator.py`.)
 
 Запускает последовательно: backend unit → compileall → frontend build → smoke_lbs_ft → test_sahi_field → `npm run test:field`. Генерирует `reports/test_report.html` + `reports/test_report.json`, exit 0 только если все **обязательные** шаги зелёные (smoke/E2E — skip-tolerant: GPU/браузеры могут отсутствовать).
 

@@ -21,7 +21,8 @@
     "portable": "powershell -ExecutionPolicy Bypass -File scripts/build_portable.ps1 -FetchEmbeddablePython",
     "portable:full": "powershell -ExecutionPolicy Bypass -File scripts/build_portable.ps1 -FetchEmbeddablePython -FullKit",
     "test:yolo-scrub": "playwright test yolo-scrub-gate.test.ts",
-    "test:field": "playwright test yolo-scrub-gate.test.ts field-regression.test.ts recon-raycast.test.ts test_ui_toggles.test.ts test_hotkeys.test.ts",
+    "test:field": "playwright test yolo-scrub-gate.test.ts field-regression.test.ts recon-raycast.test.ts test_ui_toggles.test.ts test_hotkeys.test.ts test_event_timeline.test.ts",
+    "test": "npm run test:all",
     "test:all": "muravei_env\\Scripts\\python.exe scripts\\test_orchestrator.py"
   },
   "dependencies": {

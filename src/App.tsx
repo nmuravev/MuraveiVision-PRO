@@ -36,6 +36,14 @@ function App() {
   usePlaybackClock();
   useHotkeys();
 
+  useEffect(() => {
+    if (workspaceMode !== 'liveQuad') return;
+    const { setSourceMode, viewers } = useViewerStore.getState();
+    for (const id of ['viewer-1', 'viewer-2', 'viewer-3', 'viewer-4'] as const) {
+      if (viewers[id]?.sourceMode !== 'live') setSourceMode(id, 'live');
+    }
+  }, [workspaceMode]);
+
   // Dev-only: expose stores for debugging and Playwright introspection.
   useEffect(() => {
     if (!import.meta.env.DEV) return;

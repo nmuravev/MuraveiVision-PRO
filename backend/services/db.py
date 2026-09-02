@@ -119,6 +119,7 @@ def init_db() -> None:
                     ON detections(source_video, time_sec);
                 CREATE INDEX IF NOT EXISTS idx_det_class ON detections(class_name);
                 CREATE INDEX IF NOT EXISTS idx_det_notes ON detections(user_notes);
+                CREATE INDEX IF NOT EXISTS idx_det_created ON detections(created_at DESC);
                 CREATE TABLE IF NOT EXISTS network_config (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     mode TEXT NOT NULL DEFAULT 'off',
@@ -226,6 +227,9 @@ def init_db() -> None:
                 conn.execute(
                     "ALTER TABLE class_overrides ADD COLUMN confidence_threshold REAL"
                 )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_det_created ON detections(created_at DESC)"
+            )
             conn.execute(
                 """
                 UPDATE detections
@@ -608,6 +612,25 @@ def list_detections(
         if source_key:
             out = [r for r in out if normalize_media_path(str(r.get("source_video") or "")) == source_key]
         return out
+    finally:
+        conn.close()
+
+
+def list_recent_detections(since: float, limit: int = 100) -> list[dict[str, Any]]:
+    """Non-deleted detections with created_at >= since, newest first."""
+    init_db()
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT * FROM detections
+            WHERE is_deleted = 0 AND created_at >= ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (float(since), max(1, min(int(limit), 500))),
+        ).fetchall()
+        return [_row_to_detection(r) for r in rows]
     finally:
         conn.close()
 

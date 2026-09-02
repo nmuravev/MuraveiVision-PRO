@@ -18,7 +18,6 @@
 
 ## Производительность
 
-- **Frontend chunk >500 kB** — `vite build` предупреждает о размере бандла. Функционально OK; code-splitting — в [TODO.md](TODO.md).
 - **SAHI** добавляет N инференсов на кадр (по слайсам). По умолчанию выключен; включать только для тяжёлых 4K-кадров БПЛА.
 
 ## Совместимость
@@ -34,5 +33,5 @@
 
 ## Документация
 
-- **`ARCHITECTURE.md` vs `ARCHITECTURE_FOR_AI.md`** — пересекаются (первый для инженеров, второй — инварианты для AI-агентов). Консолидация — в [TODO.md](TODO.md).
 - Устаревшие манифесты в `.backup/MuraveiVision/*.md` — **не использовать** (другой каркас).
+- [`ARCHITECTURE_FOR_AI.md`](ARCHITECTURE_FOR_AI.md) — stub; читать [ARCHITECTURE.md](ARCHITECTURE.md).

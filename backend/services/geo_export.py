@@ -12,13 +12,12 @@ the frontend Timeline palette so exports are stable across runs.
 from __future__ import annotations
 
 import hashlib
-import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
 from services import telemetry
-from services.db import get_flight_track, list_detections
+from services.db import list_detections
 
 # Seed palette (mirrors src/components/Timeline.tsx class colors).
 _SEED_PALETTE = [
@@ -59,15 +58,7 @@ def collect_geotagged_detections(video_path: str) -> list[dict[str, Any]]:
         all_rows = list_detections(include_deleted=False)
         rows = [r for r in all_rows if Path(str(r.get("source_video") or "")).name == base]
 
-    track_row = get_flight_track(video_path)
-    track: list[dict[str, Any]] = []
-    if track_row:
-        try:
-            track = json.loads(track_row.get("track_data") or "[]")
-        except (ValueError, TypeError):
-            track = []
-        if not track:
-            track = []
+    track = telemetry.load_track_points(video_path)
 
     out: list[dict[str, Any]] = []
     for r in rows:

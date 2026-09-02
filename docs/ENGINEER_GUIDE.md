@@ -36,7 +36,19 @@ npm install
 - Нет весов → `mode=offline` (пустые детекции, не ошибка).
 - `force_load(weights)` — хард-свитч после promote finetune.
 - Каталог классов: `assets/military_classes.yaml` (238), переопределения в `class_overrides` (`PATCH /api/classes/{id}`).
-- После правки каталога вызвать `validator.refresh_catalog()` (или перезапустить backend) — иначе валидатор отбрасывает новые ID.
+- После правки каталога вызвать `validator.refresh_catalog()` (PUT/DELETE override уже вызывают). Иначе кэш enabled IDs живёт до TTL 300 с.
+
+## Импорт модели с USB
+
+Air-gap: Система → панель «Импорт с USB» (engineer, PIN `0000000`).
+
+1. Вставить флешку с `.pt` (nc 12 или 238) и/или словарём `military_classes.yaml` (`names:` dict или список строк).
+2. **Сканировать USB** — `GET /api/models/usb-scan` (только removable; не сеть).
+3. **Предпросмотр** — dry-run, файл не копируется.
+4. **Да, импортировать** — текущий файл → `*.backup`, копия в `assets/models/yolo26n-ft.pt` (detect) или `military_classes.yaml`.
+5. `.pt`: `YoloEngine.force_load()` (VRAM `empty_cache`, без перезапуска). YAML: `invalidate_class_cache()` + `validator.refresh_catalog()`.
+
+Путь источника обязан быть на съёмном корне (иначе 403). Загрузка `.pt` через браузер (`POST /api/models/import`) по-прежнему работает.
 
 ## Сеть баз
 

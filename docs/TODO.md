@@ -10,19 +10,11 @@
 
 ## Важный функционал (1–2 недели)
 
-Фаза 1 и Фаза 2 мастерплана v3.0 **выполнены** (см. «Закрыто»). Оставшийся важный функционал — Фаза 3 (сеть и продукт):
-
-| # | Задача | Критерий готовности | Проверка |
-|---|--------|--------------------|----------|
-| 9 | Пресет 4×Live + Event Timeline | 4 live-потока + лента событий | Playwright |
+Фаза 3.1 (сеть) и 3.2 (4×Live + Event Timeline) закрыты. P0.1 (batch-скан) и P0.4 (гео v1 на детекциях) закрыты. Дальше P1.6 / P1.8 или Фаза 4.
 
 ## Улучшения / оптимизация (потом)
 
-| # | Задача | Критерий |
-|---|--------|---------|
-| 4 | Code-split frontend chunk >500 kB | `vite build` без warning; lazy-импорт тяжёлых панелей |
-| 5 | Консолидация `ARCHITECTECTURE.md` и `ARCHITECTURE_FOR_AI.md` | один источник архитектуры + AI-инварианты отдельно |
-| 12 | TTL кэша валидатора (поверх автообновления из 1.3) | кэш обновляется автоматически по TTL |
+Открытых пунктов техдолга 5.2 / 5.3 нет — оба закрыты (см. ниже).
 
 ## Фичи будущего (когда остальное готово)
 
@@ -30,7 +22,7 @@
 - Native multi-monitor windows.
 - OCR-only телеметрия (расширение geo-scope).
 - Cloud/SaaS-режим (если потребуется).
-- Фаза 4: seg-маски укреплений, change detection двух пролётов, USB offline model manager.
+- Фаза 4: seg-маски укреплений, change detection двух пролётов.
 
 ## Закрыто (контекст)
 
@@ -54,3 +46,30 @@
   - Worker `network_sync.py` (тик 30 с, JWT, push/pull `?since=`, upsert newer-wins, skip self).
   - `GET /api/network/status`, `hub_pin` write-only, `test_network_sync.py`.
   - Ручной E2E — две копии каталога, см. [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md#сеть-баз).
+- **Masterplan v3 3.2 4×Live + Event Timeline** — DONE:
+  - `GET /api/events/timeline` — merge локальных детекций и входящих `network_targets`.
+  - Пресет/вкладка 4×Live (2×2 Viewer + панель «События»); «4 вьюера» в Раскладке не заменён.
+  - Playwright `test_event_timeline.test.ts`, unit `test_events_timeline.py`.
+- **TTL кэша валидатора (5.4)** — DONE:
+  - `_known_ids()` истекает через 300 с; `refresh_catalog()` по-прежнему мгновенный.
+  - При ошибке каталога после TTL сохраняется старый set (backoff, не каждый кадр YOLO).
+  - `test_validator_catalog_refresh.py` — 10 кейсов (6 refresh + 4 TTL).
+- **USB Offline Model Manager (4.1)** — DONE:
+  - `GET /api/models/usb-scan`, `POST /api/models/usb-import` (engineer, confirm + `.backup`).
+  - Detect `.pt` → `assets/models/yolo26n-ft.pt` + `force_load`; YAML → `military_classes.yaml` + `refresh_catalog`.
+  - `test_usb_import.py`.
+- **Code-split frontend (5.1)** — DONE:
+  - Lazy: Flight3D, Admin, Network, AI, Train, Debug, Gallery; Suspense в `ComponentForId`.
+  - `manualChunks`: vendor-react / mosaic / three / three-examples / splats. Горячий путь (Viewer) в `index` ~176 kB.
+  - `npm run build` без warning >500 kB.
+- **Консолидация docs (5.2)** — DONE:
+  - Один [ARCHITECTURE.md](ARCHITECTURE.md): часть A (слои/потоки) + часть B (инварианты AI).
+  - [ARCHITECTURE_FOR_AI.md](ARCHITECTURE_FOR_AI.md) — stub со ссылкой.
+- **Алиас тестов (5.3)** — DONE:
+  - `npm run test` = `npm run test:all` (`scripts/test_orchestrator.py`).
+- **Batch-скан архива (P0.1)** — DONE:
+  - `POST /api/scan/start` + SSE, `origin=batch_scan`, авто-старт при открытии ролика без batch-строк.
+  - Маркеры timeline (голубые), кропы, прогресс в Timeline/UpdatePanel.
+- **Гео v1 на всех детекциях (P0.4)** — DONE:
+  - Sidecar SRT/CSV → `gps_*` при create/commit/batch-scan; `POST /api/geo/import` backfill старых строк.
+  - `test_geo_persist.py`.

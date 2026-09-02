@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from services.db import get_flight_track, upsert_flight_track
+from services.db import get_flight_track, list_detections, update_detection, upsert_flight_track
 from services.security import archive_root, assert_in_archive
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -313,6 +313,70 @@ def load_track_points(video_path: str) -> list[dict[str, Any]]:
     if row and row.get("points"):
         return list(row["points"])
     return ensure_track_for_video(video_path)
+
+
+def gps_at(video_path: str, time_sec: float) -> dict[str, Any] | None:
+    """Interpolate sidecar/track GPS at clip time. None if no track."""
+    raw = (video_path or "").strip()
+    if not raw:
+        return None
+    try:
+        pt = interpolate(load_track_points(raw), float(time_sec))
+    except Exception:
+        return None
+    if not pt:
+        return None
+    return {
+        "lat": pt.get("lat"),
+        "lon": pt.get("lon"),
+        "alt": pt.get("alt"),
+    }
+
+
+def attach_gps(payload: dict[str, Any]) -> dict[str, Any]:
+    """Fill gps_* on a detection payload if missing and a track exists."""
+    if payload.get("gps_lat") is not None and payload.get("gps_lon") is not None:
+        return payload
+    src = str(payload.get("source_video") or "")
+    pt = gps_at(src, float(payload.get("time_sec") or 0))
+    if not pt or pt.get("lat") is None or pt.get("lon") is None:
+        return payload
+    payload["gps_lat"] = pt["lat"]
+    payload["gps_lon"] = pt["lon"]
+    if pt.get("alt") is not None:
+        payload["gps_alt"] = pt["alt"]
+    return payload
+
+
+def backfill_detection_gps(video_path: str) -> int:
+    """Persist interpolated GPS onto detections for this video that still lack it."""
+    raw = (video_path or "").strip()
+    if not raw:
+        return 0
+    try:
+        track = load_track_points(raw)
+    except Exception:
+        return 0
+    if not track:
+        return 0
+    rows = list_detections(source_video=raw, include_deleted=True)
+    n = 0
+    for row in rows:
+        if row.get("gps_lat") is not None and row.get("gps_lon") is not None:
+            continue
+        pt = interpolate(track, float(row.get("time_sec") or 0))
+        if not pt or pt.get("lat") is None or pt.get("lon") is None:
+            continue
+        update_detection(
+            str(row["id"]),
+            {
+                "gps_lat": pt.get("lat"),
+                "gps_lon": pt.get("lon"),
+                "gps_alt": pt.get("alt"),
+            },
+        )
+        n += 1
+    return n
 
 
 def track_to_jsonable(points: list[dict[str, Any]]) -> str:

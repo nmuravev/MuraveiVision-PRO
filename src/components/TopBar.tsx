@@ -10,6 +10,7 @@ import {
   GraduationCap,
   LayoutGrid,
   Monitor,
+  Radio,
   Settings,
   User,
 } from 'lucide-react';
@@ -45,6 +46,7 @@ const TAB_ICONS: Record<string, React.ReactNode> = {
   Монтаж: <Clapperboard size={12} />,
   'AI-анализ': <Brain size={12} />,
   Обучение: <GraduationCap size={12} />,
+  '4×Live': <Radio size={12} />,
   Система: <Settings size={12} />,
 };
 
@@ -268,6 +270,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <button
               key={tab}
               type="button"
+              aria-label={tab}
               onClick={() => onTabChange(tab)}
               className={`px-2.5 py-1.5 text-[11px] font-medium rounded-sm transition-all duration-150 inline-flex items-center gap-1.5 ${
                 activeTab === tab
@@ -373,6 +376,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   ['singleViewer', '1 вьюер'],
                   ['dualViewer', '2 вьюера'],
                   ['quadViewer', '4 вьюера'],
+                  ['liveQuad', '4×Live'],
                   ['editDefault', 'Монтаж по умолчанию'],
                   ['mediaGeo', 'Медиа + Гео 3D'],
                 ] as const

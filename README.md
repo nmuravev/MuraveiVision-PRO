@@ -41,7 +41,7 @@ npm run dev
 ```
 
 Полный гайд: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).  
-Для ИИ-агентов: [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md), [docs/ARCHITECTURE_FOR_AI.md](docs/ARCHITECTURE_FOR_AI.md).
+Для ИИ-агентов: [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Требования
 

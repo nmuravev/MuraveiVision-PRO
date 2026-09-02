@@ -12,10 +12,10 @@
 
 ## P0 — операторский конвейер
 
-1. Batch-скан архивного видео → маркеры timeline / auto-commit  
+1. Batch-скан архивного видео → маркеры timeline / auto-commit — **сделано**  
 2. Rules & alerts (класс+conf → звук + галерея) — **сделано**  
 3. Active learning: low-confidence → confirm/false-positive → train — **сделано**  
-4. Гео v1: sidecar SRT/CSV → `gps_*` на детекциях / отчёт  
+4. Гео v1: sidecar SRT/CSV → `gps_*` на детекциях / отчёт — **сделано**  
 
 ## Гео 3D (после P0.4)
 
@@ -48,16 +48,16 @@
 ## P2 — сеть и продукт
 
 9. Реальная репликация целей между базами — **DONE** (3.1, worker + JWT + `?since=`)  
-10. Пресет 4×Live + event timeline  
+10. Пресет 4×Live + event timeline — **DONE** (3.2)  
 11. KML/GeoJSON + PDF — **DONE** (Stage 1 / 3.3)  
 12. Hotkeys оператора — **DONE** (Stage 1 / 3.4)  
 
 ## P3
 
 13. Seg-маски укреплений (осторожно с detect-train)  
-14. Audio cue по bbox  
+14. Audio cue по bbox — **сделано** (RulesPanel: beep/alarm/none)  
 15. Change detection двух пролётов  
-16. USB offline model manager  
+16. USB offline model manager — **DONE** (4.1, scan + validate + confirm + force_load)  
 
 ## Вне скоупа
 

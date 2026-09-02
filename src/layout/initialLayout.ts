@@ -15,7 +15,8 @@ export type ViewId =
   | 'aiAnalysis'
   | 'debug'
   | 'network'
-  | 'flight3d';
+  | 'flight3d'
+  | 'events';
 
 /** TopBar workspace modes (functional tabs, not just mosaic cosmetics). */
 export type WorkspaceMode =
@@ -23,7 +24,8 @@ export type WorkspaceMode =
   | 'editDefault'
   | 'aiAnalysis'
   | 'training'
-  | 'system';
+  | 'system'
+  | 'liveQuad';
 
 /** Stable tab ids (also used as display labels — Russian). */
 export const WORKSPACE_TABS = [
@@ -31,6 +33,7 @@ export const WORKSPACE_TABS = [
   'Монтаж',
   'AI-анализ',
   'Обучение',
+  '4×Live',
   'Система',
 ] as const;
 
@@ -41,6 +44,7 @@ export const TAB_TO_MODE: Record<string, WorkspaceMode> = {
   Монтаж: 'editDefault',
   'AI-анализ': 'aiAnalysis',
   Обучение: 'training',
+  '4×Live': 'liveQuad',
   Система: 'system',
   // Legacy English keys (layout migrate / deep links)
   MEDIA: 'mediaView',
@@ -48,6 +52,7 @@ export const TAB_TO_MODE: Record<string, WorkspaceMode> = {
   'AI ANALYSIS': 'aiAnalysis',
   TRAINING: 'training',
   SYSTEM: 'system',
+  '4xLive': 'liveQuad',
 };
 
 export const MODE_TO_TAB: Record<WorkspaceMode, WorkspaceTab> = {
@@ -55,6 +60,7 @@ export const MODE_TO_TAB: Record<WorkspaceMode, WorkspaceTab> = {
   editDefault: 'Монтаж',
   aiAnalysis: 'AI-анализ',
   training: 'Обучение',
+  liveQuad: '4×Live',
   system: 'Система',
 };
 
@@ -74,6 +80,7 @@ export const VIEW_TITLES: Record<ViewId, string> = {
   debug: 'Отладка',
   network: 'Сеть',
   flight3d: 'Гео 3D',
+  events: 'События',
 };
 
 export const ALL_VIEW_IDS: ViewId[] = [
@@ -91,6 +98,7 @@ export const ALL_VIEW_IDS: ViewId[] = [
   'debug',
   'network',
   'flight3d',
+  'events',
 ];
 
 export const MIN_SIZES: Partial<Record<ViewId, { width: number; height: number }>> = {
@@ -109,6 +117,7 @@ export const MIN_SIZES: Partial<Record<ViewId, { width: number; height: number }
   debug: { width: 280, height: 200 },
   network: { width: 300, height: 240 },
   flight3d: { width: 320, height: 240 },
+  events: { width: 280, height: 140 },
 };
 
 /** MEDIA — archive browse: MediaPool + 1 Viewer + Timeline */
@@ -214,6 +223,35 @@ export const mediaGeoLayout: MosaicNode<ViewId> = {
   ],
 };
 
+/** 4×Live — 2×2 viewers + event log (does not replace layout-menu «4 вьюера»). */
+export const liveQuadLayout: MosaicNode<ViewId> = {
+  type: 'split',
+  direction: 'column',
+  splitPercentages: [78, 22],
+  children: [
+    {
+      type: 'split',
+      direction: 'row',
+      splitPercentages: [50, 50],
+      children: [
+        {
+          type: 'split',
+          direction: 'column',
+          splitPercentages: [50, 50],
+          children: ['viewer-1', 'viewer-3'],
+        },
+        {
+          type: 'split',
+          direction: 'column',
+          splitPercentages: [50, 50],
+          children: ['viewer-2', 'viewer-4'],
+        },
+      ],
+    },
+    'events',
+  ],
+};
+
 /** Default workspace = EDIT (main operator mode) */
 export const initialLayout: MosaicNode<ViewId> = editDefaultLayout;
 
@@ -223,6 +261,7 @@ export const layoutPresets: Record<WorkspaceMode | string, MosaicNode<ViewId>> =
   aiAnalysis: aiAnalysisLayout,
   training: trainingLayout,
   system: systemLayout,
+  liveQuad: liveQuadLayout,
   mediaGeo: mediaGeoLayout,
   // Legacy aliases (Layout menu / old code)
   default: editDefaultLayout,

@@ -101,7 +101,7 @@ Graceful degradation: при любой ошибке валидатора (ил�
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| POST | `/api/geo/import` | `{ video_path }` → парсинг sidecar, upsert `flight_tracks` |
+| POST | `/api/geo/import` | `{ video_path }` → парсинг sidecar, upsert `flight_tracks`, backfill `gps_*` на детекциях без координат (`backfilled`) |
 | GET | `/api/geo/track?video_path=` | точки траектории (предпочтительно для Windows-путей) |
 | GET | `/api/geo/track/{video_path}` | то же через path |
 | GET | `/api/geo/detections?video_path=` | детекции + GPS |
@@ -115,6 +115,8 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 ## Detections — `/api/detections`
 
 `GET` требует `source_video` (без него возвращает пустой список; `all_videos=true` только для служебных инструментов). CRUD + `POST /commit` (пакет кадра + crops), `GET /{id}/crop`, `GET /{id}/similar`. Массовый soft-delete: `DELETE ?source_video=...&all=true`.
+
+`POST /` и `POST /commit` при наличии sidecar/трека пишут `gps_lat` / `gps_lon` / `gps_alt` (интерполяция по `time_sec`). Ошибка гео не блокирует фиксацию.
 
 ## Train / Export
 
@@ -154,6 +156,8 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 - `GET /api/report/html` — автономный HTML-отчёт  
 - `GET /api/report/pdf` — технический PDF (схема lon/lat + таблица; карта в KML)  
 - `GET /api/models/status`, `POST /api/models/import`, `GET /api/models/import/stream`  
+- `GET /api/models/usb-scan` — съёмные диски, `.pt`/`.yaml` с валидацией (engineer+)  
+- `POST /api/models/usb-import` — `{source_path, target_type: model|classes, confirm}`. `confirm=false` — dry-run; `confirm=true` — copy + `.backup` + `force_load` / `refresh_catalog`  
 - `GET /api/system/hardware`, `POST /api/system/selftest`, `POST /api/system/simulate-failure`  
 - `GET /api/health` — liveness + YOLO/DB
 
@@ -194,6 +198,16 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 | POST | `/messages` | operator+ | одна строка `direction=out` (без локального зеркала `in`) |
 
 Цели несут GPS и `source_video`. `crop_path` — путь к файлу, байты кропа по сети не гоняются (на другой машине файл может отсутствовать). Upsert: `ON CONFLICT(id)` обновляет только если входящий `created_at` строго больше.
+
+## Events — `/api/events`
+
+Единая лента для операторского экрана 4×Live: локальные детекции + входящие сетевые цели (`network_targets.direction='in'`). Сортировка по `created_at` (wall-clock), не по видео-`time_sec`. Окно и лимит режутся на бэкенде (window 10–86400 с, limit 1–200).
+
+| Метод | Путь | Роль | Описание |
+|-------|------|------|----------|
+| GET | `/timeline` | operator+ | Query: `window` (сек, default 300), `limit` (default 100). Ответ `{ events: [...] }`. Каждый элемент: `id`, `type` (`local_detection` \| `network_target`), `time_sec` (видеовремя; `null` у сети), `class_name`, `confidence`, `source_video`, `source_base` (`null` у локальных), `created_at`, плюс `gps_lat`/`gps_lon`/`notes` |
+
+Исходящие цели (`direction=out`) и soft-deleted детекции не попадают в ленту. Индексы: `idx_det_created`, `idx_net_targets_created`.
 
 ## Support
 

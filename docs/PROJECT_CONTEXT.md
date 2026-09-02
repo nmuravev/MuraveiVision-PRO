@@ -100,7 +100,7 @@ npm run dev
 
 ## 9. Связанные документы
 
-- [ARCHITECTURE_FOR_AI.md](ARCHITECTURE_FOR_AI.md)  
+- [ARCHITECTURE.md](ARCHITECTURE.md)  
 - [API.md](API.md)  
 - [DETECTION_AND_TRAINING.md](DETECTION_AND_TRAINING.md)  
 - [DEVELOPMENT.md](DEVELOPMENT.md)

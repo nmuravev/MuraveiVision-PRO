@@ -3,13 +3,13 @@
 Единая папка проектной документации. Корневой [`README.md`](../README.md) — краткий вход; детали здесь.
 
 **Источник истины для AI-агентов** (читать по порядку, см. [`AGENTS.md`](../AGENTS.md)):
-[`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) → [`ARCHITECTURE_FOR_AI.md`](ARCHITECTURE_FOR_AI.md) → [`DEVELOPMENT.md`](DEVELOPMENT.md).
+[`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) → [`ARCHITECTURE.md`](ARCHITECTURE.md) → [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
 | Документ | Для кого | Содержание |
 |----------|----------|------------|
 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) | ИИ-агенты, новые разработчики | Паспорт проекта: стек, дерево, запреты, быстрый ориентир |
-| [ARCHITECTURE_FOR_AI.md](ARCHITECTURE_FOR_AI.md) | ИИ-агенты | Правила изменения кода, слои, инварианты air-gap |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Инженеры | Архитектура слоёв, потоки данных, UI mosaic |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Инженеры + ИИ-агенты | Слои, потоки, UI mosaic (часть A) и инварианты air-gap / detect≠seg (часть B) |
+| [ARCHITECTURE_FOR_AI.md](ARCHITECTURE_FOR_AI.md) | ИИ-агенты | Stub → [ARCHITECTURE.md](ARCHITECTURE.md) |
 | [DIRECTORY_STRUCTURE.md](DIRECTORY_STRUCTURE.md) | Все | Актуальная топография репозитория |
 | [API.md](API.md) | Frontend / интеграция | REST + WebSocket эндпоинты (вкл. SAHI, Response Validator) |
 | [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) | Инженеры / ML | 11 таблиц SQLite, индексы, миграции |

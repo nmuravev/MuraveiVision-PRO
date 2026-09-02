@@ -22,6 +22,7 @@ from services.db import (
     update_detection,
 )
 from services.security import assert_in_archive, require_role
+from services.telemetry import attach_gps
 
 router = APIRouter(prefix="/api/detections", tags=["detections"])
 
@@ -208,24 +209,26 @@ async def detections_create(
     class_name = _resolve_name(body.class_id, body.class_name)
     source_video = normalize_media_path(body.source_video)
     row = insert_detection(
-        {
-            "id": body.id,
-            "source_video": source_video,
-            "time_sec": body.time_sec,
-            "frame_idx": body.frame_idx,
-            "class_id": body.class_id,
-            "class_name": class_name,
-            "confidence": body.confidence,
-            "bbox_x": x,
-            "bbox_y": y,
-            "bbox_w": w,
-            "bbox_h": h,
-            "is_edited": 1,
-            "edited_by": user.get("role"),
-            "edited_at": time.time(),
-            "user_notes": body.user_notes,
-            "origin": body.origin if body.origin in {"auto", "manual", "batch_scan"} else "manual",
-        }
+        attach_gps(
+            {
+                "id": body.id,
+                "source_video": source_video,
+                "time_sec": body.time_sec,
+                "frame_idx": body.frame_idx,
+                "class_id": body.class_id,
+                "class_name": class_name,
+                "confidence": body.confidence,
+                "bbox_x": x,
+                "bbox_y": y,
+                "bbox_w": w,
+                "bbox_h": h,
+                "is_edited": 1,
+                "edited_by": user.get("role"),
+                "edited_at": time.time(),
+                "user_notes": body.user_notes,
+                "origin": body.origin if body.origin in {"auto", "manual", "batch_scan"} else "manual",
+            }
+        )
     )
     jpeg = _decode_jpeg(body.frame_jpeg)
     if jpeg:
@@ -255,21 +258,23 @@ async def detections_commit(
             continue
         class_name = _resolve_name(obj.class_id, obj.class_name)
         row = insert_detection(
-            {
-                "source_video": source_video,
-                "time_sec": body.time_sec,
-                "frame_idx": body.frame_idx,
-                "class_id": obj.class_id,
-                "class_name": class_name,
-                "ai_class_name": class_name,
-                "confidence": obj.confidence,
-                "bbox_x": x,
-                "bbox_y": y,
-                "bbox_w": w,
-                "bbox_h": h,
-                "is_edited": 0,
-                "origin": "auto",
-            }
+            attach_gps(
+                {
+                    "source_video": source_video,
+                    "time_sec": body.time_sec,
+                    "frame_idx": body.frame_idx,
+                    "class_id": obj.class_id,
+                    "class_name": class_name,
+                    "ai_class_name": class_name,
+                    "confidence": obj.confidence,
+                    "bbox_x": x,
+                    "bbox_y": y,
+                    "bbox_w": w,
+                    "bbox_h": h,
+                    "is_edited": 0,
+                    "origin": "auto",
+                }
+            )
         )
         if jpeg:
             crop_path = save_crop_jpeg(

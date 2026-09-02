@@ -342,6 +342,24 @@ def mark_target_synced(tid: str, ts: float | None = None) -> None:
         conn.close()
 
 
+def list_recent_incoming_targets(since: float, limit: int = 100) -> list[dict[str, Any]]:
+    init_db()
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT * FROM network_targets
+            WHERE direction = 'in' AND created_at >= ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (float(since), max(1, min(int(limit), 500))),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 def add_message(*, direction: str, sender: str, body: str) -> dict[str, Any]:
     init_db()
     mid = str(uuid.uuid4())

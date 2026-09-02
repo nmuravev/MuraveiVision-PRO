@@ -47,6 +47,8 @@ npm run portable:full
 - embeddable `muravei_env` + pip из `backend/requirements.txt`
 - detect `.pt` (без `*seg*` / `yoloe*` при копировании)
 - `military_classes.yaml`, `Запустить.bat`
+
+Полевое обновление модели без интернета: Система → **Импорт с USB** (флешка с `.pt` / YAML). См. [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md#импорт-модели-с-usb).
 - опционально `mobileclip2_b.ts`
 - пустые `archive/`, `cache/`, `logs/`, `reports/`
 

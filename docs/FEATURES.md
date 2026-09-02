@@ -4,8 +4,9 @@
 
 ## Интерфейс
 
-- **Mosaic docking** — layout-дерево `react-mosaic-component`, перетаскивание за title bar, 5 drop-зон, snap-split, вкладки, maximize/collapse, float/redock. Пресеты 1/2/4 Viewer. Layout переживает F5 (`localStorage`). Поведение как в Adobe Premiere.
-- **Вкладки TopBar** — MEDIA / EDIT / AI ANALYSIS / TRAINING / SYSTEM (смена mosaic-presets + контента).
+- **Mosaic docking** — layout-дерево `react-mosaic-component`, перетаскивание за title bar, 5 drop-зон, snap-split, вкладки, maximize/collapse, float/redock. Пресеты 1/2/4 Viewer и **4×Live**. Layout переживает F5 (`localStorage`). Поведение как в Adobe Premiere.
+- **Вкладки TopBar** — Медиа / Монтаж / AI-анализ / Обучение / **4×Live** / Система (смена mosaic-presets + контента).
+- **4×Live + Event Timeline** — 2×2 Viewer (по умолчанию режим Live, стримы не стартуют сами) + лента событий снизу. Опрос `GET /api/events/timeline` каждые 3 с. Клик по локальной детекции: фокус Viewer с тем же `source_video` и seek к `time_sec`. Клик по сетевой цели: карточка (база, GPS, заметки), без seek. Пресет «4 вьюера» в меню Раскладка (пул + инспектор + таймлайн) **не** заменён.
 - **Горячие клавиши оператора** — Space play/pause, ←/→ кадр (Shift ×10), I/O метки, F/Ctrl+S фиксация кадра, 1–4 вьюер, Ctrl+Z undo правки детекции, Del удаление. Не срабатывают в input/textarea. Подсказки: меню «Окна».
 - **DaVinci-визуал** — тёмная тема, серые панели, оранжево-красные акценты playhead/selection.
 
@@ -22,9 +23,11 @@
 - **SAHI** — нарезка кадра для мелких объектов (4K БПЛА). Опционально: per-request `use_sahi` или системный `use_sahi_default`. Переиспользует модель (без дубля VRAM). Полевой тест: `backend/scripts/test_sahi_field.py` на сыром кадре из дрон-видео → `logs/sahi_field_test.json`.
 - **Response Validator** — defense-in-depth фильтр детекций (bbox/conf/area/class_id), JSONL-лог отбросов, graceful degradation. Кэш каталога классов автообновляется после правки `PATCH/DELETE /api/classes/overrides/{id}`.
 - **Конфигурация детекции (UI инженера)** — тумблеры/инпуты SAHI (`use_sahi_default`, slice, overlap) и валидатора (`validator_enabled`, min/max bbox area, min confidence) в панели «Система» → «Конфигурация детекции». Сохранение через `PUT /api/system/detect-config` в SQLite, применение без перезапуска, переживает F5.
+- **Импорт модели** — загрузка `.pt` через AdminPanel + **USB Offline Model Manager**: сканирование съёмного диска, валидация nc ∈ {12, 238}, confirm + `.backup`, `force_load` без рестарта.
 
 ## Работа с детекциями
 
+- **Пакетный скан архива** — фоновый YOLO (~1 кадр/с) пишет детекции `origin=batch_scan` (маркеры на таймлайне, кропы). Авто-старт при открытии ролика, если batch-строк ещё нет. Кнопка в панели «Обновление».
 - **CRUD** — создание/правка/удаление, soft-delete, bulk «Очистить».
 - **Scoped-фильтр по видео** — Inspector/Gallery/Viewer/TopBar показывают N текущего ролика.
 - **Inspector** — список детекций, заметки (debounce), флаг, выбор класса при рисовании.
@@ -57,6 +60,7 @@
 
 - **HTML-отчёт** — `GET /api/report/html`.
 - **PDF** — `GET /api/report/pdf`: таблица + примитивная lon/lat-схема (не карта Google Earth).
+- **Гео v1** — sidecar `.SRT`/`.CSV` рядом с роликом в `archive/` → `flight_tracks` и `gps_*` на детекциях (фиксация кадра, ручная рамка, batch-scan). `POST /api/geo/import` дописывает GPS на старые строки. Открытие ролика в Viewer: если у детекций нет GPS — импорт sidecar и повторная загрузка.
 - **KML / GeoJSON** — `GET /api/export/kml?source_video=…` и `/api/export/geojson?source_video=…`. Детекции без GPS пропускаются. KML — основной геоформат (Google Earth). Dropdown «Экспорт» в TopBar.
 - **Training/fine-tune** — `.pt.backup` + `empty_cache`, один callback, promote.
 

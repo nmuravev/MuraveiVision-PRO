@@ -10,7 +10,7 @@ from typing import Any
 BASE_DIR = Path(__file__).resolve().parents[2]
 from services.db import insert_detection, normalize_media_path, save_crop_jpeg
 from services.security import archive_root, assert_in_archive
-from services.telemetry import ensure_track_for_video, interpolate
+from services.telemetry import attach_gps, ensure_track_for_video
 from services.yolo_engine import get_yolo_engine
 
 LOG_PATH = BASE_DIR / "logs" / "batch_scan.log"
@@ -217,7 +217,6 @@ def _run(
             jpeg = buf.tobytes()
             res = engine._predict_sync(jpeg, conf, frame_idx, time_sec, viewer_id=viewer_id)  # noqa: SLF001
             objects = res.get("objects") or []
-            gps_pt = interpolate(track, time_sec) if track else None
             for obj in objects:
                 x, y, w, h = _xywh_from_obj(obj)
                 class_name = str(obj.get("class_en") or obj.get("class_name") or "unknown")
@@ -236,11 +235,7 @@ def _run(
                     "bbox_h": h,
                     "origin": "batch_scan",
                 }
-                if gps_pt:
-                    payload["gps_lat"] = gps_pt.get("lat")
-                    payload["gps_lon"] = gps_pt.get("lon")
-                    payload["gps_alt"] = gps_pt.get("alt")
-                row = insert_detection(payload)
+                row = insert_detection(attach_gps(payload))
                 if save_crops:
                     crop_path = save_crop_jpeg(
                         row["id"], jpeg, {"x": x, "y": y, "w": w, "h": h}

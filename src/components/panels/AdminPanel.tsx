@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Eye, KeyRound, RefreshCw, Upload, Cpu } from 'lucide-react';
+import { AlertTriangle, Eye, KeyRound, RefreshCw, Upload, Cpu, Usb } from 'lucide-react';
 import { authHeaders, useMuraveiStore } from '../../store/useMuraveiStore';
 import { ClassDictionary } from './ClassDictionary';
+import { Modal } from '../ui';
 
 type Hw = Record<string, unknown>;
 
@@ -22,6 +23,31 @@ export const AdminPanel: React.FC = () => {
   const [pinRole, setPinRole] = useState('operator');
   const [masterPin, setMasterPin] = useState('');
   const [info, setInfo] = useState<string | null>(null);
+  const [usbBusy, setUsbBusy] = useState(false);
+  const [usbDrives, setUsbDrives] = useState<
+    Array<{
+      letter: string;
+      label: string;
+      files: Array<{
+        path: string;
+        name: string;
+        type: 'model' | 'classes';
+        size_mb: number;
+        valid: boolean;
+        nc?: number | null;
+        count?: number | null;
+        error?: string | null;
+      }>;
+    }>
+  >([]);
+  const [usbErrors, setUsbErrors] = useState<string[]>([]);
+  const [usbPending, setUsbPending] = useState<{
+    path: string;
+    type: 'model' | 'classes';
+    dest?: string;
+    message?: string;
+  } | null>(null);
+  const [usbResult, setUsbResult] = useState<string | null>(null);
 
   // Detection inference config (SAHI + Response Validator)
   type DetectCfg = {
@@ -171,6 +197,80 @@ export const AdminPanel: React.FC = () => {
           /* ignore */
         }
       }
+    }
+  };
+
+  const scanUsb = async () => {
+    setError(null);
+    setUsbResult(null);
+    setUsbBusy(true);
+    try {
+      const res = await fetch('/api/models/usb-scan', { headers: authHeaders() });
+      const data = (await res.json()) as {
+        drives?: typeof usbDrives;
+        errors?: string[];
+        detail?: string;
+      };
+      if (!res.ok) throw new Error(data.detail || 'USB scan failed');
+      setUsbDrives(data.drives || []);
+      setUsbErrors(data.errors || []);
+    } finally {
+      setUsbBusy(false);
+    }
+  };
+
+  const previewUsb = async (file: { path: string; type: 'model' | 'classes' }) => {
+    setError(null);
+    const res = await fetch('/api/models/usb-import', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_path: file.path,
+        target_type: file.type,
+        confirm: false,
+      }),
+    });
+    const data = (await res.json()) as {
+      dest_path?: string;
+      message?: string;
+      detail?: string;
+      valid?: boolean;
+      error?: string;
+    };
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'preview failed');
+    if (data.valid === false) throw new Error(data.error || 'Файл невалиден');
+    setUsbPending({
+      path: file.path,
+      type: file.type,
+      dest: data.dest_path,
+      message: data.message,
+    });
+  };
+
+  const confirmUsb = async () => {
+    if (!usbPending) return;
+    setUsbBusy(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/models/usb-import', {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_path: usbPending.path,
+          target_type: usbPending.type,
+          confirm: true,
+        }),
+      });
+      const data = (await res.json()) as {
+        success?: boolean;
+        message?: string;
+        detail?: string;
+      };
+      if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'import failed');
+      setUsbResult(data.message || (data.success ? 'Импортировано' : 'Ошибка'));
+      setUsbPending(null);
+    } finally {
+      setUsbBusy(false);
     }
   };
 
@@ -420,6 +520,99 @@ export const AdminPanel: React.FC = () => {
         {importLog.length > 0 && (
           <pre className="max-h-24 overflow-auto text-[10px] bg-black/40 p-2">{importLog.join('\n')}</pre>
         )}
+      </div>
+
+      <div data-testid="usb-import" className="border border-[var(--dv-border)] bg-[var(--dv-bg-deep)] p-3 space-y-2">
+        <div className="font-semibold flex items-center gap-2">
+          <Usb size={14} /> Импорт с USB
+        </div>
+        <p className="text-[10px] text-[var(--dv-text-muted)]">
+          Съёмный диск: .pt (nc 12 или 238) и словарь классов YAML. Текущий файл сохраняется как .backup.
+          Модель подхватывается без перезапуска.
+        </p>
+        <button
+          type="button"
+          className="px-2 py-1 bg-[#333] rounded-sm disabled:opacity-40"
+          disabled={usbBusy}
+          onClick={() => void scanUsb().catch((e) => setError(String(e)))}
+        >
+          {usbBusy ? 'Сканирование…' : 'Сканировать USB'}
+        </button>
+        {usbErrors.map((e) => (
+          <div key={e} className="text-[10px] text-[var(--dv-text-muted)]">
+            {e}
+          </div>
+        ))}
+        {usbDrives.map((drive) => (
+          <div key={drive.letter} className="border border-[var(--dv-border)]/60 p-2 space-y-1">
+            <div className="text-[11px] font-semibold">
+              {drive.letter} {drive.label ? `· ${drive.label}` : ''}
+            </div>
+            {drive.files.length === 0 && (
+              <div className="text-[10px] text-[var(--dv-text-muted)]">Нет .pt / .yaml</div>
+            )}
+            {drive.files.map((file) => (
+              <div
+                key={file.path}
+                className="flex flex-wrap items-center gap-2 text-[10px] py-0.5 border-t border-[var(--dv-border)]/40"
+              >
+                <span className="truncate max-w-[14rem]" title={file.path}>
+                  {file.name}
+                </span>
+                <span className="text-[var(--dv-text-muted)]">{file.size_mb} MB</span>
+                <span className={file.valid ? 'text-emerald-400' : 'text-red-400'}>
+                  {file.valid ? 'валиден' : 'невалиден'}
+                </span>
+                {file.type === 'model' && file.nc != null && <span>nc={file.nc}</span>}
+                {file.type === 'classes' && file.count != null && <span>{file.count} классов</span>}
+                {file.error && (
+                  <span className="text-[var(--dv-text-muted)] truncate max-w-[12rem]">{file.error}</span>
+                )}
+                <button
+                  type="button"
+                  className="px-1.5 py-0.5 bg-[#333] rounded-sm disabled:opacity-40"
+                  disabled={!file.valid || usbBusy}
+                  onClick={() => void previewUsb(file).catch((e) => setError(String(e)))}
+                >
+                  Предпросмотр
+                </button>
+              </div>
+            ))}
+          </div>
+        ))}
+        {usbResult && <div className="text-[11px] text-[var(--dv-accent)]">{usbResult}</div>}
+        <Modal
+          open={Boolean(usbPending)}
+          title="Импорт с USB"
+          onClose={() => setUsbPending(null)}
+          footer={
+            <>
+              <button type="button" className="px-2 py-1 bg-[#333] rounded-sm" onClick={() => setUsbPending(null)}>
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="px-2 py-1 bg-[var(--dv-accent)] text-black rounded-sm disabled:opacity-40"
+                disabled={usbBusy}
+                onClick={() => void confirmUsb().catch((e) => setError(String(e)))}
+              >
+                Да, импортировать
+              </button>
+            </>
+          }
+        >
+          {usbPending && (
+            <div className="space-y-1 text-[12px]">
+              <p>{usbPending.message || `Импортировать ${usbPending.path}?`}</p>
+              {usbPending.dest && (
+                <p className="text-[10px] text-[var(--dv-text-muted)] font-mono break-all">{usbPending.dest}</p>
+              )}
+              <p className="text-[10px] text-[var(--dv-text-muted)]">
+                Текущий файл будет сохранён как .backup
+              </p>
+            </div>
+          )}
+        </Modal>
       </div>
 
       <div className="border border-[var(--dv-border)] bg-[var(--dv-bg-deep)] p-3 space-y-2">
