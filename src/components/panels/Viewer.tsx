@@ -34,6 +34,7 @@ import {
   useChangeDetectionStore,
   type ChangeType,
 } from '../../store/useChangeDetectionStore';
+import { CompareSyncModal } from './CompareSyncModal';
 
 interface ViewerProps {
   viewerId: string;
@@ -267,6 +268,9 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const cdRunAnalysis = useChangeDetectionStore((s) => s.runAnalysis);
   const cdClear = useChangeDetectionStore((s) => s.clear);
   const cdActiveHighlight = useChangeDetectionStore((s) => s.activeHighlight);
+  const cdSeekTargets = useChangeDetectionStore((s) => s.seekTargets);
+  const cdRequestSeek = useChangeDetectionStore((s) => s.requestSeek);
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
   const analysisConfig = useMuraveiStore((s) => s.analysisConfig);
   const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
   useAutoBatchScan(viewer?.sourcePath ?? undefined, isAuthenticated);
@@ -1305,6 +1309,24 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   }, [playbackRate, viewer?.sourcePath]);
 
   useEffect(() => {
+    if (!cdSeekTargets || !compareMode) return;
+    const target =
+      viewerId === 'viewer-1'
+        ? cdSeekTargets['viewer-1']
+        : viewerId === 'viewer-2'
+          ? cdSeekTargets['viewer-2']
+          : null;
+    if (target == null || !Number.isFinite(target)) return;
+    const video = videoRef.current;
+    applyVideoSeek(target, { force: true, useFastSeek: false });
+    if (video && !video.paused) video.pause();
+    setPlaying(viewerId, false);
+    if (viewerId === 'viewer-1') {
+      setPlayheadPosition(target);
+    }
+  }, [cdSeekTargets?.epoch, compareMode, viewerId]);
+
+  useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     const onSeeked = () => {
@@ -2119,6 +2141,20 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                 <Button
                   size="sm"
                   disabled={
+                    !isAuthenticated ||
+                    !useViewerStore.getState().viewers['viewer-1']?.sourcePath ||
+                    !useViewerStore.getState().viewers['viewer-2']?.sourcePath
+                  }
+                  onClick={() => setSyncModalOpen(true)}
+                  title="Автосинхронизация времени по GPS-трекам или детекциям"
+                >
+                  Синхронизировать
+                </Button>
+              )}
+              {compareMode && (
+                <Button
+                  size="sm"
+                  disabled={
                     cdLoading ||
                     !isAuthenticated ||
                     !useViewerStore.getState().viewers['viewer-1']?.sourcePath ||
@@ -2686,6 +2722,17 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           </div>
         )}
       </div>
+      {viewerId === 'viewer-1' && compareMode && syncModalOpen ? (
+        <CompareSyncModal
+          isOpen={syncModalOpen}
+          onClose={() => setSyncModalOpen(false)}
+          videoBefore={useViewerStore.getState().viewers['viewer-1']?.sourcePath || ''}
+          videoAfter={useViewerStore.getState().viewers['viewer-2']?.sourcePath || ''}
+          onSyncComplete={({ timeBefore, timeAfter }) => {
+            cdRequestSeek(timeBefore, timeAfter);
+          }}
+        />
+      ) : null}
     </div>
   );
 };

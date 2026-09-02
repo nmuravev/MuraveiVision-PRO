@@ -56,11 +56,11 @@ flowchart LR
   CD --> Heat
 ```
 
-### P3.15.2 — Auto time sync (P0)
+### P3.15.2 — Auto time sync (P0) — DONE
 
-- Функция `find_time_offset_by_gps(video_before, video_after)` в [`telemetry.py`](../backend/services/telemetry.py) или [`change_detection.py`](../backend/services/change_detection.py) → `delta_sec`.
-- UI: кнопка «Синхронизировать по GPS» рядом с «Анализ изменений»; `time_after = time_before + delta`.
-- Fallback: ручной compare как в v1.
+- `time_sync.py`: GPS tracks (haversine + smoothing) → detections (bbox center) → segments.
+- UI: CompareSyncModal, кнопка «Синхронизировать» в Compare Sync toolbar.
+- API: `POST /api/change-detection/sync`.
 
 ### P3.15.3 — HTML/KML export (P0)
 

@@ -65,7 +65,7 @@
 
 | ID | Задача | Приоритет |
 |----|--------|-----------|
-| P3.15.2 | Auto time sync по flight track GPS | P0 |
+| P3.15.2 | Auto time sync по flight track GPS | **DONE** |
 | P3.15.3 | HTML/KML export отчёта изменений | P0 |
 | P3.15.4 | Diff heatmap canvas overlay | P1 |
 | P3.13.2 | Batch-сегментация ролика | P1 |

@@ -14,8 +14,8 @@
 
 ### P3.15 v2 (Change Detection)
 
-- [ ] Auto time sync: match moments по GPS track (`telemetry.py` / sidecar) → `delta_sec`
-- [ ] `GET /api/change-detection/export?format=html|kml` (или POST с last result)
+- [x] Auto time sync (P3.15.2): GPS tracks → detections fallback → сегменты (`time_sync.py`, `POST /sync`, CompareSyncModal)
+- [ ] `GET /api/change-detection/export?format=html|kml` (или POST с last result) — P3.15.3
 - [ ] Diff heatmap overlay (canvas, optional toggle) — P1, отдельный PR
 
 ### P3.13 v2 (Segmentation)
@@ -104,3 +104,6 @@
 - **Change detection (P3.15 v1)** — DONE:
   - `change_detection.py` + `POST /api/change-detection/analyze`; Compare Sync UI (кнопка, Inspector, changeOverlays).
   - GPS stable/moved/new/removed + ORB fallback. `test_change_detection.py`.
+- **Auto time sync (P3.15.2)** — DONE:
+  - `time_sync.py` + `POST /api/change-detection/sync`; CompareSyncModal (сегменты, Auto/GPS/Детекции).
+  - Fallback tracks → detections → manual hint. `test_time_sync.py`.

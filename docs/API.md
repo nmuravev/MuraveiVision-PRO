@@ -64,8 +64,22 @@
 | Метод | Путь | Описание |
 |-------|------|----------|
 | POST | `/analyze` | GPS-matching детекций ± `time_window_sec` + ORB/diff fallback |
+| POST | `/sync` | Auto time sync: GPS tracks → detections fallback → сегменты |
 
-Тело запроса:
+Тело `/sync`:
+
+```json
+{
+  "video_before": "clip_a.mp4",
+  "video_after": "clip_b.mp4",
+  "source": "auto",
+  "tolerance_m": 15.0
+}
+```
+
+`source`: `auto` | `tracks` | `detections`. Ответ: `{ method_used, pairs[:50], segments[], message, pair_count_total }`.
+
+Тело `/analyze`:
 
 ```json
 {
@@ -81,7 +95,7 @@
 }
 ```
 
-Ответ: `{ method, aligned, message, summary, matches[], new[], removed[], image_diff? }`.
+Ответ `/analyze`: `{ method, aligned, message, summary, matches[], new[], removed[], image_diff? }`.
 
 - `method`: `gps` | `image` | `hybrid` | `none`
 - `summary`: `{ total_before, total_after, matched, stable, moved, new, removed }`

@@ -52,11 +52,49 @@ export type ChangeDetectionResult = {
   } | null;
 };
 
+export type SyncSource = 'auto' | 'tracks' | 'detections';
+
+export type SyncPair = {
+  time_before: number;
+  time_after: number;
+  distance_m?: number | null;
+  class_name?: string;
+  conf?: number;
+  lat?: number;
+  lon?: number;
+};
+
+export type SyncSegment = {
+  start_before: number;
+  end_before: number;
+  start_after: number;
+  end_after: number;
+  pair_count: number;
+};
+
+export type SyncReport = {
+  method_used: 'gps' | 'detections' | 'none';
+  pairs: SyncPair[];
+  segments: SyncSegment[];
+  message: string | null;
+  pair_count_total: number;
+};
+
+export type CompareSeekTargets = {
+  'viewer-1': number;
+  'viewer-2': number;
+  epoch: number;
+};
+
 interface ChangeDetectionState {
   result: ChangeDetectionResult | null;
   loading: boolean;
   error: string | null;
   activeHighlight: ChangeHighlight | null;
+  syncResult: SyncReport | null;
+  syncLoading: boolean;
+  syncError: string | null;
+  seekTargets: CompareSeekTargets | null;
   runAnalysis: (params: {
     videoBefore: string;
     videoAfter: string;
@@ -64,6 +102,12 @@ interface ChangeDetectionState {
     timeAfter: number;
     timeWindowSec: number;
   }) => Promise<void>;
+  runSync: (params: {
+    videoBefore: string;
+    videoAfter: string;
+    source: SyncSource;
+  }) => Promise<void>;
+  requestSeek: (timeBefore: number, timeAfter: number) => void;
   setActiveHighlight: (h: ChangeHighlight | null) => void;
   clear: () => void;
 }
@@ -73,10 +117,33 @@ export const useChangeDetectionStore = create<ChangeDetectionState>((set) => ({
   loading: false,
   error: null,
   activeHighlight: null,
+  syncResult: null,
+  syncLoading: false,
+  syncError: null,
+  seekTargets: null,
 
-  clear: () => set({ result: null, loading: false, error: null, activeHighlight: null }),
+  clear: () =>
+    set({
+      result: null,
+      loading: false,
+      error: null,
+      activeHighlight: null,
+      syncResult: null,
+      syncLoading: false,
+      syncError: null,
+      seekTargets: null,
+    }),
 
   setActiveHighlight: (activeHighlight) => set({ activeHighlight }),
+
+  requestSeek: (timeBefore, timeAfter) =>
+    set((s) => ({
+      seekTargets: {
+        'viewer-1': timeBefore,
+        'viewer-2': timeAfter,
+        epoch: (s.seekTargets?.epoch ?? 0) + 1,
+      },
+    })),
 
   runAnalysis: async ({
     videoBefore,
@@ -111,6 +178,36 @@ export const useChangeDetectionStore = create<ChangeDetectionState>((set) => ({
         loading: false,
         error: e instanceof Error ? e.message : 'Ошибка анализа',
         result: null,
+      });
+    }
+  },
+
+  runSync: async ({ videoBefore, videoAfter, source }) => {
+    set({ syncLoading: true, syncError: null });
+    try {
+      const res = await fetch('/api/change-detection/sync', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          video_before: videoBefore,
+          video_after: videoAfter,
+          source,
+          tolerance_m: 15.0,
+        }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { detail?: string };
+        throw new Error(
+          typeof err.detail === 'string' ? err.detail : `HTTP ${res.status}`,
+        );
+      }
+      const syncResult = (await res.json()) as SyncReport;
+      set({ syncResult, syncLoading: false, syncError: null });
+    } catch (e) {
+      set({
+        syncLoading: false,
+        syncError: e instanceof Error ? e.message : 'Ошибка синхронизации',
+        syncResult: null,
       });
     }
   },
