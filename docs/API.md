@@ -44,6 +44,19 @@
 определяется backend-настройкой. Ответ SAHI-пути идентичен быстрому пути + поле
 `"sahi": true`. Выходной формат объектов не меняется.
 
+## Seg — `/api/seg` (архив)
+
+Отдельный пайплайн от детекции. Веса только `assets/models/yolo26n-seg.pt` или `yolo26s-seg.pt` (не YOLOE-seg). Маски в SQLite / train не пишутся. JWT: operator / engineer / master.
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/status` | `{ready, loaded, weight, available[], imgsz}` — файл на диске vs модель в VRAM |
+| POST | `/load` | `{weight?}` — whitelist имён; без имени — nano, затем small. 400 если не whitelist, 503 если файла нет |
+| POST | `/unload` | выгрузить из VRAM (`empty_cache`) |
+| POST | `/infer` | кадр JPEG (base64) + `confidence` → `{masks: [{class, conf, polygon_norm}], ms, weight}` |
+
+`ready` = файл есть; `loaded` = модель в памяти. **Infer требует `loaded`** (иначе 503). Нет файла → 503, детекция не меняется. `imgsz=640`. Модель остаётся в VRAM до `unload` или переключения Viewer SEG→Детекция.
+
 ### Response Validator (defense-in-depth)
 
 Валидатор фильтрует детекции перед попаданием в response-конверт (общий хвост

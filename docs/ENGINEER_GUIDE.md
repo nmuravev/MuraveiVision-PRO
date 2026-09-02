@@ -38,6 +38,15 @@ npm install
 - Каталог классов: `assets/military_classes.yaml` (238), переопределения в `class_overrides` (`PATCH /api/classes/{id}`).
 - После правки каталога вызвать `validator.refresh_catalog()` (PUT/DELETE override уже вызывают). Иначе кэш enabled IDs живёт до TTL 300 с.
 
+## Seg-модели
+
+Отдельный пайплайн (`segmentation_engine.py`), **не** base для `yolo26n-ft` и не грузится в `yolo_engine`.
+
+- Файлы: `assets/models/yolo26n-seg.pt` или `yolo26s-seg.pt` (whitelist). YOLOE-seg / detect `.pt` отклоняются.
+- Система → «Сегментация (архив)»: выбрать вес → **Загрузить** / **Выгрузить**. API: `POST /api/seg/load` `{weight}`, `POST /api/seg/unload`. JWT operator+ (engineer `0000000` и master тоже).
+- Infer (`POST /api/seg/infer`) требует `loaded=true`. Модель остаётся в VRAM до unload или переключения Viewer SEG→Детекция.
+- На 8 ГБ не держать seg и detect одновременно. Смена ролика в SEG-режиме unload не вызывает.
+
 ## Импорт модели с USB
 
 Air-gap: Система → панель «Импорт с USB» (engineer, PIN `0000000`).

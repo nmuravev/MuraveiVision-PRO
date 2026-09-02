@@ -57,13 +57,14 @@ flowchart TB
 
 Роутеры `backend/api/*`, подключаются из `backend/main.py`.
 
-Основные группы: auth, media, detect (+ WS), detections, train/export, ai, live, rec, reports, models (вкл. USB), system, network, events, classes, queue, recon, support.
+Основные группы: auth, media, detect (+ WS), detections, train/export, ai, live, rec, reports, models (вкл. USB), system, network, events, classes, queue, recon, support, seg (архив).
 
 ### Domain services
 
 | Сервис | Роль |
 |--------|------|
 | `yolo_engine.py` | загрузка весов, predict, tile/NMS, device tier |
+| `segmentation_engine.py` | archive-only YOLO26-seg (маски), не пишет detections |
 | `tracker.py` / `motion.py` | track_id, vx/vy, ego-motion |
 | `trainer.py` | quick finetune + SSE |
 | `classes.py` | 238 YAML + overrides |
@@ -150,7 +151,7 @@ Viewer поддерживает до 4 инстансов, Архив|Live, pan/
 1. **Air-gap first** — нет обязательных внешних вызовов в рантайме оператора. Сборка Portable может качать embeddable Python только на машине сборки.
 2. **Monolith local** — один FastAPI-процесс + статика `dist/` (или Vite dev). UI не ходит на `:11434` напрямую.
 3. **Mosaic IDE** — раскладка `react-mosaic-component`, не фиксированный Mini/Pro из legacy.
-4. **Detect ≠ Segment** — быстрое обучение и `yolo26n-ft` — box-detect; YOLOE-seg не использовать как train base.
+4. **Detect ≠ Segment** — быстрое обучение и `yolo26n-ft` — box-detect; YOLOE-seg не использовать как train base. Archive-only сегментация (`segmentation_engine.py`, веса `yolo26n-seg.pt` / `yolo26s-seg.pt`) не грузится в `yolo_engine` / `trainer`, не пишет SQLite detections. Нет файла или модель не в VRAM → `POST /api/seg/infer` = 503, детекция без изменений. Явные `load`/`unload`.
 
 ## 2. Инференс (обязательное поведение)
 

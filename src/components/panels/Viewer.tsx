@@ -64,6 +64,13 @@ const ACCENT = '#e87d0d';
 
 type HandleKey = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'move' | 'draw';
 type ViewTool = 'select' | 'pan';
+type OverlayMode = 'detect' | 'seg';
+
+type SegMask = {
+  class: string;
+  conf: number;
+  polygon_norm: number[][];
+};
 
 function captureFrame(video: HTMLVideoElement): string | undefined {
   const vw = video.videoWidth;
@@ -358,11 +365,21 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const [liveError, setLiveError] = useState<string | null>(null);
   const [scrubDragging, setScrubDragging] = useState(false);
   const [localDuration, setLocalDuration] = useState(0);
+  const [overlayMode, setOverlayMode] = useState<OverlayMode>('detect');
+  const [segReady, setSegReady] = useState(false);
+  const [segLoaded, setSegLoaded] = useState(false);
+  const [segHint, setSegHint] = useState<string | null>(null);
+  const [segMasks, setSegMasks] = useState<SegMask[]>([]);
+  const [segBusy, setSegBusy] = useState(false);
+  const segGenRef = useRef(0);
+  const overlayModeRef = useRef<OverlayMode>('detect');
 
   const isLive = viewer?.sourceMode === 'live' && Boolean(viewer?.liveActive);
   isLiveRef.current = isLive;
   const yoloAlwaysOn =
-    Boolean(isAuthenticated) && (Boolean(viewer?.sourcePath) || isLive);
+    Boolean(isAuthenticated) &&
+    (Boolean(viewer?.sourcePath) || isLive) &&
+    overlayMode === 'detect';
   const sourceVideo = isLive
     ? `live:${viewerId}`
     : viewer?.sourcePath || 'local';
@@ -1050,6 +1067,162 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   ]);
 
   useEffect(() => {
+    if (isLive && overlayMode === 'seg') setOverlayMode('detect');
+  }, [isLive, overlayMode]);
+
+  useEffect(() => {
+    const prev = overlayModeRef.current;
+    overlayModeRef.current = overlayMode;
+    if (prev !== 'seg' || overlayMode !== 'detect' || !isAuthenticated) return;
+    void fetch('/api/seg/unload', { method: 'POST', headers: authHeaders() })
+      .then(() => {
+        setSegLoaded(false);
+      })
+      .catch(() => {
+        /* ignore */
+      });
+  }, [overlayMode, isAuthenticated]);
+
+  useEffect(() => {
+    if (overlayMode !== 'seg') {
+      setSegMasks([]);
+      setSegBusy(false);
+      return;
+    }
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/seg/status', { headers: authHeaders() });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          ready?: boolean;
+          loaded?: boolean;
+          weight?: string | null;
+        };
+        if (cancelled) return;
+        const ready = Boolean(data.ready);
+        const loaded = Boolean(data.loaded);
+        setSegReady(ready);
+        setSegLoaded(loaded);
+        if (!ready) {
+          setSegHint('Нет yolo26n-seg.pt — детекция работает');
+        } else if (!loaded) {
+          setSegHint('загрузите модель (Система)');
+        } else {
+          setSegHint(data.weight || 'yolo26-seg');
+        }
+      } catch {
+        if (!cancelled) {
+          setSegReady(false);
+          setSegLoaded(false);
+          setSegHint('Нет yolo26n-seg.pt — детекция работает');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [overlayMode, isAuthenticated]);
+
+  const runSegFrame = useCallback(async () => {
+    if (overlayMode !== 'seg' || isLive || !segLoaded) return;
+    const video = videoRef.current;
+    if (!video || video.readyState < 2 || video.videoWidth <= 0) return;
+    if (video.seeking || pendingSeekTime.current != null) return;
+    const jpeg = captureFrame(video);
+    if (!jpeg) return;
+    const gen = ++segGenRef.current;
+    setSegBusy(true);
+    try {
+      const res = await fetch('/api/seg/infer', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          image_base64: jpeg,
+          confidence: analysisConfig.confidenceThreshold,
+        }),
+      });
+      if (segGenRef.current !== gen) return;
+      if (res.status === 503) {
+        const body = (await res.json().catch(() => ({}))) as { detail?: string };
+        const detail = typeof body.detail === 'string' ? body.detail : '';
+        if (detail.includes('VRAM') || detail.includes('не в VRAM')) {
+          setSegLoaded(false);
+          setSegHint('загрузите модель (Система)');
+        } else {
+          setSegReady(false);
+          setSegLoaded(false);
+          setSegHint('Нет yolo26n-seg.pt — детекция работает');
+        }
+        setSegMasks([]);
+        return;
+      }
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        masks?: SegMask[];
+        ms?: number;
+        weight?: string;
+      };
+      if (segGenRef.current !== gen) return;
+      const masks = Array.isArray(data.masks) ? data.masks : [];
+      setSegMasks(masks);
+      setInferN(masks.length);
+      setInferMs(typeof data.ms === 'number' ? data.ms : 0);
+      setInferKind(data.weight || 'seg');
+      setYoloHud('ready');
+    } catch {
+      /* network */
+    } finally {
+      if (segGenRef.current === gen) setSegBusy(false);
+    }
+  }, [
+    overlayMode,
+    isLive,
+    segLoaded,
+    analysisConfig.confidenceThreshold,
+  ]);
+
+  const unloadSegModel = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      await fetch('/api/seg/unload', { method: 'POST', headers: authHeaders() });
+    } catch {
+      /* ignore */
+    }
+    setSegLoaded(false);
+    setSegHint(segReady ? 'загрузите модель (Система)' : 'Нет yolo26n-seg.pt — детекция работает');
+  }, [isAuthenticated, segReady]);
+
+  const loadSegModel = useCallback(async () => {
+    if (!isAuthenticated || !segReady) return;
+    setSegBusy(true);
+    try {
+      const res = await fetch('/api/seg/load', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({}),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        loaded?: boolean;
+        weight?: string;
+        detail?: string;
+      };
+      if (!res.ok) {
+        setSegHint(typeof data.detail === 'string' ? data.detail : 'загрузите модель (Система)');
+        setSegLoaded(false);
+        return;
+      }
+      setSegLoaded(Boolean(data.loaded) || true);
+      setSegHint(data.weight || 'yolo26-seg');
+    } catch {
+      setSegHint('загрузите модель (Система)');
+    } finally {
+      setSegBusy(false);
+    }
+  }, [isAuthenticated, segReady]);
+
+  useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     video.playbackRate = playbackRate;
@@ -1073,6 +1246,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     setLiveObjects([]);
     setFrozenLive([]);
     setLiveStamp(-1);
+    setSegMasks([]);
     freezeTimeRef.current = -1;
     lastPausedAt.current = -1;
     remountGuardUntil.current = performance.now() + REMOUNT_PUBLISH_GUARD_MS;
@@ -1710,11 +1884,88 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           <Button
             size="sm"
             active={isLive || viewer?.sourceMode === 'live'}
-            onClick={() => setSourceMode(viewerId, 'live')}
+            onClick={() => {
+              setOverlayMode('detect');
+              setSourceMode(viewerId, 'live');
+            }}
           >
             Live
           </Button>
         </ToolbarGroup>
+
+        {!isLive && (viewer?.sourceMode ?? 'archive') === 'archive' && (
+          <ToolbarGroup>
+            <Button
+              size="sm"
+              active={overlayMode === 'detect'}
+              onClick={() => setOverlayMode('detect')}
+              title="YOLO-детекция (bbox)"
+            >
+              Детекция
+            </Button>
+            <Button
+              size="sm"
+              active={overlayMode === 'seg'}
+              disabled={!isAuthenticated}
+              onClick={() => setOverlayMode('seg')}
+              title="Сегментация текущего кадра (архив). Не пишет в обучение."
+            >
+              Сегментация
+            </Button>
+            {overlayMode === 'seg' && (
+              <>
+                {segReady && !segLoaded && (
+                  <Button
+                    size="sm"
+                    disabled={!isAuthenticated || segBusy}
+                    onClick={() => void loadSegModel()}
+                    title="Загрузить yolo26n/s-seg в VRAM"
+                  >
+                    {segBusy ? 'загрузка…' : 'Загрузить'}
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  disabled={
+                    !isAuthenticated ||
+                    !segLoaded ||
+                    !paused ||
+                    segBusy ||
+                    seekInFlight
+                  }
+                  onClick={() => void runSegFrame()}
+                  title={
+                    !segReady
+                      ? 'Нет yolo26n-seg.pt — детекция работает'
+                      : !segLoaded
+                        ? 'загрузите модель (Система)'
+                        : paused
+                          ? 'Сегментировать текущий кадр'
+                          : 'Поставьте на паузу'
+                  }
+                >
+                  {segBusy ? 'сег…' : 'Сегментировать кадр'}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!isAuthenticated || !segLoaded || segBusy}
+                  onClick={() => void unloadSegModel()}
+                  title="Выгрузить seg-модель из VRAM"
+                >
+                  Выгрузить
+                </Button>
+                <span
+                  className={`text-[9px] font-mono max-w-[160px] truncate ${
+                    segLoaded ? 'text-dv-muted' : 'text-dv-danger'
+                  }`}
+                  title={segHint || ''}
+                >
+                  {segHint || (segReady ? 'seg' : 'нет весов')}
+                </span>
+              </>
+            )}
+          </ToolbarGroup>
+        )}
 
         {(viewer?.sourceMode === 'live' || isLive) && (
           <ToolbarGroup>
@@ -1807,7 +2058,9 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
             />
             <Crosshair size={10} className="flex-shrink-0 text-dv-accent" />
             <span className="font-mono truncate">
-              YOLO26 · {inferKind} · {inferN} obj · {inferMs}ms
+              {overlayMode === 'seg'
+                ? `SEG · ${inferKind} · ${inferN} · ${inferMs}ms`
+                : `YOLO26 · ${inferKind} · ${inferN} obj · ${inferMs}ms`}
             </span>
           </span>
         </ToolbarGroup>
@@ -2085,7 +2338,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
             <svg
               ref={svgRef}
               className={`absolute inset-0 w-full h-full ${
-                viewTool === 'pan'
+                overlayMode === 'seg' || viewTool === 'pan'
                   ? 'pointer-events-none'
                   : editMode
                     ? 'cursor-crosshair'
@@ -2111,7 +2364,38 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                   <path d="M 0 0 L 10 5 L 0 10 z" fill={ACCENT} />
                 </marker>
               </defs>
-              {overlayObjects.map((obj) => {
+              {overlayMode === 'seg'
+                ? segMasks.map((mask, idx) => {
+                    const pts = mask.polygon_norm
+                      .filter((p) => Array.isArray(p) && p.length >= 2)
+                      .map(([x, y]) => `${x},${y}`)
+                      .join(' ');
+                    if (!pts) return null;
+                    const labelX = mask.polygon_norm[0]?.[0] ?? 0.02;
+                    const labelY = mask.polygon_norm[0]?.[1] ?? 0.02;
+                    return (
+                      <g key={`seg-${idx}`}>
+                        <polygon
+                          points={pts}
+                          fill="rgba(232,125,13,0.28)"
+                          stroke={ACCENT}
+                          strokeWidth={1.25}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                        <text
+                          x={Math.min(0.92, Math.max(0.01, labelX + 0.006))}
+                          y={Math.min(0.98, Math.max(0.018, labelY - 0.008))}
+                          fill={ACCENT}
+                          fontSize={0.012}
+                          fontFamily="ui-sans-serif, system-ui, sans-serif"
+                          style={{ pointerEvents: 'none' }}
+                        >
+                          {mask.class} {(mask.conf * 100).toFixed(0)}%
+                        </text>
+                      </g>
+                    );
+                  })
+                : overlayObjects.map((obj) => {
                 const { x1, y1, x2, y2 } = obj.bbox;
                 const selected = obj.id === activeDetectionId;
                 const color = obj.color || ACCENT;
@@ -2189,7 +2473,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                   </g>
                 );
               })}
-              {draft && (
+              {overlayMode !== 'seg' && draft && (
                 <rect
                   x={draft.x1}
                   y={draft.y1}

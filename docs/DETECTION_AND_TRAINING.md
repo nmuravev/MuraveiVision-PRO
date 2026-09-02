@@ -6,6 +6,7 @@
 |------|------------|
 | `assets/models/yolo26n-ft.pt` | активный finetune (приоритет загрузки) |
 | `assets/models/yolo26n.pt` / `best.pt` | nano / alias |
+| `assets/models/yolo26n-seg.pt` / `yolo26s-seg.pt` | archive-only сегментация (не train, не `/ws/detect`) |
 | `runs/.../yoloe-26s-seg.pt` | open-vocab YOLOE (нужен CLIP) |
 
 Правила: только detect для train; `nc` 12 или 238 при импорте.

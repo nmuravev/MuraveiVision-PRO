@@ -10,7 +10,7 @@
 
 ## Важный функционал (1–2 недели)
 
-Фаза 3.1 (сеть) и 3.2 (4×Live + Event Timeline) закрыты. P0.1, P0.4, P1.6 и **P1.8 (resume train)** закрыты. Дальше Фаза 4 (seg / change detection).
+Фаза 3.1 (сеть) и 3.2 (4×Live + Event Timeline) закрыты. P0.1, P0.4, P1.6, P1.8 и **P3.13 v1 (archive seg)** закрыты. Дальше change detection (P3.15).
 
 ## Улучшения / оптимизация (потом)
 
@@ -22,7 +22,7 @@
 - Native multi-monitor windows.
 - OCR-only телеметрия (расширение geo-scope).
 - Cloud/SaaS-режим (если потребуется).
-- Фаза 4: seg-маски укреплений, change detection двух пролётов.
+- Фаза 4: change detection двух пролётов; SAM2 / realtime seg / маски в SQLite.
 
 ## Закрыто (контекст)
 
@@ -79,3 +79,6 @@
 - **Resume train UI (P1.8)** — DONE:
   - `GET /api/train/checkpoints`, `POST /api/train/start` принимает `resume_from` / `imgsz` / `batch`.
   - Detect-only, empty_cache, дефолт 640/4. `test_trainer_resume.py`.
+- **Archive seg (P3.13)** — DONE:
+  - `segmentation_engine.py` + `/api/seg` status/load/unload/infer; Viewer кнопка кадра; Admin load.
+  - Полигоны SVG, не train. `test_segmentation.py`.

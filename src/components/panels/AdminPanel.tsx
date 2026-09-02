@@ -62,6 +62,15 @@ export const AdminPanel: React.FC = () => {
   };
   const [detectCfg, setDetectCfg] = useState<DetectCfg | null>(null);
   const [detectCfgSaved, setDetectCfgSaved] = useState<string | null>(null);
+  const [segStatus, setSegStatus] = useState<{
+    ready: boolean;
+    loaded: boolean;
+    weight: string | null;
+    available: string[];
+  } | null>(null);
+  const [segWeightPick, setSegWeightPick] = useState('yolo26n-seg.pt');
+  const [segBusy, setSegBusy] = useState(false);
+  const [segMsg, setSegMsg] = useState<string | null>(null);
 
   const loadDetectCfg = useCallback(async () => {
     if (!isEng) return;
@@ -90,6 +99,30 @@ export const AdminPanel: React.FC = () => {
     if (!isAuthenticated || !isEng) return;
     void loadDetectCfg().catch((e) => setError(String(e)));
   }, [isAuthenticated, isEng, loadDetectCfg]);
+
+  const refreshSegStatus = useCallback(async () => {
+    const res = await fetch('/api/seg/status', { headers: authHeaders() });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      ready?: boolean;
+      loaded?: boolean;
+      weight?: string | null;
+      available?: string[];
+    };
+    const available = Array.isArray(data.available) ? data.available : [];
+    setSegStatus({
+      ready: Boolean(data.ready),
+      loaded: Boolean(data.loaded),
+      weight: data.weight ?? null,
+      available,
+    });
+    setSegWeightPick((prev) => (available.includes(prev) ? prev : available[0] || prev));
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !isEng) return;
+    void refreshSegStatus().catch(() => undefined);
+  }, [isAuthenticated, isEng, refreshSegStatus]);
 
   const refreshHw = useCallback(async () => {
     if (!isEng) return;
@@ -501,6 +534,82 @@ export const AdminPanel: React.FC = () => {
               )}
             </div>
           </>
+        )}
+      </div>
+
+      <div className="border border-[var(--dv-border)] bg-[var(--dv-bg-deep)] p-3 space-y-2" data-testid="seg-config">
+        <div className="font-semibold">Сегментация (архив)</div>
+        <p className="text-[10px] text-[var(--dv-text-muted)]">
+          Только yolo26n-seg / yolo26s-seg. Не держите seg и detect вместе на 8 ГБ VRAM. Live не сегментируется.
+        </p>
+        {segStatus && (
+          <div className="text-[10px] font-mono text-[var(--dv-text-muted)]">
+            ready={segStatus.ready ? '1' : '0'} loaded={segStatus.loaded ? '1' : '0'}
+            {segStatus.weight ? ` · ${segStatus.weight}` : ''}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            className="bg-[#1a1a1a] border border-[var(--dv-border)] text-[11px] px-1 py-0.5"
+            value={segWeightPick}
+            onChange={(e) => setSegWeightPick(e.target.value)}
+            disabled={segBusy}
+          >
+            {(segStatus?.available?.length ? segStatus.available : ['yolo26n-seg.pt', 'yolo26s-seg.pt']).map(
+              (name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ),
+            )}
+          </select>
+          <button
+            type="button"
+            className="px-2 py-1 bg-[#333] rounded-sm disabled:opacity-40"
+            disabled={segBusy || !(segStatus?.available?.length)}
+            onClick={() => {
+              setSegBusy(true);
+              setSegMsg(null);
+              void fetch('/api/seg/load', {
+                method: 'POST',
+                headers: authHeaders(),
+                body: JSON.stringify({ weight: segWeightPick }),
+              })
+                .then(async (res) => {
+                  const data = await res.json().catch(() => ({}));
+                  if (!res.ok) throw new Error((data as { detail?: string }).detail || 'load failed');
+                  setSegMsg(`Загружено: ${(data as { weight?: string }).weight || segWeightPick}`);
+                  await refreshSegStatus();
+                })
+                .catch((err) => setError(String(err)))
+                .finally(() => setSegBusy(false));
+            }}
+          >
+            {segBusy ? '…' : 'Загрузить'}
+          </button>
+          <button
+            type="button"
+            className="px-2 py-1 bg-[#333] rounded-sm disabled:opacity-40"
+            disabled={segBusy || !segStatus?.loaded}
+            onClick={() => {
+              setSegBusy(true);
+              setSegMsg(null);
+              void fetch('/api/seg/unload', { method: 'POST', headers: authHeaders() })
+                .then(async (res) => {
+                  if (!res.ok) throw new Error('unload failed');
+                  setSegMsg('Выгружено');
+                  await refreshSegStatus();
+                })
+                .catch((err) => setError(String(err)))
+                .finally(() => setSegBusy(false));
+            }}
+          >
+            Выгрузить
+          </button>
+        </div>
+        {segMsg && <div className="text-[10px] text-[var(--dv-accent)]">{segMsg}</div>}
+        {segStatus && !segStatus.ready && (
+          <div className="text-[10px] text-red-400">Нет yolo26n-seg.pt / yolo26s-seg.pt в assets/models/</div>
         )}
       </div>
 
