@@ -32,6 +32,11 @@
 - **Кроп цели** (`crop_path`) — строка пути, JPEG по LAN не копируется; на другой базе превью может быть 404. Это v1, не баг репликации id/GPS/`source_video`.
 - **TLS** в приложении нет: JWT по HTTP в LAN. HTTPS — только reverse-proxy, если понадобится.
 
+## Change Detection (P3.15 v1)
+
+- **GPS точность** — matching зависит от качества SRT/CSV и backfill; без GPS (<30% coverage) — ORB fallback, чувствителен к смене освещения/угла камеры.
+- **ORB inlier_ratio** — при `<0.25` alignment помечается как failed; partial GPS result сохраняется если был.
+
 ## Документация
 
 - Устаревшие манифесты в `.backup/MuraveiVision/*.md` — **не использовать** (другой каркас).

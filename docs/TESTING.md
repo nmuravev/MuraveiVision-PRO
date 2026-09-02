@@ -47,6 +47,7 @@ cd backend
 - `test_similarity.py` — cosine ranking, кэш embedding по mtime, 404 без кропа, hist-путь без CLIP.
 - `test_trainer_resume.py` — список last/best/epoch, skip seg, 404 без last.pt, clamp imgsz/batch.
 - `test_segmentation.py` — нет веса → not ready; YOLOE-seg игнорируется; load/unload; infer без load → ошибка; mock predict → polygon_norm 0–1, модель остаётся loaded.
+- `test_change_detection.py` — haversine, filter_detections_at_time, align_by_gps (stable/moved/new/removed), diff_mask, ORB checkerboard (8 тестов).
 - `test_usb_import.py` — валидация .pt (nc 12/238) и YAML, dry-run без копии, confirm + `.backup`.
 
 ## SAHI

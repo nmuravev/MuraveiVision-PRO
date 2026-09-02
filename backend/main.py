@@ -177,6 +177,7 @@ def _register_routers() -> None:
     from api.active_learning import router as active_learning_router
     from api.events import router as events_router
     from api.seg import router as seg_router
+    from api.change_detection import router as change_detection_router
 
     app.include_router(media_router)
     app.include_router(detect_router)
@@ -201,6 +202,7 @@ def _register_routers() -> None:
     app.include_router(active_learning_router)
     app.include_router(events_router)
     app.include_router(seg_router)
+    app.include_router(change_detection_router)
 
 
 _register_routers()

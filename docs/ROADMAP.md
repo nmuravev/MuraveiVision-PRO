@@ -54,7 +54,8 @@
 
 ## P3
 
-13. Seg-маски укреплений — **archive-only** (`yolo26n-seg` / `yolo26s-seg`, load/unload VRAM, кнопка кадра). Не в `/ws/detect`, не в 4×Live, не в train. SAM2 / realtime / SQLite-маски — позже.  
+13. Seg-маски укреплений — **archive-only** (`yolo26n-seg` / `yolo26s-seg`, load/unload VRAM, кнопка кадра). Не в `/ws/detect`, не в 4×Live, не в train. SAM2 / realtime / SQLite-маски — позже.
+14. **Change Detection v1 (P3.15)** — Compare Sync: GPS-matching + ORB fallback, Inspector, цветные bbox. Auto time-sync / HTML export — v2.  
 14. Audio cue по bbox — **сделано** (RulesPanel: beep/alarm/none)  
 15. Change detection двух пролётов  
 16. USB offline model manager — **DONE** (4.1, scan + validate + confirm + force_load)  

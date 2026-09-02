@@ -57,6 +57,38 @@
 
 `ready` = файл есть; `loaded` = модель в памяти. **Infer требует `loaded`** (иначе 503). Нет файла → 503, детекция не меняется. `imgsz=640`. Модель остаётся в VRAM до `unload` или переключения Viewer SEG→Детекция.
 
+## Change Detection — `/api/change-detection` (Compare Sync)
+
+Сравнение двух архивных роликов (Было/Стало) по сохранённым детекциям. JWT: operator / engineer / master.
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| POST | `/analyze` | GPS-matching детекций ± `time_window_sec` + ORB/diff fallback |
+
+Тело запроса:
+
+```json
+{
+  "video_before": "clip_a.mp4",
+  "video_after": "clip_b.mp4",
+  "time_before": 12.5,
+  "time_after": 8.0,
+  "tolerance_m": 10.0,
+  "moved_m": 3.0,
+  "time_window_sec": 0.5,
+  "use_gps": true,
+  "use_image_fallback": true
+}
+```
+
+Ответ: `{ method, aligned, message, summary, matches[], new[], removed[], image_diff? }`.
+
+- `method`: `gps` | `image` | `hybrid` | `none`
+- `summary`: `{ total_before, total_after, matched, stable, moved, new, removed }`
+- `matches[]`: `{ before_id, after_id, class_name, distance_m, status, before_bbox, after_bbox }`
+- Классификация: stable (<3 m), moved (3–10 m), new/removed (нет GPS-пары)
+- Frontend при Sync передаёт `time_window_sec=0.5`, без Sync — `2.0`
+
 ### Response Validator (defense-in-depth)
 
 Валидатор фильтрует детекции перед попаданием в response-конверт (общий хвост

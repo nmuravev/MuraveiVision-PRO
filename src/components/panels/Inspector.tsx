@@ -20,6 +20,11 @@ import { useReconStore } from '../../store/useReconStore';
 import { bboxCenterPixels } from '../../lib/reconRaycast';
 import { useTimelineStore } from '../../store/timeline-store';
 import { useViewerStore } from '../../store/useViewerStore';
+import {
+  useChangeDetectionStore,
+  type ChangeItem,
+  type ChangeMatch,
+} from '../../store/useChangeDetectionStore';
 import { usePanelLayoutStore } from '../../store/usePanelLayoutStore';
 import { classDisplayLine, classLabelRu } from '../../lib/classLabels';
 import { fetchDetectionCropBase64 } from '../../lib/aiVision';
@@ -40,7 +45,7 @@ type SimilarHit = {
   crop_path?: string | null;
 };
 
-type FoldKey = 'active' | 'recon' | 'similar' | 'ai' | 'detections';
+type FoldKey = 'active' | 'recon' | 'similar' | 'ai' | 'detections' | 'changes';
 
 type FoldState = Record<FoldKey, boolean>;
 
@@ -50,6 +55,7 @@ const DEFAULT_FOLDS: FoldState = {
   similar: false,
   ai: false,
   detections: true,
+  changes: true,
 };
 
 function loadFolds(): FoldState {
@@ -120,6 +126,94 @@ function originLabel(origin?: string | null): string {
     default:
       return origin ? origin.replace(/_/g, ' ') : 'live YOLO';
   }
+}
+
+function ChangeList({
+  title,
+  empty,
+  items,
+  kind,
+  active,
+  onPick,
+}: {
+  title: string;
+  empty: string;
+  items: ChangeItem[];
+  kind: 'new' | 'removed';
+  active: { kind: string; id: string } | null;
+  onPick: (id: string) => void;
+}) {
+  return (
+    <div>
+      <div className="dv-section-label mb-0.5">{title}</div>
+      {items.length === 0 ? (
+        <div className="text-[10px] text-dv-muted">{empty}</div>
+      ) : (
+        <ul className="space-y-0.5">
+          {items.map((item) => {
+            const selected = active?.kind === kind && active.id === item.id;
+            return (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  className={`w-full text-left px-1 py-0.5 rounded-sm text-[10px] truncate ${
+                    selected ? 'bg-dv-accent/20 text-dv-accent' : 'hover:bg-dv-surface'
+                  }`}
+                  onClick={() => onPick(item.id)}
+                >
+                  {item.class_name || '?'}
+                  {typeof item.confidence === 'number'
+                    ? ` · ${(item.confidence * 100).toFixed(0)}%`
+                    : ''}
+                  {item.gps_lat != null && item.gps_lon != null
+                    ? ` · GPS ${item.gps_lat.toFixed(5)},${item.gps_lon.toFixed(5)}`
+                    : ''}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ChangeMovedList({
+  matches,
+  active,
+  onPick,
+}: {
+  matches: ChangeMatch[];
+  active: { kind: string; id: string } | null;
+  onPick: (id: string) => void;
+}) {
+  return (
+    <div>
+      <div className="dv-section-label mb-0.5">Перемещены</div>
+      {matches.length === 0 ? (
+        <div className="text-[10px] text-dv-muted">нет</div>
+      ) : (
+        <ul className="space-y-0.5">
+          {matches.map((m) => {
+            const selected = active?.kind === 'moved' && active.id === m.before_id;
+            return (
+              <li key={m.before_id}>
+                <button
+                  type="button"
+                  className={`w-full text-left px-1 py-0.5 rounded-sm text-[10px] truncate ${
+                    selected ? 'bg-dv-accent/20 text-dv-accent' : 'hover:bg-dv-surface'
+                  }`}
+                  onClick={() => onPick(m.before_id)}
+                >
+                  {m.class_name || '?'} · {m.distance_m.toFixed(1)} m
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function formatTs(sec: number): string {
@@ -283,6 +377,12 @@ export const Inspector: React.FC = () => {
   const openPanel = usePanelLayoutStore((s) => s.openPanel);
   const isPanelVisible = usePanelLayoutStore((s) => s.isPanelVisible);
   const sourcePath = useViewerStore((s) => s.viewers[focusedViewerId]?.sourcePath);
+  const compareMode = useViewerStore((s) => s.compareMode);
+  const cdResult = useChangeDetectionStore((s) => s.result);
+  const cdError = useChangeDetectionStore((s) => s.error);
+  const cdLoading = useChangeDetectionStore((s) => s.loading);
+  const cdActiveHighlight = useChangeDetectionStore((s) => s.activeHighlight);
+  const setCdHighlight = useChangeDetectionStore((s) => s.setActiveHighlight);
   const playheadPosition = useTimelineStore((s) => s.playheadPosition);
   const mediaDuration = useTimelineStore((s) => s.mediaDuration);
   const {
@@ -994,6 +1094,55 @@ export const Inspector: React.FC = () => {
             </pre>
           )}
         </FoldSection>
+
+        {compareMode && (cdResult || cdLoading || cdError) ? (
+          <FoldSection
+            open={folds.changes}
+            onToggle={() => toggleFold('changes')}
+            title="Изменения (Compare)"
+            status={
+              cdResult
+                ? `+${cdResult.summary.new} −${cdResult.summary.removed} ↔${cdResult.summary.moved}`
+                : cdLoading
+                  ? '…'
+                  : 'ошибка'
+            }
+          >
+            {cdLoading && !cdResult ? (
+              <div className="text-[10px] text-dv-muted px-1">Анализ…</div>
+            ) : null}
+            {cdError ? <div className="text-[10px] text-dv-danger px-1">{cdError}</div> : null}
+            {cdResult ? (
+              <div className="space-y-2 px-1">
+                <div className="text-[10px] text-dv-muted font-mono">
+                  {cdResult.summary.total_before} → {cdResult.summary.total_after} obj · {cdResult.method}
+                  {cdResult.message ? ` · ${cdResult.message}` : ''}
+                </div>
+                <ChangeList
+                  title="Новые"
+                  empty="нет"
+                  items={cdResult.new}
+                  kind="new"
+                  active={cdActiveHighlight}
+                  onPick={(id) => setCdHighlight({ kind: 'new', id })}
+                />
+                <ChangeList
+                  title="Исчезли"
+                  empty="нет"
+                  items={cdResult.removed}
+                  kind="removed"
+                  active={cdActiveHighlight}
+                  onPick={(id) => setCdHighlight({ kind: 'removed', id })}
+                />
+                <ChangeMovedList
+                  matches={cdResult.matches.filter((m) => m.status === 'moved')}
+                  active={cdActiveHighlight}
+                  onPick={(id) => setCdHighlight({ kind: 'moved', id })}
+                />
+              </div>
+            ) : null}
+          </FoldSection>
+        ) : null}
       </div>
 
       <div className="flex-1 min-h-0 flex flex-col">

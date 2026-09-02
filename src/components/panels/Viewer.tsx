@@ -30,6 +30,10 @@ import { useAutoBatchScan } from '../../hooks/useAutoBatchScan';
 import { yoloDebug } from '../../debug/yoloDebug';
 import { YoloDebugOverlay } from '../debug/YoloDebugOverlay';
 import { playRuleAlertTone, useRulesStore } from '../../store/useRulesStore';
+import {
+  useChangeDetectionStore,
+  type ChangeType,
+} from '../../store/useChangeDetectionStore';
 
 interface ViewerProps {
   viewerId: string;
@@ -58,6 +62,11 @@ const viewerTimeCache = new Map<string, { path: string; t: number }>();
 function rememberViewerTime(viewerId: string, path: string | null | undefined, t: number) {
   if (!path || !Number.isFinite(t) || t < 0) return;
   viewerTimeCache.set(viewerId, { path, t });
+}
+
+/** Last known playback time per viewer (for cross-panel Compare Sync). */
+export function getViewerPlaybackTime(viewerId: string): number {
+  return viewerTimeCache.get(viewerId)?.t ?? 0;
 }
 const MIN_BOX = 0.012;
 const ACCENT = '#e87d0d';
@@ -253,6 +262,11 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const setSyncMode = useTimelineStore((s) => s.setSyncMode);
   const setLastObjects = useViewerStore((s) => s.setLastObjects);
   const lastObjects = useViewerStore((s) => s.lastObjects);
+  const cdResult = useChangeDetectionStore((s) => s.result);
+  const cdLoading = useChangeDetectionStore((s) => s.loading);
+  const cdRunAnalysis = useChangeDetectionStore((s) => s.runAnalysis);
+  const cdClear = useChangeDetectionStore((s) => s.clear);
+  const cdActiveHighlight = useChangeDetectionStore((s) => s.activeHighlight);
   const analysisConfig = useMuraveiStore((s) => s.analysisConfig);
   const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
   useAutoBatchScan(viewer?.sourcePath ?? undefined, isAuthenticated);
@@ -754,6 +768,68 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     overlayTimeSec,
     seekInFlight,
   ]);
+
+  const CHANGE_COLORS: Record<ChangeType, string> = {
+    new: '#22c55e',
+    removed: '#ef4444',
+    moved: '#eab308',
+  };
+
+  const changeOverlays = useMemo(() => {
+    if (!compareMode || overlayMode === 'seg' || !cdResult) return [];
+    const hl = cdActiveHighlight;
+    const out: {
+      id: string;
+      changeType: ChangeType;
+      bbox: BoundingBox;
+      class_name: string;
+      highlighted: boolean;
+    }[] = [];
+
+    if (viewerId === 'viewer-1') {
+      for (const item of cdResult.removed) {
+        out.push({
+          id: item.id,
+          changeType: 'removed',
+          bbox: item.bbox,
+          class_name: item.class_name || '?',
+          highlighted: hl?.kind === 'removed' && hl.id === item.id,
+        });
+      }
+      for (const m of cdResult.matches) {
+        if (m.status !== 'moved') continue;
+        out.push({
+          id: m.before_id,
+          changeType: 'moved',
+          bbox: m.before_bbox,
+          class_name: m.class_name || '?',
+          highlighted: hl?.kind === 'moved' && hl.id === m.before_id,
+        });
+      }
+    }
+    if (viewerId === 'viewer-2') {
+      for (const item of cdResult.new) {
+        out.push({
+          id: item.id,
+          changeType: 'new',
+          bbox: item.bbox,
+          class_name: item.class_name || '?',
+          highlighted: hl?.kind === 'new' && hl.id === item.id,
+        });
+      }
+      for (const m of cdResult.matches) {
+        if (m.status !== 'moved') continue;
+        out.push({
+          id: m.before_id,
+          changeType: 'moved',
+          bbox: m.after_bbox,
+          class_name: m.class_name || '?',
+          highlighted: hl?.kind === 'moved' && hl.id === m.before_id,
+        });
+      }
+    }
+    return out;
+  }, [compareMode, overlayMode, cdResult, cdActiveHighlight, viewerId]);
 
   const commitableLive = useMemo(() => {
     const pool = frozenLive.length ? frozenLive : liveObjects;
@@ -2013,6 +2089,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                   if (!next) {
                     setSyncPlayhead(false);
                     setSyncMode('off');
+                    cdClear();
                   }
                 }}
                 title="Сравнение: окно 1 — «Было», окно 2 — «Стало». Загрузите два ролика."
@@ -2036,6 +2113,35 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                   title="Синхронизировать seek/play между окнами Было и Стало"
                 >
                   Sync
+                </Button>
+              )}
+              {compareMode && (
+                <Button
+                  size="sm"
+                  disabled={
+                    cdLoading ||
+                    !isAuthenticated ||
+                    !useViewerStore.getState().viewers['viewer-1']?.sourcePath ||
+                    !useViewerStore.getState().viewers['viewer-2']?.sourcePath
+                  }
+                  onClick={() => {
+                    const v1 = useViewerStore.getState().viewers['viewer-1'];
+                    const v2 = useViewerStore.getState().viewers['viewer-2'];
+                    if (!v1?.sourcePath || !v2?.sourcePath) return;
+                    const syncOn =
+                      useViewerStore.getState().syncPlayhead ||
+                      useTimelineStore.getState().syncMode === 'follow';
+                    void cdRunAnalysis({
+                      videoBefore: v1.sourcePath,
+                      videoAfter: v2.sourcePath,
+                      timeBefore: videoRef.current?.currentTime ?? getViewerPlaybackTime('viewer-1'),
+                      timeAfter: getViewerPlaybackTime('viewer-2'),
+                      timeWindowSec: syncOn ? 0.5 : 2.0,
+                    });
+                  }}
+                  title="GPS-сопоставление детекций Было/Стало (+ ORB fallback)"
+                >
+                  {cdLoading ? 'Анализ…' : 'Анализ изменений'}
                 </Button>
               )}
             </>
@@ -2195,33 +2301,24 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
       </div>
       {compareMode && viewerId === 'viewer-2' && (
         <div className="px-2 py-1 border-b border-dv-border text-[9px] text-dv-muted bg-dv-deep/80 flex flex-wrap gap-x-3 gap-y-0.5">
-          {(() => {
-            const was = lastObjects['viewer-1'] || [];
-            const now = lastObjects['viewer-2'] || liveObjects;
-            const wasClasses = new Map<string, number>();
-            const nowClasses = new Map<string, number>();
-            for (const o of was) wasClasses.set(o.class_en, (wasClasses.get(o.class_en) || 0) + 1);
-            for (const o of now) nowClasses.set(o.class_en, (nowClasses.get(o.class_en) || 0) + 1);
-            const keys = new Set([...wasClasses.keys(), ...nowClasses.keys()]);
-            const lost: string[] = [];
-            const gained: string[] = [];
-            const same: string[] = [];
-            for (const k of keys) {
-              const a = wasClasses.get(k) || 0;
-              const b = nowClasses.get(k) || 0;
-              if (b > a) gained.push(`${k}+${b - a}`);
-              else if (a > b) lost.push(`${k}-${a - b}`);
-              else if (a > 0) same.push(`${k}×${a}`);
-            }
-            return (
-              <>
-                <span className="text-dv-accent font-semibold">Δ было→стало</span>
-                <span title="появилось">+ {gained.join(', ') || '—'}</span>
-                <span title="пропало">− {lost.join(', ') || '—'}</span>
-                <span title="без изменений">= {same.slice(0, 4).join(', ') || '—'}</span>
-              </>
-            );
-          })()}
+          {cdResult ? (
+            <>
+              <span className="text-dv-accent font-semibold">Изменения</span>
+              <span title="новые">+ {cdResult.summary.new}</span>
+              <span title="исчезли">− {cdResult.summary.removed}</span>
+              <span title="перемещены">↔ {cdResult.summary.moved}</span>
+              <span title="метод" className="font-mono opacity-80">
+                {cdResult.method}
+              </span>
+              {cdResult.message ? (
+                <span className="text-amber-400/90">{cdResult.message}</span>
+              ) : null}
+            </>
+          ) : cdLoading ? (
+            <span className="text-dv-accent">Анализ изменений…</span>
+          ) : (
+            <span>Нажмите «Анализ изменений» на viewer-1 (пауза на кадрах)</span>
+          )}
         </div>
       )}
       <div
@@ -2473,6 +2570,40 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                   </g>
                 );
               })}
+              {compareMode &&
+                changeOverlays.map((co) => {
+                  const { x1, y1, x2, y2 } = co.bbox;
+                  const color = CHANGE_COLORS[co.changeType];
+                  return (
+                    <g key={`chg-${co.id}-${co.changeType}`} style={{ pointerEvents: 'none' }}>
+                      <rect
+                        x={x1}
+                        y={y1}
+                        width={x2 - x1}
+                        height={y2 - y1}
+                        fill={
+                          co.highlighted
+                            ? `${color}33`
+                            : co.changeType === 'moved'
+                              ? 'rgba(234,179,8,0.12)'
+                              : 'rgba(0,0,0,0)'
+                        }
+                        stroke={color}
+                        strokeWidth={co.highlighted ? 3 : 2}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                      <text
+                        x={x1 + 0.006}
+                        y={Math.max(0.018, y1 - 0.012)}
+                        fill={color}
+                        fontSize={0.012}
+                        fontFamily="ui-sans-serif, system-ui, sans-serif"
+                      >
+                        {co.class_name}
+                      </text>
+                    </g>
+                  );
+                })}
               {overlayMode !== 'seg' && draft && (
                 <rect
                   x={draft.x1}

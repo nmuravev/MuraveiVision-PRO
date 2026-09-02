@@ -10,7 +10,7 @@
 
 ## Важный функционал (1–2 недели)
 
-Фаза 3.1 (сеть) и 3.2 (4×Live + Event Timeline) закрыты. P0.1, P0.4, P1.6, P1.8 и **P3.13 v1 (archive seg)** закрыты. Дальше change detection (P3.15).
+Фаза 3.1 (сеть) и 3.2 (4×Live + Event Timeline) закрыты. P0.1, P0.4, P1.6, P1.8, **P3.13 v1 (archive seg)** и **P3.15 v1 (change detection)** закрыты.
 
 ## Улучшения / оптимизация (потом)
 
@@ -82,3 +82,6 @@
 - **Archive seg (P3.13)** — DONE:
   - `segmentation_engine.py` + `/api/seg` status/load/unload/infer; Viewer кнопка кадра; Admin load.
   - Полигоны SVG, не train. `test_segmentation.py`.
+- **Change detection (P3.15 v1)** — DONE:
+  - `change_detection.py` + `POST /api/change-detection/analyze`; Compare Sync UI (кнопка, Inspector, changeOverlays).
+  - GPS stable/moved/new/removed + ORB fallback. `test_change_detection.py`.
