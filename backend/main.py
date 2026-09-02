@@ -215,6 +215,7 @@ def _register_routers() -> None:
     from api.events import router as events_router
     from api.seg import router as seg_router
     from api.change_detection import router as change_detection_router
+    from api.map import router as map_router
 
     app.include_router(media_router)
     app.include_router(detect_router)
@@ -240,6 +241,7 @@ def _register_routers() -> None:
     app.include_router(events_router)
     app.include_router(seg_router)
     app.include_router(change_detection_router)
+    app.include_router(map_router)
 
 
 _register_routers()

@@ -117,6 +117,35 @@ cd D:\LLM\MuraveiVision-PRO-Base2
 - **Кэш/логи:** `logs/` растут — чистить по необходимости. `MURAVEI_TRASH_PURGE` — автоочистка корзины при старте.
 - **Тесты перед коммитом:** `npm run build` → `python -m unittest discover -s tests` (из `backend/`) → `npm run test:field` → `smoke_lbs_ft.py`.
 
+## Офлайн карты для HTML-отчётов
+
+HTML-отчёты Change Detection могут показывать карту GPS. В поле (air-gap) **не** используется OpenStreetMap CDN: нужны заранее скачанные тайлы. Без тайлов отчёт всё равно открывается (таблицы), на карте — подсказка.
+
+### Куда положить
+
+- Папка XYZ: `assets/map_tiles/{z}/{x}/{y}.png`
+- или MBTiles: `assets/map_tiles.mbtiles` (Leaflet XYZ ↔ TMS: `y_tms = (2^z - 1) - y`)
+
+Файлы **не** коммитятся в git (см. `.gitignore`).
+
+### Как скачать (QGIS / MOBAC)
+
+1. QGIS + плагин QuickOSM / Generate XYZ tiles, или **Mobile Atlas Creator (MOBAC)**.
+2. Выберите район полёта; zoom **10–16** (баланс детализации и размера).
+3. Сохраните MBTiles → скопируйте в `assets/map_tiles.mbtiles`, либо распакуйте в `assets/map_tiles/`.
+
+### Проверка
+
+```powershell
+# backend должен быть запущен на :8000
+curl http://127.0.0.1:8000/api/map/status
+# {"tiles_available": true}
+
+curl -o tile.png http://127.0.0.1:8000/api/map/tiles/14/8500/5200.png
+```
+
+Скачанный HTML тянет тайлы с `http://127.0.0.1:8000/api/map/tiles/...` — backend должен быть поднят на этой машине. Leaflet CSS/JS по-прежнему с unpkg (для полностью офлайн UI кэшируйте их отдельно при необходимости).
+
 ## Типичные ловушки
 
 1. `torch 2.x+cpu` → обучение часами на CPU / `cuda False`. Ставить `--index-url .../cu128`.

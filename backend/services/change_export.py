@@ -136,22 +136,43 @@ def build_change_html(result: dict[str, Any], meta: dict[str, Any]) -> str:
     if gps_points:
         import json
 
+        from services import map_tiles as map_tiles_svc
+
         markers_json = json.dumps(gps_points, ensure_ascii=False)
+        offline = map_tiles_svc.tiles_available()
+        # Absolute URL so a downloaded HTML file can still load tiles while backend runs.
+        tile_url = "http://127.0.0.1:8000/api/map/tiles/{z}/{x}/{y}.png"
+        offline_js = "true" if offline else "false"
+        if offline:
+            tile_js = f"""
+      L.tileLayer({json.dumps(tile_url)}, {{
+        maxZoom: 19,
+        attribution: 'Offline tiles'
+      }}).addTo(map);
+      var statusEl = document.getElementById('map-status');
+      if (statusEl) statusEl.textContent = 'Офлайн карта';
+"""
+        else:
+            tile_js = """
+      var statusEl = document.getElementById('map-status');
+      if (statusEl) {
+        statusEl.textContent = 'Тайлы не установлены — см. docs/ENGINEER_GUIDE.md (офлайн карты)';
+      }
+"""
         map_block = f"""
-<section>
+<section style="position:relative;">
   <h2>Карта (GPS)</h2>
+  <div id="map-status" style="margin:0 0 8px;font-size:0.8rem;color:var(--muted);"></div>
   <div id="map" style="height:360px;border:1px solid #333;border-radius:4px;"></div>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     (function() {{
       var points = {markers_json};
+      var tilesAvailable = {offline_js};
       if (!points.length || typeof L === 'undefined') return;
       var map = L.map('map');
-      L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap'
-      }}).addTo(map);
+      {tile_js}
       var colors = {{new:'#22c55e', removed:'#ef4444', moved:'#eab308'}};
       var bounds = [];
       points.forEach(function(p) {{
@@ -165,6 +186,7 @@ def build_change_html(result: dict[str, Any], meta: dict[str, Any]) -> str:
         bounds.push([p.lat, p.lon]);
       }});
       map.fitBounds(bounds, {{padding: [24, 24]}});
+      void tilesAvailable;
     }})();
   </script>
 </section>
