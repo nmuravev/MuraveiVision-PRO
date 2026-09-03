@@ -2,13 +2,13 @@
 
 ## Meta
 
-- **Snapshot date:** 2026-09-03
+- **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `43f7579` (docs auto-sync; product Batch CD `03f8488`)
-- **Unit tests:** 149
+- **Commit:** (pending) operator blockers 403/3D + detection tracks
+- **Unit tests:** 162
 - **E2E specs:** 6+
-- **Status:** P0–P3 closed, next focus — field smoke + perf on 8GB
-- **Last updated by:** docs: refresh MASTER_PLAN meta after auto-sync rules commit
+- **Status:** crop via /detections/crop; tracks in gallery; recon zombie recover; session trace KEEP
+- **Last updated by:** fix: 403 crop, stuck 3D, gallery tracks
 
 ---
 

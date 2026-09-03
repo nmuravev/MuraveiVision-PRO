@@ -22,7 +22,7 @@ from services.db import (
     update_detection,
 )
 from services.export_csv import generate_detections_csv
-from services.security import assert_in_archive, require_role
+from services.security import require_role, resolve_under_archive
 from services.telemetry import attach_gps
 
 router = APIRouter(prefix="/api/detections", tags=["detections"])
@@ -385,9 +385,19 @@ async def detections_crop(
     _user: dict[str, Any] = Depends(require_role("operator")),
 ):
     row = get_detection(det_id)
-    if not row or not row.get("crop_path"):
-        raise HTTPException(status_code=404, detail="Crop not found")
-    path = assert_in_archive(row["crop_path"])
-    if not path.is_file():
+    candidates: list[str] = []
+    if row and row.get("crop_path"):
+        candidates.append(str(row["crop_path"]))
+    candidates.append(f"crops/{det_id}.jpg")
+    path = None
+    for cand in candidates:
+        try:
+            p = resolve_under_archive(cand)
+        except HTTPException:
+            continue
+        if p.is_file():
+            path = p
+            break
+    if path is None:
         raise HTTPException(status_code=404, detail="Crop not found")
     return FileResponse(path, media_type="image/jpeg")

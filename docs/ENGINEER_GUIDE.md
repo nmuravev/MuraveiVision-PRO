@@ -102,6 +102,30 @@ cd D:\LLM\MuraveiVision-PRO-Base2
 - Логи: `logs/runtime.log`, `logs/ai.log`, `logs/train.log`, `logs/validator_rejections.jsonl`, `logs/sahi_test.json`.
 - Support: diagnostic ZIP (Admin/Support).
 
+## 3D / gsplat (build machine)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\stage_gsplat_examples.ps1
+$env:PYTHONPATH = "backend"
+.\muravei_env\Scripts\python.exe backend\scripts\diagnose_recon_scenes.py
+# Full Windows train (MSVC 14.44 + CUDA 12.8 + JIT patch):
+powershell -ExecutionPolicy Bypass -File scripts\run_gsplat_train_windows.ps1 -Force -MaxSteps 30000
+.\muravei_env\Scripts\python.exe backend\scripts\batch_gsplat_train.py --job-id <id>
+# Without MSVC / CUDA JIT: bootstrap COLMAP→model.ply for Flight3D «Сцена»
+.\muravei_env\Scripts\python.exe backend\scripts\batch_gsplat_train.py --job-id <id> --bootstrap-only
+```
+
+### 3D Reconstruction Prerequisites (Windows full 3DGS)
+
+| Component | Notes |
+|-----------|--------|
+| VS Build Tools | `...\Visual Studio\18\BuildTools`; use **MSVC 14.44** (`vcvars64 -vcvars_ver=14.44`) |
+| CUDA Toolkit | **12.8** matching torch cu128 |
+| gsplat | `pip install gsplat` then `scripts\patch_gsplat_windows_jit.py` |
+| GPU | NVIDIA CUDA (RTX 50xx: `TORCH_CUDA_ARCH_LIST=12.0`) |
+
+Do **not** set `PYTHONHOME` to `muravei_env`. Details: [RECON_3D.md](RECON_3D.md).
+
 ## Если «ничего не детектит»
 
 1. `GET /api/detect/status`: `mode == ready`? Если `offline` — нет весов; если `error` — упала загрузка.

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "backend": "muravei_env\\Scripts\\python.exe -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload",
+    "backend": "set COLMAP_ROOT=sidecars\\colmap&& set MURAVEI_SESSION_TRACE=1&& muravei_env\\Scripts\\python.exe -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload",
     "backend:install": "muravei_env\\Scripts\\pip.exe install --no-cache-dir -r backend\\requirements.txt",
     "desktop": "muravei_env\\Scripts\\python.exe backend\\desktop_launcher.py",
     "smoke:phase3": "muravei_env\\Scripts\\python.exe backend\\scripts\\smoke_phase3.py",

@@ -95,7 +95,7 @@
 - **Алиас тестов (5.3)** — DONE:
   - `npm run test` = `npm run test:all` (`scripts/test_orchestrator.py`).
 - **Batch-скан архива (P0.1)** — DONE:
-  - `POST /api/scan/start` + SSE, `origin=batch_scan`, авто-старт при открытии ролика без batch-строк.
+  - `POST /api/scan/start` + SSE, `origin=batch_scan`, кнопка «Сканировать» во Viewer (I–O или весь ролик).
   - Маркеры timeline (голубые), кропы, прогресс в Timeline/UpdatePanel.
 - **Гео v1 на всех детекциях (P0.4)** — DONE:
   - Sidecar SRT/CSV → `gps_*` при create/commit/batch-scan; `POST /api/geo/import` backfill старых строк.

@@ -26,8 +26,10 @@ import type { BoundingBox, DetectedObject, PersistedDetection } from '../../type
 import { Button, IconButton, Menu, MenuItem, ToolbarGroup } from '../ui';
 import { logger } from '../../services/logger';
 import { formatMediaTime, mediaPathsMatch } from '../../lib/mediaPaths';
-import { useAutoBatchScan } from '../../hooks/useAutoBatchScan';
+import { useBatchScanHydrate } from '../../hooks/useBatchScanHydrate';
+import { batchScanProgressPct, useBatchScanStore } from '../../store/useBatchScanStore';
 import { yoloDebug } from '../../debug/yoloDebug';
+import { traceWs } from '../../debug/sessionTrace';
 import { YoloDebugOverlay } from '../debug/YoloDebugOverlay';
 import { playRuleAlertTone, useRulesStore } from '../../store/useRulesStore';
 import {
@@ -256,6 +258,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const setSourceMode = useViewerStore((s) => s.setSourceMode);
   const setLiveUrl = useViewerStore((s) => s.setLiveUrl);
   const setLiveActive = useViewerStore((s) => s.setLiveActive);
+  const setYoloEnabled = useViewerStore((s) => s.setYoloEnabled);
   const setPlaying = useViewerStore((s) => s.setPlaying);
   const setFocusedViewer = useViewerStore((s) => s.setFocusedViewer);
   const focusedViewerId = useViewerStore((s) => s.focusedViewerId);
@@ -284,7 +287,13 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const [samPropOpen, setSamPropOpen] = useState(false);
   const analysisConfig = useMuraveiStore((s) => s.analysisConfig);
   const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
-  useAutoBatchScan(viewer?.sourcePath ?? undefined, isAuthenticated);
+  useBatchScanHydrate(viewer?.sourcePath ?? undefined, isAuthenticated);
+  const startBatchScan = useBatchScanStore((s) => s.startScan);
+  const stopBatchScan = useBatchScanStore((s) => s.stopScan);
+  const scanStatus = useBatchScanStore((s) => s.status);
+  const scanVideoPath = useBatchScanStore((s) => s.videoPath);
+  const scanProcessed = useBatchScanStore((s) => s.processed);
+  const scanSampleTotal = useBatchScanStore((s) => s.sampleTotal);
   const editMode = useMuraveiStore((s) => s.editMode);
   const setEditMode = useMuraveiStore((s) => s.setEditMode);
   const detections = useMuraveiStore((s) => s.detections);
@@ -344,6 +353,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const wsGenRef = useRef(0);
   const wsReconnectTimerRef = useRef<number | null>(null);
   const wsReconnectAttemptRef = useRef(0);
+  const wsMsgTraceAtRef = useRef(0);
   /** YOLO scrub/seek suspend: cleared only by setTimeout(YOLO_SUSPEND_CLEAR_MS). */
   const yoloSuspendRef = useRef(false);
   const yoloSuspendClearTimerRef = useRef<number | null>(null);
@@ -429,6 +439,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   isLiveRef.current = isLive;
   const yoloAlwaysOn =
     Boolean(isAuthenticated) &&
+    Boolean(viewer?.yoloEnabled) &&
     (Boolean(viewer?.sourcePath) || isLive) &&
     overlayMode === 'detect';
   const sourceVideo = isLive
@@ -939,6 +950,8 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
         setStatus('connected');
         setYoloHud('ready');
         logger.info('yolo', `${viewerId}: WS connected`);
+        // KEEP: session trace — do not remove without explicit user order
+        traceWs('ws.connect', `${viewerId} detect WS open`);
       };
       ws.onclose = () => {
         if (wsRef.current === ws) wsRef.current = null;
@@ -947,6 +960,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
         setStatus('disconnected');
         setYoloHud('warn');
         logger.warn('yolo', `${viewerId}: WS disconnected`);
+        traceWs('ws.close', `${viewerId} detect WS close`);
         if (wsGenRef.current !== gen) return;
         if (!yoloAlwaysOn) return;
         const attempt = wsReconnectAttemptRef.current;
@@ -968,6 +982,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
         setStatus('error');
         setYoloHud('error');
         logger.error('yolo', `${viewerId}: WS error`);
+        traceWs('ws.error', `${viewerId} detect WS error`);
       };
       ws.onmessage = (ev) => {
         inFlightRef.current = false;
@@ -993,6 +1008,9 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
             setYoloHud('error');
             if (data.mode) setMode(data.mode);
             logger.error('yolo', `${viewerId}: ${String(data.error)}`);
+            traceWs('ws.error', `${viewerId} detect msg error`, {
+              error: String(data.error).slice(0, 120),
+            });
             return;
           }
           // Drop stale YOLO results while seek is in flight
@@ -1004,6 +1022,12 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           const kind = String(data.kind || data.model || '—');
           const n = typeof data.n === 'number' ? data.n : (data.objects ?? []).length;
           const ms = typeof data.ms === 'number' ? data.ms : 0;
+          // KEEP: session trace — summarize only, max 1/5s (never full bbox payload)
+          const nowTrace = Date.now();
+          if (nowTrace - wsMsgTraceAtRef.current >= 5000) {
+            wsMsgTraceAtRef.current = nowTrace;
+            traceWs('ws.msg', `${viewerId} detect frame n=${n} ms=${ms} kind=${kind}`);
+          }
           setInferKind(kind);
           setInferN(n);
           setInferMs(ms);
@@ -1883,7 +1907,12 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     if (!editMode) {
       if (id) {
         const obj = overlayObjects.find((o) => o.id === id);
-        if (obj) setActiveDetection(obj);
+        if (obj) {
+          setActiveDetection(obj);
+          if (typeof obj.time_sec === 'number' && Number.isFinite(obj.time_sec)) {
+            seekTo(obj.time_sec);
+          }
+        }
       }
       return;
     }
@@ -2153,6 +2182,15 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           >
             Live
           </Button>
+          <Button
+            size="sm"
+            active={Boolean(viewer?.yoloEnabled)}
+            disabled={!isAuthenticated}
+            onClick={() => setYoloEnabled(viewerId, !viewer?.yoloEnabled)}
+            title="Покадровая YOLO на экране. Выкл — без WS. Не путать со «Сканировать»."
+          >
+            {viewer?.yoloEnabled ? 'YOLO вкл' : 'YOLO выкл'}
+          </Button>
         </ToolbarGroup>
 
         {!isLive && (viewer?.sourceMode ?? 'archive') === 'archive' && (
@@ -2161,9 +2199,53 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
               size="sm"
               active={overlayMode === 'detect'}
               onClick={() => setOverlayMode('detect')}
-              title="YOLO-детекция (bbox)"
+              title="Режим overlay: рамки YOLO (не пакетный скан)"
             >
               Детекция
+            </Button>
+            <Button
+              size="sm"
+              disabled={
+                !isAuthenticated ||
+                !viewer?.sourcePath ||
+                !/\.(mp4|webm|mov|avi|mkv)$/i.test(viewer.sourcePath)
+              }
+              onClick={() => {
+                if (!viewer?.sourcePath) return;
+                const hasIo =
+                  inPoint != null && outPoint != null && outPoint > inPoint + 0.05;
+                const tStart = hasIo ? inPoint : 0;
+                const tEnd = hasIo
+                  ? outPoint
+                  : mediaDuration > 0
+                    ? mediaDuration
+                    : undefined;
+                if (
+                  scanStatus === 'running' &&
+                  scanVideoPath &&
+                  mediaPathsMatch(scanVideoPath, viewer.sourcePath)
+                ) {
+                  void stopBatchScan();
+                  return;
+                }
+                void startBatchScan(viewer.sourcePath, hydrateDetections, {
+                  tStart,
+                  tEnd,
+                  fpsSample: 2,
+                });
+              }}
+              title="Пакетный YOLO (~2 fps). Сегмент I–O или весь ролик. ≥1080p — SAHI."
+            >
+              {scanStatus === 'running' &&
+              scanVideoPath &&
+              viewer?.sourcePath &&
+              mediaPathsMatch(scanVideoPath, viewer.sourcePath)
+                ? `Стоп ${batchScanProgressPct({
+                    status: scanStatus,
+                    processed: scanProcessed,
+                    sampleTotal: scanSampleTotal,
+                  })}%`
+                : 'Сканировать'}
             </Button>
             <Button
               size="sm"

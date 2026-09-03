@@ -19,12 +19,15 @@ import {
   disposeSceneChildren,
   fetchAssetBlobUrl,
   frameObject,
+  isSparseClusterWeak,
   loadPlyAsPoints,
   loadSplatDropIn,
   pointsFromSparse,
   type SplatHandle,
 } from '../../lib/reconSceneArtifact';
-import { computeReconSegment, useReconBuild } from '../../hooks/useReconBuild';
+import { OpsStatusBar } from '../OpsStatusBar';
+import { SILENT_API_ERROR_HEADER } from '../../lib/apiError';
+import { computeReconSegment, isReconReady, useReconBuild } from '../../hooks/useReconBuild';
 import {
   formatTimecode,
   interpolateTrack,
@@ -86,6 +89,8 @@ export const Flight3D: React.FC = () => {
   const reconProgress = useReconStore((s) => s.reconProgress);
   const reconRunning = useReconStore((s) => s.reconRunning);
   const sparsePoints = useReconStore((s) => s.sparsePoints);
+  const sparseWeak = useReconStore((s) => s.sparseWeak);
+  const colmapAvailable = useReconStore((s) => s.colmapAvailable);
   const raycastMarkers = useReconStore((s) => s.raycastMarkers);
   const pendingRaycast = useReconStore((s) => s.pendingRaycast);
   const toast = useReconStore((s) => s.toast);
@@ -138,16 +143,19 @@ export const Flight3D: React.FC = () => {
   const loadManifest = useCallback(async () => {
     if (!sourcePath || !isAuthenticated) {
       setManifest(null);
-      setSparsePoints(null);
+      setSparsePoints(null, false);
       return;
     }
     const q = encodeURIComponent(sourcePath);
     const res = await fetch(`/api/recon/manifest?video_path=${q}`, { headers: authHeaders() });
     if (!res.ok) return;
-    const data = (await res.json()) as { manifest?: typeof manifest };
+    const data = (await res.json()) as {
+      manifest?: typeof manifest;
+      colmap_available?: boolean;
+    };
     const man = data.manifest ?? null;
-    setManifest(man);
-    if (man?.job_id && man.sparse_file) {
+    setManifest(man, Boolean(data.colmap_available));
+    if (man?.job_id && man.sparse_file && isReconReady(man)) {
       const sp = await fetch(`/api/recon/asset/${man.job_id}/${man.sparse_file}`, {
         headers: authHeaders(),
       });
@@ -160,10 +168,10 @@ export const Flight3D: React.FC = () => {
           flat[i * 3 + 1] = p[1];
           flat[i * 3 + 2] = p[2];
         });
-        setSparsePoints(flat.length ? flat : null);
+        setSparsePoints(flat.length ? flat : null, flat.length ? isSparseClusterWeak(flat) : false);
       }
     } else {
-      setSparsePoints(null);
+      setSparsePoints(null, false);
     }
   }, [sourcePath, isAuthenticated, setManifest, setSparsePoints]);
 
@@ -185,7 +193,11 @@ export const Flight3D: React.FC = () => {
     const load = async () => {
       await fetch('/api/geo/import', {
         method: 'POST',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        headers: {
+          ...authHeaders(),
+          'Content-Type': 'application/json',
+          [SILENT_API_ERROR_HEADER]: '1',
+        },
         body: JSON.stringify({ video_path: sourcePath }),
       }).catch(() => null);
 
@@ -599,14 +611,24 @@ export const Flight3D: React.FC = () => {
       return;
     }
 
-    const ready =
-      manifest &&
-      (manifest.status === 'colmap_done' || manifest.status === 'done');
+    if (reconRunning) {
+      clearScene();
+      setSceneKind('empty');
+      setSceneError(null);
+      setSceneLoading(false);
+      return;
+    }
+
+    const ready = isReconReady(manifest);
 
     if (!ready) {
       clearScene();
       setSceneKind('empty');
-      setSceneError(null);
+      setSceneError(
+        manifest?.status === 'error'
+          ? manifest.error || 'Ошибка построения 3D'
+          : null,
+      );
       setSceneLoading(false);
       return;
     }
@@ -620,6 +642,7 @@ export const Flight3D: React.FC = () => {
       if (cancelled) {
         pts.geometry.dispose();
         (pts.material as THREE.Material).dispose();
+        setSceneLoading(false);
         return;
       }
       st.sceneGroup.add(pts);
@@ -643,6 +666,7 @@ export const Flight3D: React.FC = () => {
           const blobUrl = await fetchAssetBlobUrl(jobId, artifact);
           if (cancelled) {
             URL.revokeObjectURL(blobUrl);
+            setSceneLoading(false);
             return;
           }
           const hint = artifact.toLowerCase().endsWith('.ksplat')
@@ -653,6 +677,7 @@ export const Flight3D: React.FC = () => {
           const handle = await loadSplatDropIn(st.sceneGroup, blobUrl, hint);
           if (cancelled) {
             handle.dispose();
+            setSceneLoading(false);
             return;
           }
           splatHandleRef.current = handle;
@@ -682,10 +707,17 @@ export const Flight3D: React.FC = () => {
         }
 
         setSceneKind('empty');
-        setSceneError('3D-модель не построена');
+        setSceneError(
+          isReconReady(manifest)
+            ? 'COLMAP готов, но нет точек / artifact'
+            : '3D-модель не построена',
+        );
         setSceneLoading(false);
       } catch (err) {
-        if (cancelled) return;
+        if (cancelled) {
+          setSceneLoading(false);
+          return;
+        }
         clearScene();
         setSceneKind('empty');
         setSceneError(err instanceof Error ? err.message : 'Ошибка загрузки 3D');
@@ -696,6 +728,7 @@ export const Flight3D: React.FC = () => {
     void run();
     return () => {
       cancelled = true;
+      setSceneLoading(false);
     };
   }, [
     viewMode,
@@ -704,6 +737,7 @@ export const Flight3D: React.FC = () => {
     manifest?.status,
     manifest?.rotation_x,
     sparsePoints,
+    reconRunning,
   ]);
 
   useEffect(() => {
@@ -886,7 +920,14 @@ export const Flight3D: React.FC = () => {
         </div>
       </div>
       <div className="px-2 py-0.5 text-[10px] text-[var(--dv-text-muted)] border-b border-[var(--dv-border)] flex-shrink-0">
-        {reconRunning ? reconMessage : sceneLoading ? 'Загрузка 3D-сцены…' : busy ? 'Загрузка…' : status}
+        {reconRunning
+          ? reconMessage
+          : sceneLoading
+            ? 'Загрузка 3D-сцены…'
+            : busy
+              ? 'Загрузка…'
+              : status}
+        <OpsStatusBar sourcePath={sourcePath} />
         {viewMode === 'scene' && (
           <span className="opacity-60">
             {' '}
@@ -895,7 +936,9 @@ export const Flight3D: React.FC = () => {
               ? 'Gaussian splat'
               : sceneKind === 'points'
                 ? 'point cloud'
-                : 'ожидание модели'}
+                : manifest?.status === 'error'
+                  ? 'ошибка построения'
+                  : 'ожидание модели'}
             {' '}
             · raycast из Inspector (sparse)
           </span>
@@ -911,17 +954,28 @@ export const Flight3D: React.FC = () => {
           />
         </div>
       )}
-      {sceneLoading && viewMode === 'scene' && (
-        <div className="h-0.5 bg-[var(--dv-bg-deep)] flex-shrink-0 overflow-hidden">
-          <div className="h-full w-1/3 bg-[var(--dv-accent)] animate-pulse" />
-        </div>
-      )}
       <div ref={mountRef} className="flex-1 min-h-0 relative">
         {viewMode === 'scene' && !sceneLoading && sceneKind === 'empty' && !reconRunning && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
             <div className="px-3 py-2 rounded-sm bg-black/70 text-[11px] text-[var(--dv-text-muted)] text-center max-w-[80%]">
-              {sceneError || '3D-модель не построена'}
-              <div className="opacity-70 mt-1">Нажмите «Построить 3D» (сегмент ≤120 с)</div>
+              {manifest?.status === 'error' &&
+              colmapAvailable &&
+              manifest.error?.includes('COLMAP не найден')
+                ? 'Предыдущая попытка: COLMAP не был доступен. Нажмите «Построить 3D» ещё раз.'
+                : manifest?.status === 'error' && manifest.error
+                  ? manifest.error
+                  : sceneError || '3D-модель не построена'}
+              {manifest?.status !== 'error' && (
+                <div className="opacity-70 mt-1">Нажмите «Построить 3D» (сегмент ≤120 с)</div>
+              )}
+            </div>
+          </div>
+        )}
+        {viewMode === 'scene' && sceneKind === 'points' && sparseWeak && !reconRunning && (
+          <div className="absolute top-2 left-2 right-2 pointer-events-none z-10">
+            <div className="px-2 py-1 rounded-sm bg-amber-950/80 text-[10px] text-amber-200 border border-amber-700/50">
+              Слабая 3D-модель: точки сгруппированы (мало parallax). Попробуйте другой сегмент или
+              больше перекрытия кадров. gsplat мог не завершиться — см. logs/recon.log
             </div>
           </div>
         )}

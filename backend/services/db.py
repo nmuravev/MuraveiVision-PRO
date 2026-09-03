@@ -531,7 +531,8 @@ def save_crop_jpeg(detection_id: str, jpeg_bytes: bytes, bbox: dict[str, float])
     crop = img.crop((x1, y1, x2, y2))
     dest = CROPS_DIR / f"{detection_id}.jpg"
     crop.save(dest, format="JPEG", quality=85)
-    return str(dest)
+    # Store archive-relative key (not absolute) so media resolve is CWD-safe
+    return f"crops/{detection_id}.jpg"
 
 
 def insert_detection(payload: dict[str, Any]) -> dict[str, Any]:

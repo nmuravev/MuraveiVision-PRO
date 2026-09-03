@@ -13,6 +13,7 @@ import {
 } from '../types/muravei';
 import { classLabelRu } from '../lib/classLabels';
 import { mediaPathsMatch } from '../lib/mediaPaths';
+import { SILENT_API_ERROR_HEADER } from '../lib/apiError';
 
 export function authHeaders(): HeadersInit {
   const token = localStorage.getItem('muravei-token');
@@ -25,12 +26,21 @@ export function authToken(): string {
   return localStorage.getItem('muravei-token') || '';
 }
 
-export function detectionCropSrc(id: string, cropPath?: string | null): string {
+/** Crop image URL — always detections API (never media/stream with raw crop_path). */
+export function detectionCropSrc(id: string, _cropPath?: string | null): string {
   const token = encodeURIComponent(authToken());
-  if (cropPath) {
-    return `/api/media/stream?path=${encodeURIComponent(cropPath)}&token=${token}`;
-  }
-  return `/api/detections/${id}/crop?token=${token}`;
+  return `/api/detections/${encodeURIComponent(id)}/crop?token=${token}`;
+}
+
+/** Ensure Viewer sourcePath is under archive/ for media/stream. */
+export function archiveMediaPath(sourceVideo: string): string {
+  const raw = (sourceVideo || '').trim();
+  if (!raw) return raw;
+  if (/^live:/i.test(raw)) return raw;
+  const norm = raw.replace(/\\/g, '/');
+  if (/^[a-zA-Z]:\//.test(norm) || norm.startsWith('//')) return raw;
+  if (norm.toLowerCase().startsWith('archive/')) return norm;
+  return `archive/${norm.replace(/^\/+/, '')}`;
 }
 
 export function xyxyFromRow(row: PersistedDetection): BoundingBox {
@@ -288,11 +298,14 @@ export const useMuraveiStore = create<MuraveiState>((set, get) => ({
       const needsGps = rows.some(
         (d) => !d.is_deleted && (d.gps_lat == null || d.gps_lon == null),
       );
-      if (needsGps) {
+      if (needsGps && !mediaPathsMatch(prevHydrated || '', path)) {
         try {
           const geoRes = await fetch('/api/geo/import', {
             method: 'POST',
-            headers: authHeaders(),
+            headers: {
+              ...authHeaders(),
+              [SILENT_API_ERROR_HEADER]: '1',
+            },
             body: JSON.stringify({ video_path: path }),
             signal,
           });

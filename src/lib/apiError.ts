@@ -12,6 +12,7 @@ export type ApiErrorDetails = {
 };
 
 export const SHOW_ERROR_MODAL_EVENT = 'muravei:show-error-modal';
+export const SILENT_API_ERROR_HEADER = 'X-Muravei-Silent-Error';
 
 type ErrorBody = {
   detail?: unknown;
@@ -73,6 +74,33 @@ let fetchPatched = false;
 let lastEmitKey = '';
 let lastEmitAt = 0;
 
+function requestHasSilentHeader(init?: RequestInit): boolean {
+  const headers = init?.headers;
+  if (!headers) return false;
+  if (headers instanceof Headers) {
+    return headers.get(SILENT_API_ERROR_HEADER) === '1';
+  }
+  if (Array.isArray(headers)) {
+    return headers.some(
+      ([k, v]) =>
+        k.toLowerCase() === SILENT_API_ERROR_HEADER.toLowerCase() && String(v) === '1',
+    );
+  }
+  const record = headers as Record<string, string>;
+  return (
+    record[SILENT_API_ERROR_HEADER] === '1' ||
+    record['x-muravei-silent-error'] === '1'
+  );
+}
+
+function shouldSkipApiErrorReport(url: string, status: number, init?: RequestInit): boolean {
+  if (requestHasSilentHeader(init)) return true;
+  if (status !== 404) return false;
+  if (url.includes('/api/recon/asset/')) return true;
+  if (url.includes('/api/geo/import')) return true;
+  return false;
+}
+
 /**
  * Patch window.fetch once: when a non-OK /api response carries structured ``error``,
  * show the field diagnostics modal. Keeps existing callers unchanged.
@@ -93,7 +121,10 @@ export function installApiErrorReporter(): () => void {
           : input instanceof URL
             ? input.href
             : input.url;
-      if (url.includes('/api/')) {
+      if (
+        url.includes('/api/') &&
+        !shouldSkipApiErrorReport(url, response.status, init)
+      ) {
         void (async () => {
           try {
             const data: unknown = await response.clone().json();

@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
 import { authHeaders, authToken } from '../store/useMuraveiStore';
+import { SILENT_API_ERROR_HEADER } from './apiError';
 
 export type SceneArtifactKind = 'points' | 'splat' | 'none';
 
@@ -22,7 +23,10 @@ export function reconAssetUrl(jobId: string, name: string): string {
 /** Fetch asset as blob URL (auth-safe for loaders that cannot set headers). */
 export async function fetchAssetBlobUrl(jobId: string, name: string): Promise<string> {
   const res = await fetch(`/api/recon/asset/${encodeURIComponent(jobId)}/${encodeURIComponent(name)}`, {
-    headers: authHeaders(),
+    headers: {
+      ...authHeaders(),
+      [SILENT_API_ERROR_HEADER]: '1',
+    },
   });
   if (!res.ok) {
     throw new Error(res.status === 404 ? `Файл не найден: ${name}` : `Ошибка загрузки ${name} (${res.status})`);
@@ -45,13 +49,60 @@ export function disposeSceneChildren(group: THREE.Group) {
   }
 }
 
+/** Metrics for COLMAP sparse cluster (degenerate recon detection). */
+export function sparseClusterMetrics(sparse: Float32Array): {
+  count: number;
+  maxDim: number;
+  minDim: number;
+} {
+  const n = sparse.length / 3;
+  if (n === 0) return { count: 0, maxDim: 0, minDim: 0 };
+  let minX = Infinity;
+  let minY = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let maxZ = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const x = sparse[i * 3];
+    const y = sparse[i * 3 + 1];
+    const z = sparse[i * 3 + 2];
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    minZ = Math.min(minZ, z);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+    maxZ = Math.max(maxZ, z);
+  }
+  const sx = maxX - minX;
+  const sy = maxY - minY;
+  const sz = maxZ - minZ;
+  const maxDim = Math.max(sx, sy, sz, 0.001);
+  const minDim = Math.min(sx, sy, sz);
+  return { count: n, maxDim, minDim };
+}
+
+export function isSparseClusterWeak(sparse: Float32Array): boolean {
+  const { count, maxDim, minDim } = sparseClusterMetrics(sparse);
+  if (count < 100) return true;
+  if (maxDim < 0.5) return true;
+  if (minDim > 0 && maxDim / Math.max(minDim, 0.001) > 40) return true;
+  return false;
+}
+
 /** Build Points from Float32Array xyz in COLMAP/source coordinates. */
 export function pointsFromSparse(sparse: Float32Array): THREE.Points {
+  const { maxDim, minDim } = sparseClusterMetrics(sparse);
+  const pointSize = Math.max(0.04, Math.min(1.2, (minDim || maxDim) * 0.35));
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(sparse, 3));
   return new THREE.Points(
     geo,
-    new THREE.PointsMaterial({ color: 0x88ccff, size: 2.0, sizeAttenuation: true }),
+    new THREE.PointsMaterial({
+      color: 0x88ccff,
+      size: pointSize,
+      sizeAttenuation: true,
+    }),
   );
 }
 

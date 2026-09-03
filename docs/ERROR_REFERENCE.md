@@ -92,6 +92,8 @@ Backend отдаёт тот же текст в поле `error` ответа (с
 
 **Примеры:** `GET /api/media/frame?path=missing.mp4`; `GET /api/detections/{id}`
 
+Нет sidecar `.SRT`/`.CSV` у ролика — это не 404: `POST /api/geo/import` отвечает 200 с `sidecar_missing`.
+
 ---
 
 ## 409 Conflict

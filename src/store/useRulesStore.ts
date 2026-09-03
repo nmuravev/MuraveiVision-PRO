@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { DetectedObject } from '../types/muravei';
 
-export type RuleSoundType = 'beep' | 'alarm' | 'none';
+export type AlertSoundType = 'beep' | 'alarm' | 'none';
 
 export type DetectionRule = {
   id: string;
@@ -10,9 +10,7 @@ export type DetectionRule = {
   minConfidence: number;
   enabled: boolean;
   sound: boolean;
-  /** Sound type for the alert. Defaults from `sound` (true -> 'beep'). */
-  soundType?: RuleSoundType;
-  /** Alert volume 0..100. Default 70. */
+  soundType?: AlertSoundType;
   soundVolume?: number;
 };
 
@@ -32,7 +30,6 @@ type RulesState = {
   addRule: (rule: Omit<DetectionRule, 'id'>) => void;
   removeRule: (id: string) => void;
   toggleRule: (id: string) => void;
-  updateRule: (id: string, patch: Partial<Omit<DetectionRule, 'id'>>) => void;
   clearAlerts: () => void;
   evaluate: (
     objects: DetectedObject[],
@@ -66,12 +63,6 @@ export const useRulesStore = create<RulesState>()(
         set((state) => ({
           rules: state.rules.map((rule) =>
             rule.id === id ? { ...rule, enabled: !rule.enabled } : rule,
-          ),
-        })),
-      updateRule: (id, patch) =>
-        set((state) => ({
-          rules: state.rules.map((rule) =>
-            rule.id === id ? { ...rule, ...patch } : rule,
           ),
         })),
       clearAlerts: () => set({ alerts: [] }),
@@ -117,7 +108,10 @@ export const useRulesStore = create<RulesState>()(
   ),
 );
 
-export function playRuleAlertTone(soundType: RuleSoundType = 'beep', volume = 70) {
+export function playRuleAlertTone(
+  soundType: AlertSoundType = 'beep',
+  volume = 70,
+) {
   if (soundType === 'none') return;
   try {
     const Context =
@@ -126,34 +120,17 @@ export function playRuleAlertTone(soundType: RuleSoundType = 'beep', volume = 70
         .webkitAudioContext;
     if (!Context) return;
     const context = new Context();
+    const oscillator = context.createOscillator();
     const gain = context.createGain();
-    const vol = Math.max(0, Math.min(1, volume / 100));
+    oscillator.frequency.value = soundType === 'alarm' ? 440 : 880;
+    const amp = Math.max(0.001, Math.min(1, volume / 100)) * 0.08;
+    gain.gain.setValueAtTime(amp, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.18);
+    oscillator.connect(gain);
     gain.connect(context.destination);
-
-    if (soundType === 'alarm') {
-      // Two-tone alarm: 660 Hz -> 880 Hz over ~0.5s.
-      const osc = context.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(660, context.currentTime);
-      osc.frequency.setValueAtTime(880, context.currentTime + 0.25);
-      gain.gain.setValueAtTime(vol, context.currentTime);
-      gain.gain.setValueAtTime(vol, context.currentTime + 0.45);
-      gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.5);
-      osc.connect(gain);
-      osc.start();
-      osc.stop(context.currentTime + 0.5);
-      osc.addEventListener('ended', () => void context.close());
-    } else {
-      // beep: 880 Hz, 0.10s
-      const osc = context.createOscillator();
-      osc.frequency.value = 880;
-      gain.gain.setValueAtTime(vol, context.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.1);
-      osc.connect(gain);
-      osc.start();
-      osc.stop(context.currentTime + 0.1);
-      osc.addEventListener('ended', () => void context.close());
-    }
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.18);
+    oscillator.addEventListener('ended', () => void context.close());
   } catch {
     // Browser autoplay policy may reject sound before the first operator gesture.
   }

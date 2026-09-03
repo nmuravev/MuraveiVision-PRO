@@ -304,6 +304,14 @@ def analyze_pair(
     _, source_before = _resolve_video(video_before)
     _, source_after = _resolve_video(video_after)
 
+    # KEEP: session trace — do not remove without explicit user order
+    from services.trace_middleware import pipeline_trace
+
+    pipeline_trace(
+        "cd",
+        f"analyze_pair before={source_before}@{time_before:.1f} after={source_after}@{time_after:.1f}",
+    )
+
     before_all = list_detections(source_video=source_before)
     after_all = list_detections(source_video=source_after)
     before_at = filter_detections_at_time(before_all, time_before, time_window_sec)

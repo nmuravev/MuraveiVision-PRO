@@ -1,14 +1,16 @@
-"""Debug panel — SSE stream of backend runtime logs."""
+"""Debug panel — SSE stream of backend runtime logs + session trace file."""
 from __future__ import annotations
 
 import asyncio
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from services import runtime_log
+from services import trace_middleware
 from services.security import require_role
 
 router = APIRouter(tags=["debug"])
@@ -47,3 +49,37 @@ async def debug_stream(_user: dict[str, Any] = Depends(require_role("operator"))
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# KEEP: session trace — do not remove without explicit user order
+class TraceToggleBody(BaseModel):
+    enabled: bool = Field(...)
+
+
+@router.get("/api/debug/trace/file")
+async def debug_trace_file(
+    tail: int = Query(50, ge=1, le=500),
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    lines = trace_middleware.read_trace_tail(tail)
+    return {
+        "path": str(trace_middleware.TRACE_LOG),
+        "lines": lines,
+        "enabled": trace_middleware.is_trace_enabled(),
+    }
+
+
+@router.post("/api/debug/trace/toggle")
+async def debug_trace_toggle(
+    body: TraceToggleBody,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    trace_middleware.set_trace_enabled(body.enabled)
+    return {"enabled": trace_middleware.is_trace_enabled()}
+
+
+@router.get("/api/debug/trace/status")
+async def debug_trace_status(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    return {"enabled": trace_middleware.is_trace_enabled()}

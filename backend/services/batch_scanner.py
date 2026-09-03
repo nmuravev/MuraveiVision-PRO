@@ -1,6 +1,8 @@
 """Background batch YOLO scan of archive videos → SQLite detections + SSE progress."""
 from __future__ import annotations
 
+import asyncio
+import os
 import threading
 import time
 import uuid
@@ -14,6 +16,8 @@ from services.telemetry import attach_gps, ensure_track_for_video
 from services.yolo_engine import get_yolo_engine
 
 LOG_PATH = BASE_DIR / "logs" / "batch_scan.log"
+BATCH_SAHI_MIN_WIDTH = int(os.environ.get("BATCH_SAHI_MIN_WIDTH", "1920"))
+BATCH_SAHI_MIN_HEIGHT = int(os.environ.get("BATCH_SAHI_MIN_HEIGHT", "1080"))
 
 _lock = threading.Lock()
 _state: dict[str, Any] = {
@@ -30,6 +34,9 @@ _state: dict[str, Any] = {
     "time_sec": 0.0,
     "fps_sample": 1.0,
     "conf": 0.25,
+    "phase": None,
+    "t_start": None,
+    "t_end": None,
     "started_at": None,
     "finished_at": None,
     "error": None,
@@ -116,6 +123,24 @@ def _resolve_video(video_path: str) -> tuple[Path, str]:
     return target, source_key
 
 
+def _predict_frame_batch(
+    engine: Any,
+    jpeg: bytes,
+    conf: float,
+    frame_idx: int,
+    time_sec: float,
+    viewer_id: str,
+    frame_w: int,
+    frame_h: int,
+) -> dict[str, Any]:
+    use_sahi = frame_w >= BATCH_SAHI_MIN_WIDTH or frame_h >= BATCH_SAHI_MIN_HEIGHT
+    if use_sahi:
+        return asyncio.run(
+            engine.infer_sahi(jpeg, conf, frame_idx, time_sec, viewer_id=viewer_id)
+        )
+    return engine._predict_sync(jpeg, conf, frame_idx, time_sec, viewer_id=viewer_id)  # noqa: SLF001
+
+
 def _xywh_from_obj(obj: dict[str, Any]) -> tuple[float, float, float, float]:
     bbox = obj.get("bbox") or {}
     x1 = float(bbox.get("x1", 0))
@@ -136,6 +161,8 @@ def _run(
     fps_sample: float,
     conf: float,
     save_crops: bool,
+    t_start: float | None = None,
+    t_end: float | None = None,
 ) -> None:
     global _thread
     import cv2
@@ -144,6 +171,7 @@ def _run(
         _emit(
             {
                 "status": "running",
+                "phase": "opening",
                 "message": "Открытие видео…",
                 "task_id": task_id,
                 "video_path": str(video_abs),
@@ -159,22 +187,43 @@ def _run(
         if fps <= 0:
             fps = 25.0
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        duration_sec = float(total) / fps if total > 0 and fps > 0 else 0.0
+        seg_start = max(0.0, float(t_start or 0.0))
+        seg_end = float(t_end) if t_end is not None and t_end > 0 else duration_sec
+        if duration_sec > 0:
+            seg_end = min(seg_end, duration_sec)
+        if seg_end <= seg_start:
+            seg_end = duration_sec if duration_sec > seg_start else seg_start + 1.0
+        start_frame = int(seg_start * fps)
+        end_frame = int(seg_end * fps) if total > 0 else 0
+        if total > 0:
+            end_frame = min(end_frame, max(0, total - 1))
         sample = max(0.1, float(fps_sample))
         frame_step = max(1, int(round(fps / sample)))
-        sample_total = max(1, (total + frame_step - 1) // frame_step) if total > 0 else 0
+        if total > 0 and end_frame >= start_frame:
+            span = end_frame - start_frame + 1
+            sample_total = max(1, (span + frame_step - 1) // frame_step)
+        else:
+            sample_total = 0
         _emit(
             {
-                "message": f"Скан {video_abs.name}: fps={fps:.1f}, шаг={frame_step}, кадров≈{total}",
+                "phase": "scanning",
+                "message": (
+                    f"Скан {video_abs.name}: {seg_start:.1f}–{seg_end:.1f}s, "
+                    f"fps={fps:.1f}, шаг={frame_step}"
+                ),
                 "total_frames": max(total, 1),
                 "sample_total": sample_total,
-                "current_frame": 0,
+                "current_frame": start_frame,
                 "processed": 0,
                 "detections_found": 0,
+                "t_start": seg_start,
+                "t_end": seg_end,
             }
         )
         _log(
             f"start task={task_id} file={video_abs.name} fps={fps:.2f} "
-            f"step={frame_step} total={total} conf={conf}"
+            f"step={frame_step} segment={seg_start:.1f}-{seg_end:.1f}s conf={conf}"
         )
 
         track: list[dict[str, Any]] = []
@@ -189,7 +238,7 @@ def _run(
         engine = get_yolo_engine()
         found = 0
         processed = 0
-        frame_idx = 0
+        frame_idx = start_frame
         viewer_id = f"batch-{task_id[:8]}"
 
         while True:
@@ -198,6 +247,8 @@ def _run(
                 cap.release()
                 return
 
+            if total > 0 and frame_idx > end_frame:
+                break
             if total > 0 and frame_idx >= total:
                 break
 
@@ -215,7 +266,10 @@ def _run(
                 frame_idx += frame_step
                 continue
             jpeg = buf.tobytes()
-            res = engine._predict_sync(jpeg, conf, frame_idx, time_sec, viewer_id=viewer_id)  # noqa: SLF001
+            fh, fw = frame.shape[:2]
+            res = _predict_frame_batch(
+                engine, jpeg, conf, frame_idx, time_sec, viewer_id, int(fw), int(fh)
+            )
             objects = res.get("objects") or []
             for obj in objects:
                 x, y, w, h = _xywh_from_obj(obj)
@@ -250,6 +304,7 @@ def _run(
             _emit(
                 {
                     "status": "running",
+                    "phase": "scanning",
                     "current_frame": frame_idx,
                     "total_frames": max(total, frame_idx + 1),
                     "processed": processed,
@@ -268,6 +323,7 @@ def _run(
         _emit(
             {
                 "status": "done",
+                "phase": "done",
                 "message": f"Готово: {found} детекций, {processed} кадров",
                 "detections_found": found,
                 "processed": processed,
@@ -275,8 +331,18 @@ def _run(
             }
         )
         _log(f"done task={task_id} found={found} processed={processed}")
+        from services.trace_middleware import pipeline_trace
+
+        pipeline_trace(
+            "scan",
+            f"done task={task_id} found={found} processed={processed}",
+            trace_id=task_id,
+        )
     except Exception as exc:  # noqa: BLE001
         _log(f"ERROR {exc}")
+        from services.trace_middleware import pipeline_trace
+
+        pipeline_trace("scan", f"error task={task_id}: {exc}", level="error", trace_id=task_id)
         _emit(
             {
                 "status": "error",
@@ -292,9 +358,11 @@ def _run(
 
 def start(
     video_path: str,
-    fps_sample: float = 1.0,
+    fps_sample: float = 2.0,
     conf: float = 0.25,
     save_crops: bool = True,
+    t_start: float | None = None,
+    t_end: float | None = None,
 ) -> dict[str, Any]:
     global _thread
     with _lock:
@@ -319,6 +387,9 @@ def start(
                 "time_sec": 0.0,
                 "fps_sample": float(fps_sample),
                 "conf": float(conf),
+                "phase": "opening",
+                "t_start": t_start,
+                "t_end": t_end,
                 "started_at": time.time(),
                 "finished_at": None,
                 "error": None,
@@ -326,11 +397,21 @@ def start(
         )
         _thread = threading.Thread(
             target=_run,
-            args=(task_id, video_abs, source_video, float(fps_sample), float(conf), bool(save_crops)),
+            args=(
+                task_id,
+                video_abs,
+                source_video,
+                float(fps_sample),
+                float(conf),
+                bool(save_crops),
+                t_start,
+                t_end,
+            ),
             daemon=True,
             name="batch-scan",
         )
         from services import runtime_log
+        from services.trace_middleware import pipeline_trace
 
         runtime_log.cmd(
             "scan",
@@ -341,6 +422,12 @@ def start(
                 f"--conf={conf}",
                 f"--save_crops={save_crops}",
             ],
+        )
+        # KEEP: session trace — do not remove without explicit user order
+        pipeline_trace(
+            "scan",
+            f"start task={task_id} video={source_video} fps={fps_sample} conf={conf}",
+            trace_id=task_id,
         )
         _thread.start()
     return status()

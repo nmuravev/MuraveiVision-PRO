@@ -44,8 +44,11 @@ _thread: threading.Thread | None = None
 
 def _log(msg: str) -> None:
     from services import runtime_log
+    from services.trace_middleware import pipeline_trace
 
     runtime_log.info("recon", msg)
+    # KEEP: session trace — do not remove without explicit user order
+    pipeline_trace("recon", msg)
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n"
     with LOG_PATH.open("a", encoding="utf-8") as fh:
@@ -109,15 +112,46 @@ def _resolve_video(video_path: str) -> tuple[Path, str]:
     return target, source_key
 
 
+def _colmap_candidates(root: Path) -> list[Path]:
+    names = (
+        "COLMAP.bat",
+        "colmap.exe",
+        "colmap",
+        Path("bin") / "colmap.exe",
+    )
+    out: list[Path] = []
+    for name in names:
+        cand = root / name
+        if cand.is_file():
+            out.append(cand)
+    return out
+
+
 def _colmap_bin() -> str | None:
-    root = os.environ.get("COLMAP_ROOT", "").strip()
-    if root:
-        for name in ("colmap.exe", "COLMAP.bat", "colmap"):
-            cand = Path(root) / name
-            if cand.is_file():
-                return str(cand)
+    roots: list[Path] = []
+    env_root = os.environ.get("COLMAP_ROOT", "").strip()
+    if env_root:
+        roots.append(Path(env_root))
+    sidecar = BASE_DIR / "sidecars" / "colmap"
+    if sidecar not in roots:
+        roots.append(sidecar)
+    for root in roots:
+        cands = _colmap_candidates(root)
+        if cands:
+            chosen = str(cands[0])
+            if not env_root and root == sidecar:
+                _log(f"COLMAP auto-detected: {chosen}")
+            return chosen
     found = shutil.which("colmap")
     return found
+
+
+def colmap_available() -> bool:
+    return _colmap_bin() is not None
+
+
+def colmap_path() -> str | None:
+    return _colmap_bin()
 
 
 def _job_dir(job_id: str) -> Path:
@@ -463,6 +497,20 @@ def _run(
     finally:
         with _lock:
             _thread = None
+            # KEEP: recover zombie — thread ended without final status
+            if _state.get("status") == "running":
+                _state["status"] = "error"
+                _state["message"] = "Zombie job reset"
+                _state["error"] = "Zombie job reset"
+                _state["finished_at"] = time.time()
+                _events.append(
+                    {
+                        "ts": time.time(),
+                        "status": "error",
+                        "message": "Zombie job reset",
+                        "error": "Zombie job reset",
+                    }
+                )
 
 
 def start(
@@ -473,7 +521,20 @@ def start(
 ) -> dict[str, Any]:
     global _thread
     with _lock:
-        if _state["status"] == "running" or (_thread and _thread.is_alive()):
+        alive = bool(_thread and _thread.is_alive())
+        if _state["status"] == "running" and not alive:
+            from services.trace_middleware import pipeline_trace
+
+            pipeline_trace(
+                "recon",
+                "stale running recovered (dead thread)",
+                level="warn",
+            )
+            _state["status"] = "idle"
+            _state["message"] = ""
+            _state["error"] = None
+            _thread = None
+        if _state["status"] == "running" or alive:
             raise RuntimeError("Реконструкция уже выполняется")
         video_abs, source_video = _resolve_video(video_path)
         dur = video_duration_sec(video_abs) or 0.0

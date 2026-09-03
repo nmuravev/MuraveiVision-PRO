@@ -20,6 +20,8 @@ class ScanStartBody(BaseModel):
     fps_sample: float = Field(default=1.0, ge=0.1, le=30.0)
     conf: float = Field(default=0.25, ge=0.05, le=0.95)
     save_crops: bool = True
+    t_start: float | None = Field(default=None, ge=0)
+    t_end: float | None = Field(default=None, ge=0)
 
 
 @router.get("/api/scan/status")
@@ -38,6 +40,8 @@ async def scan_start(
             fps_sample=body.fps_sample,
             conf=body.conf,
             save_crops=body.save_crops,
+            t_start=body.t_start,
+            t_end=body.t_end,
         )
     except HTTPException:
         raise

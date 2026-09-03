@@ -164,6 +164,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# KEEP: session trace — do not remove without explicit user order
+from services.trace_middleware import SessionTraceMiddleware  # noqa: E402
+
+app.add_middleware(SessionTraceMiddleware)
+
 
 @app.get("/api/health")
 async def health_check():

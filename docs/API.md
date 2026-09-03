@@ -197,7 +197,7 @@ Graceful degradation: при любой ошибке валидатора (ил�
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| POST | `/api/geo/import` | `{ video_path }` → парсинг sidecar, upsert `flight_tracks`, backfill `gps_*` на детекциях без координат (`backfilled`) |
+| POST | `/api/geo/import` | `{ video_path }` → парсинг sidecar, upsert `flight_tracks`, backfill `gps_*` (`backfilled`). Нет SRT/CSV → **200** `{ sidecar_missing: true, point_count: 0, points: [] }` (не 404) |
 | GET | `/api/geo/track?video_path=` | точки траектории (предпочтительно для Windows-путей) |
 | GET | `/api/geo/track/{video_path}` | то же через path |
 | GET | `/api/geo/detections?video_path=` | детекции + GPS |
@@ -252,7 +252,7 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 
 `POST /start`, `POST /stop`, `GET /status`, `GET /list` → `archive/recordings/`.
 
-## Reports / Models / System
+## Reports / Models / System / Debug
 
 - `GET /api/report/html` — автономный HTML-отчёт  
 - `GET /api/report/pdf` — технический PDF (схема lon/lat + таблица; карта в KML)  
@@ -261,6 +261,7 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 - `POST /api/models/usb-import` — `{source_path, target_type: model|classes, confirm}`. `confirm=false` — dry-run; `confirm=true` — copy + `.backup` + `force_load` / `refresh_catalog`  
 - `GET /api/system/hardware`, `POST /api/system/selftest`, `POST /api/system/simulate-failure`  
 - `GET /api/health` — liveness + YOLO/DB
+- **Session Trace (KEEP):** `GET /api/debug/stream`, `GET /api/debug/recent`, `GET /api/debug/trace/file?tail=50`, `POST /api/debug/trace/toggle` `{enabled}`, `GET /api/debug/trace/status`. Header `X-Muravei-Trace-Id`. Env `MURAVEI_SESSION_TRACE`.
 
 ## Classes — `/api/classes`
 

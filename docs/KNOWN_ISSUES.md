@@ -2,6 +2,17 @@
 
 Актуальный список. Запланированные работы — [TODO.md](TODO.md).
 
+## Session Trace (observability)
+
+- **По умолчанию ON** (bug-hunt). Пауза записи — TopBar «Трассировка» / dock; код **остаётся в репо** до явного приказа пользователя: «удали session trace».
+- Умные фильтры: нет base64/кадров WS; FE буфер 500; store ≤1/500 ms; WS msg summary ≤1/5 с.
+- Файлы: `logs/trace.log`, `logs/runtime.log`. Env `MURAVEI_SESSION_TRACE=0` — пауза BE без удаления middleware.
+
+## Детекции / галерея
+
+- **Полнота скана** пропорциональна плотности (`fps_sample`, по умолчанию ~2). Треки (in→out) **группируют** существующие кадры, но **не создают** детекции между редкими сэмплами.
+- SAHI включается для кадров ≥1080p (не только 4K).
+
 ## Flaky / окружение
 
 - **`ECONNRESET` на `POST /api/active-learning/collect`** при конкурентных воркерах Playwright. Mitigation: `workers: 1` в [playwright.config.ts](../playwright.config.ts) (уже выставлено). При ручном запуске нескольких тест-наборов против одного backend — возможен reset; перезапустите backend.
@@ -26,6 +37,17 @@
 
 - **Python**: только 3.12.10 (`muravei_env`). Системный 3.14 несовместим — см. [.cursor/rules/muravei-python-env.mdc](../.cursor/rules/muravei-python-env.mdc).
 - **numpy**: pinned `<2` (ultralytics/совместимость). SAHI ставится с `--no-deps`, чтобы не тащить numpy 2.x.
+
+## 3D Reconstruction / gsplat
+
+- **COLMAP sidecar auto-detect (2026-09-03):** если `COLMAP_ROOT` не задан, `recon_scanner._colmap_bin()` ищет `sidecars/colmap` (`COLMAP.bat`, `bin/colmap.exe`). Launchers (`npm run backend`, `start-backend.bat`, `Запустить.bat`, `desktop_launcher.py`) выставляют `COLMAP_ROOT` по умолчанию.
+- **404 `sparse_points.json` / sidecar SRT в модалке (исправлено 2026-09-03):** Flight3D не запрашивает sparse до `colmap_done`/`done`. `POST /api/geo/import` без sidecar отвечает 200 `sidecar_missing`. `apiErrorReporter` молчит на 404 `/api/recon/asset/` и `/api/geo/import` и на заголовок `X-Muravei-Silent-Error`. Переключение вкладок mosaic / dock не должно открывать ErrorDetails. При `manifest.status=error` overlay показывает `manifest.error`. Пока идёт COLMAP — в Гео 3D текст фазы, не «Загрузка 3D-сцены».
+- **`preview.ply` ≠ photorealistic splat.** Это цветное облако COLMAP (`THREE.Points`). Фотореализм — вкладка **Сцена** + `manifest.artifact = model.ply` после полного train.
+- **Полный 3DGS на Windows (проверено 2026-09-03):** VS Build Tools path `...\18\BuildTools` + **MSVC 14.44** (`vcvars64 -vcvars_ver=14.44`) + CUDA Toolkit **12.8** + `scripts\patch_gsplat_windows_jit.py` + `scripts\run_gsplat_train_windows.ps1`. Без патча JIT падает на `-Wno-attributes` (MSVC) и на `#define small` в Windows SDK → `CUDACachingAllocator.h`. MSVC **19.51** отвергается CUDA 12.8 без `-allow-unsupported-compiler`.
+- **Не** ставить `PYTHONHOME` на `muravei_env` (часто пустой `Include/`). Headers — из системного `Python312\Include`.
+- Bootstrap `model.ply` (~сотни KB) ≠ полный train (ожидайте **≫ 1 MB** и `"gsplat": true` в `gsplat_meta.json`). Очень маленький ply после 30k = слабый COLMAP (мало Gaussian’ов), не сбой JIT.
+- Синие маркеры в режиме **Гео** — playhead cone, не splat.
+- Train: ~10–30 мин на сцену (30k steps, RTX 5060).
 
 ## Сеть / репликация
 

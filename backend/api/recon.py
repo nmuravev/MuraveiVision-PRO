@@ -92,8 +92,12 @@ async def recon_manifest(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not man:
-        return {"manifest": None}
-    return {"manifest": man}
+        return {"manifest": None, "colmap_available": recon_scanner.colmap_available()}
+    return {
+        "manifest": man,
+        "colmap_available": recon_scanner.colmap_available(),
+        "colmap_path": recon_scanner.colmap_path(),
+    }
 
 
 @router.patch("/api/recon/manifest/{job_id}")

@@ -306,6 +306,14 @@ def start(
             raise RuntimeError("Пакетный Change Detection уже выполняется")
         task_id = uuid.uuid4().hex[:12]
         _abort.clear()
+        # KEEP: session trace — do not remove without explicit user order
+        from services.trace_middleware import pipeline_trace
+
+        pipeline_trace(
+            "cd",
+            f"batch_cd start task={task_id} before={video_before} after={video_after}",
+            trace_id=task_id,
+        )
         _state.update(
             {
                 "task_id": task_id,

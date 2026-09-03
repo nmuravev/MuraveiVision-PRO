@@ -8,7 +8,7 @@
 - **Вкладки TopBar** — Медиа / Монтаж / AI-анализ / Обучение / **4×Live** / Система (смена mosaic-presets + контента).
 - **4×Live + Event Timeline** — 2×2 Viewer (по умолчанию режим Live, стримы не стартуют сами) + лента событий снизу. Опрос `GET /api/events/timeline` каждые 3 с. Клик по локальной детекции: фокус Viewer с тем же `source_video` и seek к `time_sec`. Клик по сетевой цели: карточка (база, GPS, заметки), без seek. Пресет «4 вьюера» в меню Раскладка (пул + инспектор + таймлайн) **не** заменён.
 - **Горячие клавиши оператора** — Space play/pause, ←/→ кадр (Shift ×10), I/O метки, F/Ctrl+S фиксация кадра, 1–4 вьюер, Ctrl+Z undo правки детекции, Del удаление. Не срабатывают в input/textarea. Подсказки: меню «Окна».
-- **DaVinci-визуал** — тёмная тема, серые панели, оранжево-красные акценты playhead/selection.
+- **Session Trace (FE+BE)** — сквозная трассировка: клики/hotkeys, `/api` (с `X-Muravei-Trace-Id`), WS summary (не каждый кадр YOLO), store (throttle 500 ms), BE middleware → `logs/trace.log` + pipeline hooks (scan/recon/geo/CD). Dock «Трассировка» в TopBar: REC/Пауза/Метка/JSON. FIFO 500. **Код не удалять** без явного приказа «удали session trace».
 
 ## Медиа
 
@@ -18,7 +18,7 @@
 
 ## Детекция (YOLO)
 
-- **YOLO26/YOLOE** — closed-set инференс + COCO-fallback + tiling. WebSocket `/ws/detect/{viewer_id}` → overlay bbox на canvas.
+- **YOLO26/YOLOE** — closed-set инференс + COCO-fallback + tiling. WebSocket `/ws/detect/{viewer_id}` → overlay bbox на canvas. Кнопка **YOLO вкл/выкл** во Viewer (архив и Live): выкл — без WS. Не путать с режимом overlay «Детекция» и кнопкой **«Сканировать»**.
 - **Сегментация архива (P3.13)** — тумблер Viewer «Детекция / Сегментация» только в Архиве. Явные `POST /api/seg/load` / `/unload` (VRAM). Кнопка «Сегментировать кадр» → полигоны SVG. **Batch сегментация (P3.13.2)** — шаг кадров по ролику, прогресс в модалке, seek по результату; маски in-memory, не в train. **SAM3 refine (P3.13.3a)** — `sam3.pt`, точка / «SAM из детекции»; mutual VRAM с YOLO-seg. **SAM3 propagate (P3.13.3b)** — вперёд ≤30 кадров, opt-in `seg_masks`. **SAM3 text + Live freeze (P3.13.3c)** — text prompts (`trench / окоп; …`), archive «По тексту»; Live «Кадр SAM» = JPEG-capture + временный SVG поверх detect (без unload Detect, без continuous SAM). Auto-infer нет. Live `/ws/detect` не трогаем.
 - **Change Detection (P3.15)** — в режиме Было/Стало: «Синхронизировать» (P3.15.2) + «Анализ изменений» (GPS/ORB) + экспорт HTML/KML из Inspector (P3.15.3) + тумблер «Теплокарта» (P3.15.4) + **«Пакетный CD»** (P3.15.5: subsample пар `auto_sync` → `analyze_pair`, aggregate unique IDs, HTML export). Detect/train/seg не затрагиваются.
 - **YOLO scrub gate v2** — suspend YOLO при scrub (400мс cooldown), WS ignore до parse, paused ≤1/500мс, seek debounce 100мс. Debug API: `window.muraveiDebug`, `getYOLOStats`, `printYOLOReport`. Визуальный overlay в dev-режиме.
@@ -29,8 +29,9 @@
 
 ## Работа с детекциями
 
-- **Пакетный скан архива** — фоновый YOLO (~1 кадр/с) пишет детекции `origin=batch_scan` (маркеры на таймлайне, кропы). Авто-старт при открытии ролика, если batch-строк ещё нет. Кнопка в панели «Обновление».
+- **Пакетный скан архива** — фоновый YOLO (~1 fps) по кнопке **«Сканировать»** во Viewer (архив). **4K:** SAHI. Сегмент **I–O** или весь ролик. Кропы + маркеры на таймлайне. Без авто-старта при открытии MP4.
 - **CRUD** — создание/правка/удаление, soft-delete, bulk «Очистить».
+- **Галерея кропов** — **треки** (клиентский greedy: class + Δt≤2.5с + IoU/центр): карточка `class · in→out`, клик ставит I/O и seek. Покадровый список — в Inspector «Все кадры». БД без миграции.
 - **Scoped-фильтр по видео** — Inspector/Gallery/Viewer/TopBar показывают N текущего ролика.
 - **Inspector** — список детекций, заметки (debounce), флаг, выбор класса при рисовании, **«Экспорт CSV»** (`GET /api/detections/export`, координаты нормализованы [0–1]).
 - **VRAM в TopBar** — индикатор `VRAM: used/total ГБ` (poll `GET /api/system/hardware` каждые 5 с; цвет по свободному VRAM).
@@ -57,14 +58,14 @@
 
 - **COLMAP** — poses + intrinsics (PINHOLE/SIMPLE_PINHOLE/SIMPLE_RADIAL/RADIAL/OPENCV).
 - **gsplat** — train hook, dual load Points / DropInViewer.
-- **Flight3D** — ручной scale/horizon.
+- **Flight3D** — ручной scale/horizon. Пока COLMAP/`reconRunning` — статус фазы, не «Загрузка 3D-сцены»; сцена не грузится до `colmap_done`/`done`.
 - **2D→3D raycast** — intrinsics + splat pick, miss→toast (не THREE.Raycaster).
 
 ## Отчёты / обучение
 
 - **HTML-отчёт** — `GET /api/report/html`.
 - **PDF** — `GET /api/report/pdf`: таблица + примитивная lon/lat-схема (не карта Google Earth).
-- **Гео v1** — sidecar `.SRT`/`.CSV` рядом с роликом в `archive/` → `flight_tracks` и `gps_*` на детекциях (фиксация кадра, ручная рамка, batch-scan). `POST /api/geo/import` дописывает GPS на старые строки. Открытие ролика в Viewer: если у детекций нет GPS — импорт sidecar и повторная загрузка.
+- **Гео v1** — sidecar `.SRT`/`.CSV` рядом с роликом в `archive/` → `flight_tracks` и `gps_*` на детекциях (фиксация кадра, ручная рамка, batch-scan). `POST /api/geo/import` дописывает GPS на старые строки; без sidecar — **200** `{ sidecar_missing: true, point_count: 0 }` (не 404). Повторный import при hydrate того же ролика не дергается. Модалка ошибок не показывается на 404 `/api/geo/import` и `/api/recon/asset/`.
 - **KML / GeoJSON** — `GET /api/export/kml?source_video=…` и `/api/export/geojson?source_video=…`. Детекции без GPS пропускаются. KML — основной геоформат (Google Earth). Dropdown «Экспорт» в TopBar.
 - **Training/fine-tune** — detect-only, дефолт imgsz 640 / batch 4, resume `last.pt`, `.pt.backup` + `empty_cache`, promote.
 

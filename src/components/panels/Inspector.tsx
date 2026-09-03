@@ -10,6 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import {
+  archiveMediaPath,
   authHeaders,
   detectionCropSrc,
   toDetectedObject,
@@ -30,6 +31,10 @@ import { classDisplayLine, classLabelRu } from '../../lib/classLabels';
 import { fetchDetectionCropBase64 } from '../../lib/aiVision';
 import { computeReconSegment, useReconBuild } from '../../hooks/useReconBuild';
 import { mediaPathsMatch } from '../../lib/mediaPaths';
+import {
+  buildDetectionTracks,
+  formatTrackRange,
+} from '../../lib/detectionTracks';
 import { downloadAuthorized } from '../../lib/download';
 import type { ClassCatalogItem, PersistedDetection } from '../../types/muravei';
 
@@ -630,7 +635,7 @@ export const Inspector: React.FC = () => {
         row.source_video,
       );
     if (needsSource && row.source_video) {
-      setSource(focusedViewerId, row.source_video, null);
+      setSource(focusedViewerId, archiveMediaPath(row.source_video), null);
     }
     useViewerStore.getState().setFocusedViewer(focusedViewerId);
     useTimelineStore.getState().pause();
@@ -752,6 +757,10 @@ export const Inspector: React.FC = () => {
       return name.includes(q) || spaced.includes(q) || notesText.includes(q) || String(row.class_id) === q;
     });
   }, [detections, listQuery, sourcePath]);
+
+  const tracks = useMemo(() => buildDetectionTracks([...recent].reverse()), [recent]);
+
+  const [showAllFrames, setShowAllFrames] = useState(false);
 
   const clearAllForVideo = () => {
     if (!sourcePath) return;
@@ -1204,8 +1213,8 @@ export const Inspector: React.FC = () => {
         <FoldSection
           open={folds.detections}
           onToggle={() => toggleFold('detections')}
-          title={`Детекции (${recent.length}/${detections.length})`}
-          status={`${recent.length}/${detections.length}`}
+          title={`Треки (${tracks.length}) · кадры ${recent.length}`}
+          status={`${tracks.length} тр.`}
           className={`border-b border-dv-border flex flex-col min-h-0 ${folds.detections ? 'flex-1' : 'flex-shrink-0'}`}
           bodyClassName="flex flex-col min-h-0 flex-1"
         >
@@ -1240,53 +1249,90 @@ export const Inspector: React.FC = () => {
             {csvError ? <div className="mt-1 text-[10px] text-dv-danger">{csvError}</div> : null}
           </div>
           <div className="flex-1 overflow-auto min-h-0">
-            {recent.length === 0 && (
+            {tracks.length === 0 && (
               <div className="p-3 text-dv-muted text-[11px]">
                 Зафиксируйте кадр на паузе или нарисуйте рамку в режиме «Правка»
               </div>
             )}
-            {recent.map((row) => {
-              const on = row.id === activeDetectionId;
+            <div className="px-2 py-1 text-[10px] text-dv-muted">Треки</div>
+            {tracks.map((t) => {
+              const on = t.members.some((m) => m.id === activeDetectionId);
               return (
                 <button
-                  key={row.id}
+                  key={t.trackId}
                   type="button"
                   className={`w-full text-left px-2 py-1.5 border-b border-dv-soft hover:bg-dv-surface ${
                     on ? 'bg-dv-header shadow-[inset_2px_0_0_var(--dv-accent)]' : ''
                   }`}
-                  onClick={() => jumpToDetection(row)}
+                  onClick={() => {
+                    jumpToDetection(t.primary);
+                    useTimelineStore.getState().markIn(t.tIn);
+                    useTimelineStore.getState().markOut(Math.max(t.tOut, t.tIn + 0.05));
+                  }}
                 >
                   <div className="flex items-center gap-1">
                     <Flag size={10} className="text-dv-accent" />
-                    <span className="font-mono text-[10px]">{formatTs(row.time_sec)}</span>
-                    <span className="truncate text-dv-text flex-1">
-                      {classLabelRu(row.class_id, row.class_name, classCatalog)}
-                      {row.ai_class_name && row.ai_class_name !== row.class_name
-                        ? ` (ИИ: ${classLabelRu(undefined, row.ai_class_name, classCatalog)})`
-                        : ''}
+                    <span className="font-mono text-[10px] shrink-0">
+                      {formatTrackRange(t.tIn, t.tOut)}
                     </span>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="p-0.5 rounded hover:bg-[#4a2222] text-dv-muted hover:text-dv-danger"
-                      title="Удалить метку"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void deleteDetection(row.id);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') void deleteDetection(row.id);
-                      }}
-                    >
-                      <Trash2 size={11} />
+                    <span className="truncate text-dv-text flex-1">
+                      {classLabelRu(t.primary.class_id, t.class_name, classCatalog)}
+                      {t.count > 1 ? ` · ${t.count}к` : ''}
                     </span>
                   </div>
-                  {row.user_notes ? (
-                    <div className="text-[10px] text-dv-muted truncate pl-4">{row.user_notes}</div>
-                  ) : null}
                 </button>
               );
             })}
+            <button
+              type="button"
+              className="w-full text-left px-2 py-1 text-[10px] text-dv-muted hover:bg-dv-surface"
+              onClick={() => setShowAllFrames((v) => !v)}
+            >
+              {showAllFrames ? '▾' : '▸'} Все кадры ({recent.length})
+            </button>
+            {showAllFrames &&
+              recent.map((row) => {
+                const on = row.id === activeDetectionId;
+                return (
+                  <button
+                    key={row.id}
+                    type="button"
+                    className={`w-full text-left px-2 py-1.5 border-b border-dv-soft hover:bg-dv-surface ${
+                      on ? 'bg-dv-header shadow-[inset_2px_0_0_var(--dv-accent)]' : ''
+                    }`}
+                    onClick={() => jumpToDetection(row)}
+                  >
+                    <div className="flex items-center gap-1">
+                      <Flag size={10} className="text-dv-accent" />
+                      <span className="font-mono text-[10px]">{formatTs(row.time_sec)}</span>
+                      <span className="truncate text-dv-text flex-1">
+                        {classLabelRu(row.class_id, row.class_name, classCatalog)}
+                        {row.ai_class_name && row.ai_class_name !== row.class_name
+                          ? ` (ИИ: ${classLabelRu(undefined, row.ai_class_name, classCatalog)})`
+                          : ''}
+                      </span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="p-0.5 rounded hover:bg-[#4a2222] text-dv-muted hover:text-dv-danger"
+                        title="Удалить метку"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void deleteDetection(row.id);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') void deleteDetection(row.id);
+                        }}
+                      >
+                        <Trash2 size={11} />
+                      </span>
+                    </div>
+                    {row.user_notes ? (
+                      <div className="text-[10px] text-dv-muted truncate pl-4">{row.user_notes}</div>
+                    ) : null}
+                  </button>
+                );
+              })}
           </div>
         </FoldSection>
       </div>

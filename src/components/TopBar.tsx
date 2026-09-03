@@ -32,6 +32,8 @@ interface TopBarProps {
   onTabChange: (tab: string) => void;
   isDefaultLayout?: boolean;
   onResetLayout?: () => void;
+  traceDockOpen?: boolean;
+  onToggleTraceDock?: () => void;
 }
 
 function parseDetail(body: unknown): string {
@@ -54,6 +56,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   activeTab,
   onTabChange,
   onResetLayout,
+  traceDockOpen,
+  onToggleTraceDock,
 }) => {
   const [windowOpen, setWindowOpen] = useState(false);
   const [layoutOpen, setLayoutOpen] = useState(false);
@@ -464,6 +468,16 @@ export const TopBar: React.FC<TopBarProps> = ({
           >
             <Globe2 size={13} />
             Гео 3D
+          </Button>
+
+          <Button
+            size="md"
+            title="Session Trace dock (FE+BE). Код не удалять без явного приказа."
+            active={Boolean(traceDockOpen)}
+            onClick={() => onToggleTraceDock?.()}
+          >
+            <Bug size={13} />
+            Трассировка
           </Button>
 
           <Button

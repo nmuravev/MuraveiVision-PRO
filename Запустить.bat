@@ -38,8 +38,11 @@ if not exist "%~dp0dist\index.html" (
 )
 
 echo Python: !PYTHON!
+set "COLMAP_ROOT=%~dp0sidecars\colmap"
+echo COLMAP_ROOT=!COLMAP_ROOT!
+set "MURAVEI_SESSION_TRACE=1"
 echo Starting backend on http://127.0.0.1:8000 ...
-start "MuraveiVision Backend" "!PYTHON!" -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000
+start "MuraveiVision Backend" cmd /c "set COLMAP_ROOT=%~dp0sidecars\colmap&& set MURAVEI_SESSION_TRACE=1&& \"!PYTHON!\" -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000"
 
 echo Waiting for backend...
 timeout /t 4 /nobreak >nul

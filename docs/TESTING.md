@@ -44,6 +44,9 @@ cd backend
 - `test_colmap_poses.py` — COLMAP camera models, `_quat_to_rot`, `nearest_pose`.
 - `test_geo_export.py` — KML XML (escape, lon/lat/alt), GeoJSON FeatureCollection, skip без GPS, детерминированный цвет класса.
 - `test_geo_persist.py` — attach_gps (интерполяция, keep explicit, no-track), persist в SQLite, backfill только null.
+- `test_geo_import_missing.py` — нет sidecar / FileNotFoundError → 200 `sidecar_missing`, не HTTP 404.
+- `test_gallery_dedupe_key.py` — ключ группировки кропов (класс + секунда + грубый bbox).
+- `test_trace_middleware.py` — Trace-Id extract/mint + BE toggle.
 - `test_similarity.py` — cosine ranking, кэш embedding по mtime, 404 без кропа, hist-путь без CLIP.
 - `test_trainer_resume.py` — список last/best/epoch, skip seg, 404 без last.pt, clamp imgsz/batch.
 - `test_segmentation.py` — нет веса → not ready; YOLOE-seg игнорируется; load/unload; infer без load → ошибка; mock predict → polygon_norm 0–1, модель остаётся loaded.

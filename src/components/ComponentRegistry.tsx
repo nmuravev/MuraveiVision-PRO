@@ -44,7 +44,7 @@ const registry: Record<ViewId, React.FC> = {
   timeline: TimelinePanel,
   queue: () => (
     <div className="p-4 text-[12px] text-[var(--dv-text-muted)]">
-      Панель «Очередь» удалена. Анализ видео запускается автоматически при открытии файла во вьюере.
+      Панель «Очередь» удалена. Пакетный анализ — кнопка «Сканировать» во Viewer.
     </div>
   ),
   gallery: BattleGallery,
