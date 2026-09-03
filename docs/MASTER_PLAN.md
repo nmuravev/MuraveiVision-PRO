@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** (pending) operator blockers 403/3D + detection tracks
+- **Commit:** `2dd2485` operator blockers 403/3D + detection tracks
 - **Unit tests:** 162
 - **E2E specs:** 6+
 - **Status:** crop via /detections/crop; tracks in gallery; recon zombie recover; session trace KEEP
