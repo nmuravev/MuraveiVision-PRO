@@ -70,7 +70,7 @@ def main() -> int:
     data_dir.mkdir(parents=True)
     images_link = data_dir / "images"
     sparse_link = data_dir / "sparse" / "0"
-    sparse_link.parent.mkdir(parents=True, exist_ok=True)
+    sparse_link.mkdir(parents=True, exist_ok=True)
     # Copy/symlink frames → images (Windows: copy is safer)
     shutil.copytree(frames, images_link)
     for name in ("cameras.bin", "images.bin", "points3D.bin", "cameras.txt", "images.txt", "points3D.txt"):
@@ -85,6 +85,8 @@ def main() -> int:
             sys.executable,
             str(trainer),
             "default",
+            "--disable_viewer",
+            "--disable_video",
             "--data_dir",
             str(data_dir),
             "--data_factor",
@@ -95,6 +97,9 @@ def main() -> int:
             str(args.max_steps),
             "--save_ply",
             "--ply_steps",
+            str(args.max_steps),
+            # Avoid mid-run traj crash on tiny camera sets; still eval at end.
+            "--eval_steps",
             str(args.max_steps),
         ]
         print("running:", " ".join(cmd))
