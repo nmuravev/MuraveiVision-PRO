@@ -36,14 +36,40 @@ class JobDiagnosis:
         return asdict(self)
 
 
+def get_best_sparse_dir(job_dir: Path) -> Path | None:
+    """Pick best COLMAP sparse/N (max points file size; cameras preferred).
+
+    Multi-model mapper output may put a tiny/broken model in sparse/0 and the
+    usable reconstruction in sparse/1, sparse/2, …
+    """
+    sparse_root = job_dir / "colmap" / "sparse"
+    if not sparse_root.is_dir():
+        return None
+
+    best: Path | None = None
+    best_score = -1
+    for sparse_dir in sparse_root.iterdir():
+        if not sparse_dir.is_dir():
+            continue
+        pts = sparse_dir / "points3D.bin"
+        if not pts.is_file():
+            pts = sparse_dir / "points3D.txt"
+        if not pts.is_file():
+            continue
+        try:
+            size = pts.stat().st_size
+        except OSError:
+            continue
+        has_cam = (sparse_dir / "cameras.bin").is_file() or (sparse_dir / "cameras.txt").is_file()
+        score = size + (1_000_000_000 if has_cam else 0)
+        if score > best_score:
+            best_score = score
+            best = sparse_dir
+    return best
+
+
 def _sparse_ok(job_dir: Path) -> bool:
-    sparse0 = job_dir / "colmap" / "sparse" / "0"
-    if not sparse0.is_dir():
-        return False
-    for name in ("points3D.bin", "points3D.txt"):
-        if (sparse0 / name).is_file():
-            return True
-    return False
+    return get_best_sparse_dir(job_dir) is not None
 
 
 def _env_checks() -> tuple[bool, bool]:

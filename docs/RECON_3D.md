@@ -58,7 +58,7 @@ npm run backend
 ```
 archive/recon/{job_id}/
 ├── frames/
-├── colmap/sparse/0/
+├── colmap/sparse/N/     # COLMAP model(s); best N chosen by max points size
 ├── camera_poses.json    # R, t, intrinsics, image_size per frame
 ├── sparse_points.json   # COLMAP point cloud preview
 └── manifest.json
@@ -102,6 +102,8 @@ PyPI `gsplat` is **JIT-only** (no `csrc`). First CUDA call compiles kernels. On 
    ```
 
 Expect `model.ply` **≫ 1 MB** and `gsplat_meta.json` with `"gsplat": true`. Tiny ply (~KB) with `"gsplat": true` means train ran but COLMAP gave almost no Gaussians (weak scene).
+
+**Multi-model COLMAP:** if mapper writes several `sparse/N` folders, diagnose / train / bootstrap / in-app recon pick the **largest valid** points cloud (`get_best_sparse_dir`). Trainer staging still copies that model into `gsplat_data/sparse/0/` for gsplat examples.
 
 ### Install / stage
 

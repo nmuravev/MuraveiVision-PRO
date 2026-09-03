@@ -11,6 +11,9 @@ import sys
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(BASE / "backend"))
+from services.recon_diagnose import get_best_sparse_dir  # noqa: E402
+
 C0 = 0.28209479177387814
 
 
@@ -34,7 +37,9 @@ def _parse_points3d_txt(path: Path, max_points: int) -> tuple[list, list]:
 
 
 def bootstrap_ply(job_dir: Path, max_points: int = 80_000) -> Path:
-    sparse = job_dir / "colmap" / "sparse" / "0"
+    sparse = get_best_sparse_dir(job_dir)
+    if sparse is None:
+        raise FileNotFoundError(f"missing valid colmap/sparse/N in {job_dir}")
     pts_txt = sparse / "points3D.txt"
     if not pts_txt.is_file():
         raise FileNotFoundError(f"missing {pts_txt}")
@@ -87,7 +92,14 @@ def main() -> int:
     job_dir = args.job_dir
     if not job_dir.is_absolute():
         job_dir = (BASE / job_dir).resolve()
-    points3d = job_dir / "colmap" / "sparse" / "0" / "points3D.txt"
+    sparse = get_best_sparse_dir(job_dir)
+    if sparse is None:
+        print(
+            f"bootstrap_model_ply: missing valid colmap/sparse/N in {job_dir}",
+            file=sys.stderr,
+        )
+        return 1
+    points3d = sparse / "points3D.txt"
     if not points3d.is_file():
         print(f"bootstrap_model_ply: missing {points3d}", file=sys.stderr)
         return 1

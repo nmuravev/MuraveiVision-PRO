@@ -14,6 +14,7 @@ from typing import Any
 
 from services.colmap_poses import export_camera_poses, export_sparse_points, nearest_pose
 from services.ffmpeg_util import video_duration_sec
+from services.recon_diagnose import get_best_sparse_dir
 from services.security import archive_root, assert_in_archive
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -292,8 +293,7 @@ def _run_colmap(job_dir: Path, frames_dir: Path) -> Path:
         ]
     )
     run(["exhaustive_matcher", "--database_path", str(db)])
-    sparse0 = sparse / "0"
-    sparse0.mkdir(parents=True, exist_ok=True)
+    # COLMAP mapper writes sparse/0, sparse/1, … under --output_path.
     run(
         [
             "mapper",
@@ -306,34 +306,35 @@ def _run_colmap(job_dir: Path, frames_dir: Path) -> Path:
         ],
         timeout=7200,
     )
-    if not (sparse0 / "cameras.bin").is_file() and not (sparse0 / "cameras.txt").is_file():
-        raise RuntimeError("COLMAP mapper не создал sparse/0")
+    sparse_model = get_best_sparse_dir(job_dir)
+    if sparse_model is None:
+        raise RuntimeError("COLMAP mapper produced no valid sparse model")
 
-    if not (sparse0 / "cameras.txt").is_file():
+    if not (sparse_model / "cameras.txt").is_file():
         run(
             [
                 "model_converter",
                 "--input_path",
-                str(sparse0),
+                str(sparse_model),
                 "--output_path",
-                str(sparse0),
+                str(sparse_model),
                 "--output_type",
                 "TXT",
             ]
         )
-    if not (sparse0 / "points3D.txt").is_file() and (sparse0 / "points3D.bin").is_file():
+    if not (sparse_model / "points3D.txt").is_file() and (sparse_model / "points3D.bin").is_file():
         run(
             [
                 "model_converter",
                 "--input_path",
-                str(sparse0),
+                str(sparse_model),
                 "--output_path",
-                str(sparse0),
+                str(sparse_model),
                 "--output_type",
                 "TXT",
             ]
         )
-    return sparse0
+    return sparse_model
 
 
 def _try_gsplat_train(job_dir: Path, frames_dir: Path, sparse0: Path) -> str | None:

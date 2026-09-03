@@ -9,6 +9,7 @@ from pathlib import Path
 from services.recon_diagnose import (
     diagnose_job,
     exit_code_for,
+    get_best_sparse_dir,
     scan_recon_root,
 )
 
@@ -103,6 +104,46 @@ class ReconDiagnoseTests(unittest.TestCase):
             one = scan_recon_root(root, job_id="j1")
             self.assertEqual(len(one), 1)
             self.assertEqual(one[0].job_id, "j1")
+
+    def test_best_sparse_prefers_larger_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            job = Path(tmp) / "multi"
+            sparse0 = job / "colmap" / "sparse" / "0"
+            sparse1 = job / "colmap" / "sparse" / "1"
+            sparse0.mkdir(parents=True)
+            sparse1.mkdir(parents=True)
+            # Tiny/broken model in 0
+            (sparse0 / "points3D.txt").write_text("# tiny\n", encoding="utf-8")
+            (sparse0 / "cameras.txt").write_text("# cam\n", encoding="utf-8")
+            # Larger valid model in 1
+            big_pts = "# 3D point list\n" + "\n".join(
+                f"{i} {i}.0 0.0 0.0 255 0 0 0" for i in range(1, 40)
+            )
+            (sparse1 / "points3D.txt").write_text(big_pts, encoding="utf-8")
+            (sparse1 / "cameras.txt").write_text("# cam\n", encoding="utf-8")
+
+            best = get_best_sparse_dir(job)
+            self.assertIsNotNone(best)
+            assert best is not None
+            self.assertEqual(best.name, "1")
+
+            frames = job / "frames"
+            frames.mkdir()
+            (frames / "000001.jpg").write_bytes(b"jpeg")
+            (job / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "job_id": "multi",
+                        "status": "colmap_done",
+                        "artifact": None,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            diag = diagnose_job(job, cuda=True, gsplat=True)
+            self.assertTrue(diag.colmap_sparse)
+            self.assertNotIn("missing_colmap_sparse", diag.issues)
+            self.assertTrue(diag.needs_train)
 
 
 if __name__ == "__main__":

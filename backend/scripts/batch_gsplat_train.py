@@ -9,6 +9,9 @@ import sys
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(BASE / "backend"))
+from services.recon_diagnose import get_best_sparse_dir  # noqa: E402
+
 RECON_ROOT = BASE / "archive" / "recon"
 PY = BASE / "muravei_env" / "Scripts" / "python.exe"
 TRAIN_SCRIPT = BASE / "backend" / "scripts" / "gsplat_train_job.py"
@@ -64,8 +67,8 @@ def _bootstrap_job(job_dir: Path, max_points: int) -> int:
 
 
 def _train_job(job_dir: Path, max_steps: int, data_factor: int, force: bool, bootstrap_only: bool) -> int:
-    if not (job_dir / "colmap" / "sparse" / "0").is_dir():
-        print(f"skip {job_dir.name}: no colmap/sparse/0")
+    if get_best_sparse_dir(job_dir) is None:
+        print(f"skip {job_dir.name}: no valid colmap/sparse/N")
         return 0
 
     if bootstrap_only:

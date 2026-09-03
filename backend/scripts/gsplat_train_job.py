@@ -2,9 +2,10 @@
 
 Expects layout:
   job_dir/frames/*.jpg
-  job_dir/colmap/sparse/0/  (TXT or BIN)
+  job_dir/colmap/sparse/N/  (best model via get_best_sparse_dir; TXT or BIN)
 
 Writes job_dir/model.ply and returns relative name on success.
+Trainer staging still uses gsplat_data/sparse/0/ (gsplat examples layout).
 
   .\\muravei_env\\Scripts\\python.exe backend\\scripts\\gsplat_train_job.py --job-dir archive/recon/<id>
 
@@ -19,6 +20,8 @@ import sys
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(BASE / "backend"))
+from services.recon_diagnose import get_best_sparse_dir  # noqa: E402
 
 
 def _fail(msg: str) -> int:
@@ -40,9 +43,9 @@ def main() -> int:
         return _fail(f"job dir missing: {job_dir}")
 
     frames = job_dir / "frames"
-    sparse = job_dir / "colmap" / "sparse" / "0"
-    if not frames.is_dir() or not sparse.is_dir():
-        return _fail("need frames/ and colmap/sparse/0/")
+    sparse = get_best_sparse_dir(job_dir)
+    if not frames.is_dir() or sparse is None:
+        return _fail("need frames/ and valid colmap/sparse/N/")
 
     try:
         import torch
