@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `e8b0b25` chrome overflow TopBar/Viewer/Timeline
-- **Unit tests:** 198
+- **Commit:** (pending push) COLMAP sequential matching + frame budget + honest errors
+- **Unit tests:** 220
 - **E2E specs:** 6+
-- **Status:** TopBar/Viewer/Timeline overflow UX; Detect/Ещё menus visible
-- **Last updated by:** fix: chrome overflow (e8b0b25)
+- **Status:** Drone video Build3D uses sequential_matcher (not exhaustive); frame/image budget for 8 GB; GPU→CPU matcher retry; no glog INFO as failure reason; retry Build 3D after backend restart
+- **Last updated by:** fix: COLMAP sequential matching + frame budget for drone video
 
 ---
 

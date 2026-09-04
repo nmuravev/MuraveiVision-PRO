@@ -40,6 +40,10 @@ npm run backend
 
    **Product rule:** «Построить 3D» = **COLMAP sparse only** (`colmap_done`, `manifest.next_action=balanced_for_splat`). Ops modal steps: extracting → colmap → export_poses → load_scene — **no** inline «gsplat train (optional)». Photorealism = UI presets Balanced / Bootstrap / High.
 
+   **Matching (drone video):** frames use **sequential_matcher** (overlap ≈10–15 neighbors, env `COLMAP_SEQUENTIAL_OVERLAP`). Exhaustive matching is **not** the default — it is O(n²) and often crashes GPU (8 GB) mid «Exhaustive feature matching». Opt-in: `COLMAP_MATCHER=exhaustive` only for small sets (≤`COLMAP_EXHAUSTIVE_MAX_IMAGES`, default 80).
+
+   **Frame / size budget (8 GB VRAM):** SfM frame count is capped (`COLMAP_MAX_FRAMES`, default 600); `fps_sample` is clamped to the segment. Longest image side is limited (`COLMAP_MAX_IMAGE_SIZE`, default 1600) at extract + `SiftExtraction.max_image_size`. If GPU matching fails, COLMAP retries **once** with CPU (`SiftMatching.use_gpu=0`) and logs to runtime + Session Trace.
+
 4. After `colmap_done`: toggle **Сцена**, optional **Масштаб** (2 clicks + metres).
 
 ## 3D Training via UI
