@@ -11,6 +11,8 @@ export type ReconManifest = {
   poses_file?: string;
   sparse_file?: string;
   scale_m_per_unit?: number | null;
+  /** After Build3D sparse-only: prefer Balanced for photoreal splat */
+  next_action?: string | null;
   scale_reference?: {
     point_a?: number[];
     point_b?: number[];

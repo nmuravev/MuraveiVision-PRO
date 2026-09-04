@@ -23,6 +23,7 @@ import {
   loadPlyAsPoints,
   loadSplatDropIn,
   pointsFromSparse,
+  probeSplatBounds,
   type SplatHandle,
 } from '../../lib/reconSceneArtifact';
 import { OpsStatusBar } from '../OpsStatusBar';
@@ -137,7 +138,8 @@ export const Flight3D: React.FC = () => {
     viewMode === 'scene' &&
     !training &&
     train.status !== 'error' &&
-    (sceneKind === 'points' ||
+    (manifest?.next_action === 'balanced_for_splat' ||
+      sceneKind === 'points' ||
       (Boolean(manifest?.status === 'colmap_done') &&
         classifyArtifact(manifest?.artifact) !== 'splat'));
 
@@ -146,6 +148,9 @@ export const Flight3D: React.FC = () => {
   const sparseRef = useRef(sparsePoints);
   const splatHandleRef = useRef<SplatHandle | null>(null);
   const framedKeyRef = useRef('');
+  const splatLoadingRef = useRef(false);
+  const sceneLoadGenRef = useRef(0);
+  const autoSceneJobRef = useRef<string | null>(null);
   const loadManifestRef = useRef<() => void>(() => undefined);
   const cameraSnapRef = useRef<{
     jobId: string;
@@ -209,6 +214,14 @@ export const Flight3D: React.FC = () => {
   useEffect(() => {
     void loadManifest();
   }, [loadManifest]);
+
+  // Prefer Scene once per ready job — tabs used to stay on Geo (and were disabled while opsBlocking)
+  useEffect(() => {
+    if (!isReconReady(manifest) || !manifest?.job_id) return;
+    if (autoSceneJobRef.current === manifest.job_id) return;
+    autoSceneJobRef.current = manifest.job_id;
+    if (viewMode !== 'scene') setViewMode('scene');
+  }, [manifest?.job_id, manifest?.status, manifest?.artifact, viewMode, setViewMode, manifest]);
 
   useEffect(() => {
     if (!sourcePath || !isAuthenticated) {
@@ -318,6 +331,12 @@ export const Flight3D: React.FC = () => {
   }, [reconRunning, manifest?.job_id, manifest?.status]);
 
   useEffect(() => {
+    if (!reconRunning) return;
+    setSceneError(null);
+    setToast(null);
+  }, [reconRunning, setToast]);
+
+  useEffect(() => {
     if (train.status === 'done' && train.artifact) {
       framedKeyRef.current = '';
       void loadManifest();
@@ -326,6 +345,8 @@ export const Flight3D: React.FC = () => {
   }, [train.status, train.artifact]);
 
   const runBuild3d = () => {
+    setSceneError(null);
+    setToast(null);
     const { tStart, tEnd } = computeReconSegment(playheadPosition, mediaDuration);
     void startRecon({ tStart, tEnd, openSceneOnDone: true });
   };
@@ -624,11 +645,11 @@ export const Flight3D: React.FC = () => {
     const st = sceneRef.current;
     if (!st) return;
 
-    let cancelled = false;
     const jobId = manifest?.job_id;
     const artifact = manifest?.artifact ?? null;
     const artifactKind = classifyArtifact(artifact);
     const frameKey = `${jobId ?? ''}:${artifact ?? 'sparse'}`;
+    const sparseNow = sparseRef.current;
 
     const clearScene = () => {
       if (splatHandleRef.current) {
@@ -667,15 +688,9 @@ export const Flight3D: React.FC = () => {
 
     st.sceneGroup.visible = viewMode === 'scene';
     if (viewMode !== 'scene') {
+      sceneLoadGenRef.current += 1;
       clearScene();
-      setSceneKind('empty');
-      setSceneError(null);
-      setSceneLoading(false);
-      return;
-    }
-
-    if (reconRunning || training) {
-      clearScene();
+      splatLoadingRef.current = false;
       setSceneKind('empty');
       setSceneError(null);
       setSceneLoading(false);
@@ -685,7 +700,18 @@ export const Flight3D: React.FC = () => {
     const ready = isReconReady(manifest);
 
     if (!ready) {
+      // Keep last preview while train/ops run — do not wipe the map mid-render
+      const keep =
+        training ||
+        splatLoadingRef.current ||
+        st.sceneGroup.children.length > 0;
+      if (keep) {
+        setSceneLoading(false);
+        return;
+      }
+      sceneLoadGenRef.current += 1;
       clearScene();
+      splatLoadingRef.current = false;
       setSceneKind('empty');
       setSceneError(
         manifest?.status === 'error'
@@ -696,13 +722,23 @@ export const Flight3D: React.FC = () => {
       return;
     }
 
+    // Same artifact already on canvas — never remount (retries killed late-arriving splat)
+    if (framedKeyRef.current === frameKey && st.sceneGroup.children.length > 0) {
+      setSceneLoading(false);
+      return;
+    }
+
+    const loadGen = ++sceneLoadGenRef.current;
+    const isStale = () => sceneLoadGenRef.current !== loadGen;
+
     snapCamera();
     clearScene();
+    splatLoadingRef.current = false;
     setSceneError(null);
     setSceneLoading(true);
 
     const finishPoints = (pts: THREE.Points) => {
-      if (cancelled) {
+      if (isStale()) {
         pts.geometry.dispose();
         (pts.material as THREE.Material).dispose();
         setSceneLoading(false);
@@ -725,10 +761,20 @@ export const Flight3D: React.FC = () => {
 
     const run = async () => {
       try {
+        const paintSparseNow = () => {
+          const sp = sparseRef.current;
+          if (!(sp && sp.length >= 3)) return false;
+          finishPoints(pointsFromSparse(sp));
+          return true;
+        };
+
         if (artifactKind === 'splat' && jobId && artifact) {
+          splatLoadingRef.current = true;
+          const t0 = Date.now();
           const blobUrl = await fetchAssetBlobUrl(jobId, artifact);
-          if (cancelled) {
+          if (isStale()) {
             URL.revokeObjectURL(blobUrl);
+            if (sceneLoadGenRef.current === loadGen) splatLoadingRef.current = false;
             setSceneLoading(false);
             return;
           }
@@ -749,27 +795,139 @@ export const Flight3D: React.FC = () => {
             : artifact.toLowerCase().endsWith('.splat')
               ? 'splat'
               : 'ply';
+
+          // Immediate points preview — DropInViewer for ~40MB ply often takes 1–3 min
+          let previewReady = paintSparseNow();
+          if (!previewReady && hint === 'ply') {
+            try {
+              const pts = await loadPlyAsPoints(blobUrl);
+              if (!isStale()) {
+                finishPoints(pts);
+                previewReady = true;
+                setSceneError('Превью точек · загружается Gaussian splat (1–3 мин)…');
+              } else {
+                pts.geometry.dispose();
+                (pts.material as THREE.Material).dispose();
+              }
+            } catch {
+              /* splat-only */
+            }
+          } else if (previewReady) {
+            setSceneError('Превью sparse · загружается Gaussian splat (1–3 мин)…');
+          }
+
           try {
-            const handle = await loadSplatDropIn(st.sceneGroup, blobUrl, hint);
-            if (cancelled) {
+            // No timeout race — prior logs: addSplatScene ok ~110s after 45s dispose
+            const handle = await loadSplatDropIn(st.sceneGroup, blobUrl, hint, {
+              camera: st.camera,
+              renderer: st.renderer,
+            });
+            if (isStale()) {
               handle.dispose();
-              setSceneLoading(false);
+              if (sceneLoadGenRef.current === loadGen) splatLoadingRef.current = false;
               return;
             }
-            splatHandleRef.current = handle;
+            const bounds = await probeSplatBounds(handle.viewer, {
+              maxMs: 15_000,
+              isStale,
+            });
+            if (isStale()) {
+              handle.dispose();
+              return;
+            }
+
+            // Frame first (prefer live points sibling / sparse), then strip preview — never dispose splat
+            framedKeyRef.current = '';
             if (manifest?.rotation_x) st.sceneGroup.rotation.x = manifest.rotation_x;
             else st.sceneGroup.rotation.x = 0;
-            applyCamera(handle.viewer);
+
+            let framed = false;
+            if (bounds.usable) {
+              framed = frameObject(handle.viewer, st.camera, st.controls);
+            }
+            if (!framed) {
+              const ptsChild = st.sceneGroup.children.find(
+                (c) => c !== handle.viewer && (c as THREE.Points).isPoints,
+              );
+              if (ptsChild) framed = frameObject(ptsChild, st.camera, st.controls);
+            }
+            if (!framed) {
+              const sp = sparseRef.current;
+              if (sp && sp.length >= 3) {
+                const pts = pointsFromSparse(sp);
+                st.sceneGroup.add(pts);
+                framed = frameObject(pts, st.camera, st.controls);
+                st.sceneGroup.remove(pts);
+                pts.geometry.dispose();
+                (pts.material as THREE.Material).dispose();
+              }
+            }
+            if (!framed) {
+              if (cameraSnapRef.current) {
+                st.camera.position.copy(cameraSnapRef.current.pos);
+                st.controls.target.copy(cameraSnapRef.current.target);
+                st.controls.update();
+              } else {
+                st.controls.target.set(0, 0, 0);
+                st.camera.position.set(8, 6, 8);
+                st.controls.update();
+              }
+            }
+
+            for (const child of [...st.sceneGroup.children]) {
+              if (child === handle.viewer) continue;
+              st.sceneGroup.remove(child);
+              child.traverse((obj) => {
+                const mesh = obj as THREE.Mesh;
+                if (mesh.geometry) mesh.geometry.dispose();
+                const mat = mesh.material;
+                if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+                else if (mat) (mat as THREE.Material).dispose();
+              });
+            }
+
+            splatHandleRef.current = handle;
+            splatLoadingRef.current = false;
+            framedKeyRef.current = frameKey;
             setSplatKind(isBootstrap ? 'bootstrap' : 'train');
             setSceneKind('splat');
+            // Never set sceneError here — soft bbox issues must not trip ops modal «error/Повторить»
+            setSceneError(null);
             setSceneLoading(false);
+            if (!bounds.usable) {
+              setToast('Splat на сцене · камера по sparse (bbox DropInViewer ещё placeholder)');
+              window.setTimeout(() => setToast(null), 5000);
+            }
+
+            // Re-frame when real bounds arrive later
+            if (!bounds.usable) {
+              void (async () => {
+                for (const waitMs of [1500, 4000, 8000]) {
+                  await new Promise<void>((r) => window.setTimeout(r, waitMs));
+                  if (isStale() || splatHandleRef.current !== handle) return;
+                  const again = await probeSplatBounds(handle.viewer, {
+                    maxMs: 2500,
+                    isStale,
+                  });
+                  if (again.usable && !isStale() && splatHandleRef.current === handle) {
+                    frameObject(handle.viewer, st.camera, st.controls);
+                    return;
+                  }
+                }
+              })();
+            }
             return;
           } catch (splatErr) {
             URL.revokeObjectURL(blobUrl);
-            framedKeyRef.current = '';
-            throw splatErr instanceof Error
-              ? splatErr
-              : new Error('Не удалось загрузить Gaussian splat');
+            splatLoadingRef.current = false;
+            if (!previewReady) paintSparseNow();
+            setSceneError(
+              splatErr instanceof Error
+                ? `Splat: ${splatErr.message} — превью точек`
+                : 'Splat ошибка — превью точек',
+            );
+            setSceneLoading(false);
+            return;
           }
         }
 
@@ -784,10 +942,12 @@ export const Flight3D: React.FC = () => {
           return;
         }
 
-        // Fallback: sparse_points.json already in store
-        if (sparsePoints && sparsePoints.length >= 3) {
-          finishPoints(pointsFromSparse(sparsePoints));
-          return;
+        {
+          const sp = sparseRef.current;
+          if (sp && sp.length >= 3) {
+            finishPoints(pointsFromSparse(sp));
+            return;
+          }
         }
 
         setSceneKind('empty');
@@ -798,9 +958,21 @@ export const Flight3D: React.FC = () => {
         );
         setSceneLoading(false);
       } catch (err) {
-        if (cancelled) {
+        if (isStale()) {
           setSceneLoading(false);
           return;
+        }
+        {
+          const sp = sparseRef.current;
+          if (sp && sp.length >= 3) {
+            try {
+              finishPoints(pointsFromSparse(sp));
+              setSceneError(err instanceof Error ? err.message : 'Ошибка загрузки 3D');
+              return;
+            } catch {
+              /* fall through */
+            }
+          }
         }
         clearScene();
         setSceneKind('empty');
@@ -811,7 +983,6 @@ export const Flight3D: React.FC = () => {
 
     void run();
     return () => {
-      cancelled = true;
       setSceneLoading(false);
     };
   }, [
@@ -820,9 +991,9 @@ export const Flight3D: React.FC = () => {
     manifest?.artifact,
     manifest?.status,
     manifest?.rotation_x,
-    sparsePoints,
-    reconRunning,
+    sparsePoints == null ? 0 : sparsePoints.length,
     training,
+    sourcePath,
   ]);
 
   useEffect(() => {
@@ -884,7 +1055,7 @@ export const Flight3D: React.FC = () => {
             ? 'Bootstrap splat (не фотореализм)'
             : 'Gaussian splat'
           : sceneKind === 'points'
-            ? `sparse COLMAP · нужен train (${nPts || 'PLY'} точек)`
+            ? `sparse COLMAP · нужен train для splat (${nPts || 'PLY'} точек)`
             : 'нет облака';
       setStatus(
         ok
@@ -931,7 +1102,6 @@ export const Flight3D: React.FC = () => {
           <button
             type="button"
             className={`px-2 py-0.5 ${viewMode === 'geo' ? 'bg-[var(--dv-accent)] text-black' : 'bg-[var(--dv-bg-deep)]'}`}
-            disabled={opsBlocking}
             onClick={() => setViewMode('geo')}
           >
             Гео
@@ -939,8 +1109,9 @@ export const Flight3D: React.FC = () => {
           <button
             type="button"
             className={`px-2 py-0.5 ${viewMode === 'scene' ? 'bg-[var(--dv-accent)] text-black' : 'bg-[var(--dv-bg-deep)]'}`}
-            disabled={opsBlocking}
-            onClick={() => setViewMode('scene')}
+            onClick={() => {
+              setViewMode('scene');
+            }}
           >
             Сцена
           </button>
@@ -1037,7 +1208,7 @@ export const Flight3D: React.FC = () => {
                 ? 'Bootstrap (не фотореализм)'
                 : 'Gaussian splat'
               : sceneKind === 'points'
-                ? 'sparse COLMAP · нужен train'
+                ? 'sparse COLMAP · нужен train для splat'
                 : manifest?.status === 'error'
                   ? 'ошибка'
                   : 'нет сцены'}
@@ -1071,8 +1242,25 @@ export const Flight3D: React.FC = () => {
           )}
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[var(--dv-text-muted)] font-mono">
-              train: {train.status}
-              {manifest.artifact ? ` · ${manifest.artifact}` : ' · artifact: null'}
+              {(() => {
+                const trainJob = train.job_id ?? null;
+                const manifestJob = manifest.job_id ?? null;
+                const sameJob = Boolean(trainJob && manifestJob && trainJob === manifestJob);
+                const staleDone =
+                  train.status === 'done' &&
+                  (!sameJob || !manifest.artifact);
+                const statusLabel =
+                  staleDone || (!sameJob && train.status !== 'idle' && train.status !== 'error')
+                    ? 'idle'
+                    : train.status;
+                const art =
+                  sameJob && manifest.artifact
+                    ? ` · ${manifest.artifact}`
+                    : statusLabel === 'idle'
+                      ? ''
+                      : ' · artifact: null';
+                return `train: ${statusLabel}${art}`;
+              })()}
             </span>
             {trainPresets.map((p) => (
               <button
@@ -1198,13 +1386,13 @@ export const Flight3D: React.FC = () => {
             <div className="absolute inset-x-0 bottom-3 z-20 flex justify-center pointer-events-none px-2">
               <div className="pointer-events-auto w-[min(440px,94%)] rounded-sm border border-amber-700/50 bg-black/85 px-3 py-2 text-[11px] text-amber-50 shadow-lg">
                 <div className="font-semibold text-amber-200">
-                  Готово: sparse COLMAP
+                  Sparse COLMAP
                   {sparsePoints ? ` (${Math.floor(sparsePoints.length / 3)} точек)` : ''} — облако
-                  точек, не фотограмметрия
+                  точек, не Gaussian splat
                 </div>
                 <div className="mt-1 text-[var(--dv-text-muted)] text-[10px] leading-snug">
-                  Сейчас на canvas: рендер Points (круги). Фотореализм = Gaussian splat после
-                  обучения. Дальше: Balanced (~5–10 мин) → model.ply.
+                  Статус «sparse COLMAP · нужен train для splat» — норма после «Построить 3D».
+                  Фотореализм = Balanced (~5–10 мин) → model.ply.
                 </div>
                 <button
                   type="button"

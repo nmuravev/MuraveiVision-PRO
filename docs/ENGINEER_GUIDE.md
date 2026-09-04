@@ -104,6 +104,17 @@ cd D:\LLM\MuraveiVision-PRO-Base2
 
 ## 3D / gsplat (build machine)
 
+### Build3D vs train presets
+
+- **«Построить 3D»** runs COLMAP → poses → sparse only. Does **not** call inline gsplat unless `GSPLAT_INLINE=1`.
+- Photoreal `model.ply` = Flight3D presets (Balanced / Bootstrap / High) or CLI wrappers below.
+- After sparse: `manifest.next_action = "balanced_for_splat"` drives the yellow CTA.
+
+```powershell
+# Rare: re-enable short inline train after COLMAP (not recommended for field UX)
+$env:GSPLAT_INLINE = "1"
+```
+
 ### UI presets (`config/train_presets.json`)
 
 Repo-root JSON controls Flight3D **Сцена** buttons (Bootstrap / Balanced / High). Example keys: `script` (`bootstrap`|`gsplat`), `max_steps`, `data_factor`, `max_points`, `min_vram_gb`, `eta`, `default`. Missing/invalid file → built-in Balanced defaults.

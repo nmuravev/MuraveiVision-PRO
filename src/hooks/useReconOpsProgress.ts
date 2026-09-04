@@ -23,7 +23,9 @@ function reconActiveIndex(phase: string | null, running: boolean, loading: boole
   if (!phase) return running ? 0 : -1;
   if (phase === 'starting' || phase === 'extracting') return 0;
   if (phase === 'colmap') return 1;
-  if (phase === 'export_poses' || phase === 'training') return 2;
+  if (phase === 'export_poses') return 2;
+  // phase === 'training' is preset-train / GSPLAT_INLINE only — not a COLMAP modal step
+  if (phase === 'training') return -1;
   if (phase === 'done' || phase === 'colmap_done') return loading ? 3 : 4;
   if (phase === 'error') return -2;
   return running ? 0 : -1;
@@ -115,7 +117,7 @@ export function useReconOpsProgress(opts: {
 
   useEffect(() => {
     if (!open || busy || !wasBusyRef.current) return;
-    if (train.status === 'error' || reconPhase === 'error' || sceneError) {
+    if (train.status === 'error' || reconPhase === 'error' || (sceneError && sceneKind !== 'splat')) {
       setPhaseUi('error');
       addEvent('modal', 'recon-ops error', {
         error: train.error || sceneError || lastReconMessage,

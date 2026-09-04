@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { addEvent } from '../debug/sessionTrace';
 import { readSse } from '../lib/readSse';
 import { SILENT_API_ERROR_HEADER } from '../lib/apiError';
 import { authHeaders } from '../store/useMuraveiStore';
@@ -30,6 +31,17 @@ export function isReconReady(manifest: ReconManifest | null | undefined): boolea
   return st === 'colmap_done' || st === 'done';
 }
 
+/** Single RU phrase for OpsStatusBar / SSE terminal — sparse ≠ Gaussian splat. */
+export function reconTerminalLabel(
+  status: string | null | undefined,
+  error?: string | null,
+): string {
+  if (status === 'error') return error || 'ошибка';
+  if (status === 'done') return 'готово · Gaussian splat';
+  if (status === 'colmap_done') return 'sparse COLMAP · нужен train для splat';
+  return status || '';
+}
+
 export function useReconBuild(sourcePath: string | null | undefined, isAuthenticated: boolean) {
   const manifest = useReconStore((s) => s.manifest);
   const reconMessage = useReconStore((s) => s.reconMessage);
@@ -40,6 +52,21 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
   const setViewMode = useReconStore((s) => s.setViewMode);
   const streamAbortRef = useRef<AbortController | null>(null);
   const startInFlightRef = useRef(false);
+  const tracedInlineSkipRef = useRef<string | null>(null);
+
+  const noteInlineGsplatSkipped = useCallback((man: ReconManifest | null) => {
+    if (!man?.job_id) return;
+    if (man.status !== 'colmap_done' || man.artifact) return;
+    if (
+      man.next_action != null &&
+      man.next_action !== 'balanced_for_splat'
+    ) {
+      return;
+    }
+    if (tracedInlineSkipRef.current === man.job_id) return;
+    tracedInlineSkipRef.current = man.job_id;
+    addEvent('note', 'gsplat-inline-skipped', { job_id: man.job_id });
+  }, []);
 
   const loadManifest = useCallback(async (): Promise<ReconManifest | null> => {
     if (!sourcePath || !isAuthenticated) {
@@ -59,8 +86,9 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
     };
     const man = data.manifest ?? null;
     setManifest(man, Boolean(data.colmap_available));
+    noteInlineGsplatSkipped(man);
     return man;
-  }, [sourcePath, isAuthenticated, setManifest]);
+  }, [sourcePath, isAuthenticated, setManifest, noteInlineGsplatSkipped]);
 
   const attachStream = useCallback(
     (openSceneOnDone = false) => {
@@ -71,26 +99,30 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
       void readSse(
         '/api/recon/stream',
         (data) => {
-          const running = data.status === 'running';
-          const progress = Math.min(1, Math.max(0, Number(data.progress ?? 0)));
-          const phase = typeof data.phase === 'string' ? data.phase : null;
+          const status = typeof data.status === 'string' ? data.status : null;
+          const terminal =
+            status === 'done' ||
+            status === 'colmap_done' ||
+            status === 'error' ||
+            status === 'idle';
+          // Progress-only SSE events omit status — must NOT clear reconRunning
+          const running = status === 'running' || (!terminal && status == null && useReconStore.getState().reconRunning);
+          const progress = Math.min(
+            1,
+            Math.max(0, Number(data.progress ?? useReconStore.getState().reconProgress ?? 0)),
+          );
+          const phase =
+            typeof data.phase === 'string' ? data.phase : useReconStore.getState().reconPhase;
           setReconProgress(String(data.message || ''), progress, running, phase);
-          if (
-            data.status === 'done' ||
-            data.status === 'colmap_done' ||
-            data.status === 'error' ||
-            data.status === 'idle'
-          ) {
+          if (terminal) {
             abort.abort();
-            const done = data.status === 'done' || data.status === 'colmap_done';
+            const done = status === 'done' || status === 'colmap_done';
             const terminalMsg = done
-              ? data.status === 'done'
-                ? 'готово (splat)'
-                : 'готово (sparse) · нужен train для splat'
-              : data.status === 'error'
+              ? reconTerminalLabel(status)
+              : status === 'error'
                 ? String(data.message || 'ошибка')
                 : 'Остановлено';
-            setReconProgress(terminalMsg, done ? 1 : progress, false, done ? 'done' : data.status === 'error' ? 'error' : null);
+            setReconProgress(terminalMsg, done ? 1 : progress, false, done ? 'done' : status === 'error' ? 'error' : null);
             useReconStore.setState({ lastReconMessage: terminalMsg });
             void loadManifest();
             if (done && openSceneOnDone) setViewMode('scene');
@@ -126,7 +158,10 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
           }
           const done = st.status === 'colmap_done' || st.status === 'done';
           setReconProgress(
-            st.message || (done ? 'Готово' : 'Поток SSE прерван'),
+            st.message ||
+              (done
+                ? reconTerminalLabel(st.status)
+                : 'Поток SSE прерван'),
             done ? 1 : Math.min(1, Number(st.progress ?? 0)),
             false,
             st.phase || null,
@@ -150,7 +185,8 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
       fpsSample?: number;
       openSceneOnDone?: boolean;
     }) => {
-      if (!sourcePath || useReconStore.getState().reconRunning || startInFlightRef.current) return;
+      const st0 = useReconStore.getState();
+      if (!sourcePath || st0.reconRunning || startInFlightRef.current) return;
       startInFlightRef.current = true;
       setReconProgress('Запуск реконструкции…', 0, true, 'starting');
       try {

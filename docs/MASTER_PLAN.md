@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `4590201` sparse canvas idle legend + ops modal clarity
+- **Commit:** (pending) skip inline optional gsplat in Build3D
 - **Unit tests:** 198
 - **E2E specs:** 6+
-- **Status:** Flight3D idle pipeline card + clearer ops modal; Balanced→model.ply verified
-- **Last updated by:** feat: sparse canvas idle legend (`4590201`)
+- **Status:** Build3D = sparse only; splat via Balanced; GSPLAT_INLINE=1 opt-in
+- **Last updated by:** fix: skip inline optional gsplat (ship)
 
 ---
 

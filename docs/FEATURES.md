@@ -4,7 +4,7 @@
 
 ## Интерфейс
 
-- **Mosaic docking** — layout-дерево `react-mosaic-component`, перетаскивание за title bar, 5 drop-зон, snap-split, вкладки, maximize/collapse, float/redock. Пресеты 1/2/4 Viewer и **4×Live**. Layout переживает F5 (`localStorage`). Поведение как в Adobe Premiere.
+- **Mosaic docking** — layout-дерево `react-mosaic-component`, перетаскивание за title bar, 5 drop-зон, snap-split, вкладки, maximize/collapse, float/redock. Пресеты 1/2/4 Viewer и **4×Live**. Layout переживает F5 (`localStorage`). Поведение как в Adobe Premiere. Тулбар Viewer: при ширине &lt; ~980px вторичные кнопки (сегментация/SAM, векторы, Было/Стало, статус, REC/I–O) складываются в меню **«Ещё»** — play/YOLO/скан остаются на панели.
 - **Вкладки TopBar** — Медиа / Монтаж / AI-анализ / Обучение / **4×Live** / Система (смена mosaic-presets + контента).
 - **4×Live + Event Timeline** — 2×2 Viewer (по умолчанию режим Live, стримы не стартуют сами) + лента событий снизу. Опрос `GET /api/events/timeline` каждые 3 с. Клик по локальной детекции: фокус Viewer с тем же `source_video` и seek к `time_sec`. Клик по сетевой цели: карточка (база, GPS, заметки), без seek. Пресет «4 вьюера» в меню Раскладка (пул + инспектор + таймлайн) **не** заменён.
 - **Горячие клавиши оператора** — Space play/pause, ←/→ кадр (Shift ×10), I/O метки, F/Ctrl+S фиксация кадра, 1–4 вьюер, Ctrl+Z undo правки детекции, Del удаление. Не срабатывают в input/textarea. Подсказки: меню «Окна».
@@ -58,8 +58,8 @@
 ## Фотограмметрия (C.1–C.5)
 
 - **COLMAP** — poses + intrinsics (PINHOLE/SIMPLE_PINHOLE/SIMPLE_RADIAL/RADIAL/OPENCV).
-- **gsplat** — train hook, dual load Points / DropInViewer.
-- **Flight3D** — ручной scale/horizon. Пока COLMAP/`reconRunning` — **модалка шагов на canvas** (не только статус-бар); сцена не грузится до `colmap_done`/`done`. После sparse — idle-карточка «не фотореализм → Balanced». Strip Bootstrap / Balanced / High; HQ disabled при VRAM &lt; 12 ГБ. Один train за раз; взаимная блокировка с COLMAP. Train-успех держит chip до загрузки splat.
+- **gsplat** — UI train presets (Balanced/Bootstrap/High) + dual load Points / DropInViewer. **Not** run inside «Построить 3D» by default (`GSPLAT_INLINE=1` opt-in only).
+- **Flight3D** — ручной scale/horizon. «Построить 3D» = COLMAP sparse (`colmap_done` + `next_action=balanced_for_splat`); модалка: extract → COLMAP → позы → load (без phantom «gsplat train optional»). После sparse: **`sparse COLMAP · нужен train для splat`**. Idle-карточка → Balanced. Strip Bootstrap / Balanced / High; HQ disabled при VRAM &lt; 12 ГБ. Один train за раз; взаимная блокировка с COLMAP. Train-успех держит chip до загрузки splat.
 - **2D→3D raycast** — intrinsics + splat pick, miss→toast (не THREE.Raycaster).
 
 ## Отчёты / обучение

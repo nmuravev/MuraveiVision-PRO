@@ -38,6 +38,8 @@ npm run backend
 
 3. In UI: open MP4 → **Flight3D** → **Построить 3D** (segment ≤120 s from playhead).
 
+   **Product rule:** «Построить 3D» = **COLMAP sparse only** (`colmap_done`, `manifest.next_action=balanced_for_splat`). Ops modal steps: extracting → colmap → export_poses → load_scene — **no** inline «gsplat train (optional)». Photorealism = UI presets Balanced / Bootstrap / High.
+
 4. After `colmap_done`: toggle **Сцена**, optional **Масштаб** (2 clicks + metres).
 
 ## 3D Training via UI
@@ -184,6 +186,7 @@ $env:PYTHONPATH = "backend"
 ```
 
 Env knobs: `GSPLAT_MAX_STEPS` (default 7000 for batch; pipeline default 500), `GSPLAT_TIMEOUT` (default 3600).
+`GSPLAT_INLINE=1` — opt-in short train **inside** «Построить 3D» (`_try_gsplat_train`); **off by default** (honest sparse-only Build3D).
 `gsplat_train_job.py` passes `--disable_video` so mid-eval trajectory render does not abort train on tiny camera sets.
 
 ### Artifact semantics (Flight3D «Сцена»)

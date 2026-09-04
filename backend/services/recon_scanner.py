@@ -496,10 +496,10 @@ def _run(
                 f"l={hud_crop.get('left')} r={hud_crop.get('right')}"
             )
 
-        _emit({"phase": "colmap", "progress": 0.35, "message": "COLMAP feature extract + mapper…"})
+        _emit({"status": "running", "phase": "colmap", "progress": 0.35, "message": "COLMAP feature extract + mapper…"})
         sparse0 = _run_colmap(job_dir, frames_dir)
 
-        _emit({"phase": "export_poses", "progress": 0.65, "message": "Экспорт camera poses…"})
+        _emit({"status": "running", "phase": "export_poses", "progress": 0.65, "message": "Экспорт camera poses…"})
         poses_path = job_dir / "camera_poses.json"
         export_camera_poses(
             sparse0,
@@ -513,9 +513,21 @@ def _run(
         n_sparse = export_sparse_points(sparse0, sparse_path)
         _log(f"sparse points exported: {n_sparse}")
 
+        # Default: Build3D = COLMAP sparse only. Photoreal via UI Balanced/Bootstrap/High.
+        # Opt-in short inline train: set GSPLAT_INLINE=1 (keeps _try_gsplat_train).
         artifact: str | None = None
-        _emit({"phase": "training", "progress": 0.75, "message": "gsplat train (optional)…"})
-        artifact = _try_gsplat_train(job_dir, frames_dir, sparse0)
+        if os.environ.get("GSPLAT_INLINE") == "1":
+            _emit(
+                {
+                    "status": "running",
+                    "phase": "training",
+                    "progress": 0.75,
+                    "message": "gsplat train (optional)…",
+                }
+            )
+            artifact = _try_gsplat_train(job_dir, frames_dir, sparse0)
+        else:
+            _log("inline gsplat skipped (use UI Balanced); set GSPLAT_INLINE=1 to enable")
 
         final_status = "colmap_done" if not artifact else "done"
         manifest.update(
@@ -526,6 +538,10 @@ def _run(
                 "finished_at": time.time(),
             }
         )
+        if not artifact:
+            manifest["next_action"] = "balanced_for_splat"
+        else:
+            manifest.pop("next_action", None)
         if hud_crop:
             manifest["hud_crop"] = {
                 "top": hud_crop.get("top", 0),
@@ -541,7 +557,7 @@ def _run(
                 "phase": final_status,
                 "progress": 1.0,
                 "message": (
-                    "3D готов (COLMAP + poses)"
+                    "готово (sparse) · запустите Balanced для splat"
                     if not artifact
                     else f"3D готов: {artifact}"
                 ),
