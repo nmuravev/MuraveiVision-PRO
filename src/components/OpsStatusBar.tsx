@@ -2,6 +2,7 @@ import React from 'react';
 import { batchScanProgressPct, useBatchScanStore } from '../store/useBatchScanStore';
 import { useReconStore } from '../store/useReconStore';
 import { mediaPathsMatch } from '../lib/mediaPaths';
+import { reconTerminalLabel } from '../hooks/useReconBuild';
 
 type Props = {
   sourcePath: string | null | undefined;
@@ -82,12 +83,7 @@ export const OpsStatusBar: React.FC<Props> = ({ sourcePath, className = '' }) =>
     mediaPathsMatch(manifest.video_path || '', sourcePath) &&
     (manifest.status === 'colmap_done' || manifest.status === 'done' || manifest.status === 'error')
   ) {
-    const msg =
-      manifest.status === 'error'
-        ? manifest.error || 'ошибка'
-        : manifest.status === 'done'
-          ? 'готово (splat)'
-          : 'готово (sparse) · нужен train для splat';
+    const msg = reconTerminalLabel(manifest.status, manifest.error);
     const cls =
       manifest.status === 'error' ? 'text-red-400' : 'text-[var(--dv-text-muted)] opacity-80';
     reconLine = <span className={cls}> · 3D: {msg}</span>;

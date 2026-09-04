@@ -42,6 +42,17 @@ export function reconTerminalLabel(
   return status || '';
 }
 
+function reconProgressMeta(data: {
+  job_id?: unknown;
+  stage?: unknown;
+}): { jobId?: string | null; stage?: string | null } {
+  const meta: { jobId?: string | null; stage?: string | null } = {};
+  if (typeof data.job_id === 'string' && data.job_id) meta.jobId = data.job_id;
+  if (typeof data.stage === 'string') meta.stage = data.stage;
+  else if (data.stage === null) meta.stage = null;
+  return meta;
+}
+
 export function useReconBuild(sourcePath: string | null | undefined, isAuthenticated: boolean) {
   const manifest = useReconStore((s) => s.manifest);
   const reconMessage = useReconStore((s) => s.reconMessage);
@@ -113,7 +124,8 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
           );
           const phase =
             typeof data.phase === 'string' ? data.phase : useReconStore.getState().reconPhase;
-          setReconProgress(String(data.message || ''), progress, running, phase);
+          const meta = reconProgressMeta(data);
+          setReconProgress(String(data.message || ''), progress, running, phase, meta);
           if (terminal) {
             abort.abort();
             const done = status === 'done' || status === 'colmap_done';
@@ -122,7 +134,13 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
               : status === 'error'
                 ? String(data.message || 'ошибка')
                 : 'Остановлено';
-            setReconProgress(terminalMsg, done ? 1 : progress, false, done ? 'done' : status === 'error' ? 'error' : null);
+            setReconProgress(
+              terminalMsg,
+              done ? 1 : progress,
+              false,
+              done ? 'done' : status === 'error' ? 'error' : null,
+              meta,
+            );
             useReconStore.setState({ lastReconMessage: terminalMsg });
             void loadManifest();
             if (done && openSceneOnDone) setViewMode('scene');
@@ -142,7 +160,10 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
             message?: string;
             progress?: number;
             phase?: string;
+            job_id?: string;
+            stage?: string;
           };
+          const meta = reconProgressMeta(st);
           if (st.status === 'running') {
             // Job still alive — keep busy and re-attach; never clear reconRunning
             setReconProgress(
@@ -150,6 +171,7 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
               Math.min(1, Number(st.progress ?? 0)),
               true,
               st.phase || 'running',
+              meta,
             );
             if (streamAbortRef.current === abort) {
               attachStream(openSceneOnDone);
@@ -165,6 +187,7 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
             done ? 1 : Math.min(1, Number(st.progress ?? 0)),
             false,
             st.phase || null,
+            meta,
           );
           if (done) {
             void loadManifest();
@@ -188,7 +211,10 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
       const st0 = useReconStore.getState();
       if (!sourcePath || st0.reconRunning || startInFlightRef.current) return;
       startInFlightRef.current = true;
-      setReconProgress('Запуск реконструкции…', 0, true, 'starting');
+      setReconProgress('Запуск реконструкции…', 0, true, 'starting', {
+        jobId: null,
+        stage: null,
+      });
       try {
         const res = await fetch('/api/recon/start', {
           method: 'POST',
@@ -215,6 +241,8 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
                 message?: string;
                 progress?: number;
                 phase?: string;
+                job_id?: string;
+                stage?: string;
               };
               if (st.status === 'running') {
                 setReconProgress(
@@ -222,17 +250,32 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
                   Number(st.progress ?? 0),
                   true,
                   st.phase || 'running',
+                  reconProgressMeta(st),
                 );
                 attachStream(Boolean(opts?.openSceneOnDone));
                 return;
               }
             }
-            setReconProgress('', 0, false, null);
+            setReconProgress('', 0, false, null, { jobId: null, stage: null });
             void loadManifest();
             return;
           }
           throw new Error(detail);
         }
+        const started = (await res.json().catch(() => ({}))) as {
+          job_id?: string;
+          message?: string;
+          progress?: number;
+          phase?: string;
+          stage?: string;
+        };
+        setReconProgress(
+          started.message || 'Запуск…',
+          Number(started.progress ?? 0),
+          true,
+          started.phase || 'starting',
+          reconProgressMeta(started),
+        );
         attachStream(Boolean(opts?.openSceneOnDone));
       } catch (err) {
         setReconProgress(err instanceof Error ? err.message : 'Ошибка recon', 0, false, 'error');
@@ -254,6 +297,18 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
     let cancelled = false;
     void (async () => {
       await loadManifest();
+      if (cancelled) return;
+      // Disk already ready — never keep ghost COLMAP modal from a dead SSE/job
+      const man = useReconStore.getState().manifest;
+      if (isReconReady(man) && useReconStore.getState().reconRunning) {
+        setReconProgress(
+          reconTerminalLabel(man?.status),
+          1,
+          false,
+          'done',
+        );
+        return;
+      }
       const stRes = await fetch('/api/recon/status', { headers: authHeaders() });
       if (cancelled || !stRes.ok) return;
       const st = (await stRes.json()) as {
@@ -261,13 +316,22 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
         message?: string;
         progress?: number;
         phase?: string;
+        job_id?: string;
+        stage?: string;
       };
       if (st.status === 'running') {
+        // Ignore in-memory "running" if disk manifest for this video is already done
+        const man2 = useReconStore.getState().manifest;
+        if (isReconReady(man2)) {
+          setReconProgress(reconTerminalLabel(man2?.status), 1, false, 'done');
+          return;
+        }
         setReconProgress(
           st.message || 'Выполняется…',
           Number(st.progress ?? 0),
           true,
           st.phase || 'running',
+          reconProgressMeta(st),
         );
         attachStream(false);
       }
@@ -276,6 +340,13 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
       cancelled = true;
     };
   }, [isAuthenticated, sourcePath, loadManifest, attachStream, setReconProgress]);
+
+  // Clear ghost busy if manifest flips to ready while modal still shows COLMAP
+  useEffect(() => {
+    if (!isReconReady(manifest)) return;
+    if (!useReconStore.getState().reconRunning) return;
+    setReconProgress(reconTerminalLabel(manifest?.status), 1, false, 'done');
+  }, [manifest?.status, manifest?.job_id, setReconProgress]);
 
   useEffect(
     () => () => {

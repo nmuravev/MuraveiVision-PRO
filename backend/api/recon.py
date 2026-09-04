@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -72,6 +73,7 @@ async def recon_stop(_user: dict[str, Any] = Depends(require_role("operator"))) 
 async def recon_stream(_user: dict[str, Any] = Depends(require_role("operator"))) -> StreamingResponse:
     async def gen():
         idx = 0
+        last_status_push = 0.0
         yield f"data: {json.dumps({'type': 'status', **recon_scanner.status()}, ensure_ascii=False)}\n\n"
         while True:
             events, idx = recon_scanner.drain_events(idx)
@@ -83,6 +85,11 @@ async def recon_stream(_user: dict[str, Any] = Depends(require_role("operator"))
             if st.get("status") in ("done", "colmap_done", "error", "idle") and not events:
                 yield f"data: {json.dumps({'type': 'status', **st}, ensure_ascii=False)}\n\n"
                 return
+            # Heartbeat while running so long mapper stages refresh FE without new events
+            now = time.monotonic()
+            if st.get("status") == "running" and (now - last_status_push) >= 2.0 and not events:
+                yield f"data: {json.dumps({'type': 'status', **st}, ensure_ascii=False)}\n\n"
+                last_status_push = now
             await asyncio.sleep(0.4)
 
     return StreamingResponse(gen(), media_type="text/event-stream")

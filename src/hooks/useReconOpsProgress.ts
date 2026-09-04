@@ -18,15 +18,62 @@ export const OPS_LOG_CAP = 20;
 const AUTO_DISMISS_MS = 1800;
 const TRAIN_HOLD_DISMISS_MS = 8000;
 
-function reconActiveIndex(phase: string | null, running: boolean, loading: boolean): number {
-  if (loading && !running) return 3;
+/** Ordered COLMAP stages emitted by backend (phase=colmap + stage=…). */
+export const COLMAP_STAGE_ORDER = [
+  'plan',
+  'feature_extractor',
+  'matcher',
+  'mapper',
+  'model_converter',
+] as const;
+
+export function normalizeColmapStage(stage: string | null | undefined): string | null {
+  if (!stage) return null;
+  const s = stage.trim().toLowerCase();
+  if (s === 'sequential_matcher' || s === 'exhaustive_matcher') return 'matcher';
+  if (s === 'extract_frames') return 'extracting';
+  if ((COLMAP_STAGE_ORDER as readonly string[]).includes(s)) return s;
+  if (s === 'export_poses' || s === 'colmap_done' || s === 'done') return s;
+  return s;
+}
+
+export function matcherStepLabel(stage: string | null | undefined): string {
+  const raw = (stage || '').toLowerCase();
+  if (raw === 'exhaustive_matcher') return 'exhaustive_matcher';
+  if (raw === 'sequential_matcher') return 'sequential_matcher';
+  return 'matcher';
+}
+
+/** Index into COLMAP_STAGE_ORDER; -1 before colmap; 99 after all COLMAP stages. */
+export function colmapStageIndex(stage: string | null | undefined, phase: string | null): number {
+  const n = normalizeColmapStage(stage);
+  if (phase === 'export_poses' || phase === 'done' || phase === 'colmap_done' || phase === 'training') {
+    return 99;
+  }
+  if (n && (COLMAP_STAGE_ORDER as readonly string[]).includes(n)) {
+    return COLMAP_STAGE_ORDER.indexOf(n as (typeof COLMAP_STAGE_ORDER)[number]);
+  }
+  if (phase === 'colmap') return 0;
+  return -1;
+}
+
+function reconActiveIndex(
+  phase: string | null,
+  stage: string | null,
+  running: boolean,
+  loading: boolean,
+): number {
+  if (loading && !running) return 99; // load_scene after recon
   if (!phase) return running ? 0 : -1;
   if (phase === 'starting' || phase === 'extracting') return 0;
-  if (phase === 'colmap') return 1;
-  if (phase === 'export_poses') return 2;
+  if (phase === 'colmap') {
+    const si = colmapStageIndex(stage, phase);
+    return si < 0 ? 1 : 1 + si; // 1=plan … after extracting
+  }
+  if (phase === 'export_poses') return 1 + COLMAP_STAGE_ORDER.length;
   // phase === 'training' is preset-train / GSPLAT_INLINE only — not a COLMAP modal step
   if (phase === 'training') return -1;
-  if (phase === 'done' || phase === 'colmap_done') return loading ? 3 : 4;
+  if (phase === 'done' || phase === 'colmap_done') return loading ? 99 : 100;
   if (phase === 'error') return -2;
   return running ? 0 : -1;
 }
@@ -52,9 +99,11 @@ export function useReconOpsProgress(opts: {
   } = opts;
   const reconRunning = useReconStore((s) => s.reconRunning);
   const reconPhase = useReconStore((s) => s.reconPhase);
+  const reconStage = useReconStore((s) => s.reconStage);
   const reconProgress = useReconStore((s) => s.reconProgress);
   const reconMessage = useReconStore((s) => s.reconMessage);
   const lastReconMessage = useReconStore((s) => s.lastReconMessage);
+  const reconJobId = useReconStore((s) => s.reconJobId);
   const manifest = useReconStore((s) => s.manifest);
 
   const [minimized, setMinimized] = useState(false);
@@ -201,28 +250,42 @@ export function useReconOpsProgress(opts: {
       const err = train.status === 'error' || phaseUi === 'error';
       const doneAll = phaseUi === 'success';
       const trainingNow = training || train.status === 'training';
+      const stepsDone = (train.steps ?? 0) > 0;
+      const prepDone =
+        err ||
+        doneAll ||
+        train.status === 'done' ||
+        stepsDone ||
+        /шаг|it\/s|loss=/i.test(train.message || '');
       const rows: OpsStep[] = [
         {
           id: 'train_prep',
           label: 'Подготовка (MSVC / данные)',
-          status:
-            err || trainingNow || doneAll || train.status === 'done' ? 'done' : 'pending',
+          status: prepDone ? 'done' : trainingNow ? 'running' : 'pending',
+          detail:
+            trainingNow && !prepDone
+              ? train.message || 'MSVC / downscale / CUDA JIT…'
+              : undefined,
         },
         {
           id: 'training',
-          label: 'Обучение gsplat (JIT / шаги)',
+          label: stepsDone
+            ? `Обучение gsplat (${train.steps}/${train.max_steps ?? '?'} шагов)`
+            : 'Обучение gsplat (JIT / шаги)',
           status: err
             ? 'error'
             : doneAll || (train.status === 'done' && !sceneLoading)
               ? 'done'
-              : trainingNow
+              : trainingNow && prepDone
                 ? 'running'
                 : 'pending',
           detail: err
             ? train.error || train.message || 'ошибка'
-            : trainingNow
+            : trainingNow && prepDone
               ? `${train.steps ?? 0}/${train.max_steps ?? 0} · loss ${train.loss != null ? train.loss.toFixed(4) : '—'} · PSNR ${train.psnr != null ? train.psnr.toFixed(1) : '—'} · VRAM ${(train.vram_used_gb ?? 0).toFixed(1)}/${(train.vram_total_gb ?? 0).toFixed(1)} GB`
-              : undefined,
+              : trainingNow
+                ? train.message || 'ожидание первого шага…'
+                : undefined,
         },
         {
           id: 'write_ply',
@@ -254,15 +317,31 @@ export function useReconOpsProgress(opts: {
       return rows.map((r) => ({ ...r, durationMs: markDur(r.id, r.status) }));
     }
 
-    const defs = [
+    const matcherLabel = matcherStepLabel(reconStage);
+    const defs: { id: string; label: string }[] = [
       { id: 'extracting', label: 'Кадры из видео' },
-      { id: 'colmap', label: 'COLMAP (SfM)' },
+      { id: 'plan', label: 'COLMAP plan' },
+      { id: 'feature_extractor', label: 'feature_extractor' },
+      { id: 'matcher', label: matcherLabel },
+      { id: 'mapper', label: 'mapper' },
+      { id: 'model_converter', label: 'model_converter' },
       { id: 'export_poses', label: 'Позы / sparse' },
       { id: 'load_scene', label: 'Загрузка сцены' },
     ];
-    const idx = reconActiveIndex(reconPhase, reconRunning, sceneLoading);
+    const idx = reconActiveIndex(reconPhase, reconStage, reconRunning, sceneLoading);
     const err = reconPhase === 'error' || (phaseUi === 'error' && opKindRef.current === 'recon');
-    const errIdx = idx === -2 ? Math.max(0, reconActiveIndex(reconPhase === 'error' ? 'colmap' : reconPhase, true, false)) : idx;
+    const errIdx =
+      idx === -2
+        ? Math.max(
+            0,
+            reconActiveIndex(
+              reconPhase === 'error' ? 'colmap' : reconPhase,
+              reconStage,
+              true,
+              false,
+            ),
+          )
+        : idx;
 
     return defs.map((d, i) => {
       let status: OpsStepStatus = 'pending';
@@ -270,9 +349,12 @@ export function useReconOpsProgress(opts: {
       else if (err) {
         const ei = errIdx >= 0 ? errIdx : 1;
         status = i < ei ? 'done' : i === ei ? 'error' : 'pending';
-        if (sceneError && i === 3) status = 'error';
-      } else if (idx >= 4) status = 'done';
-      else if (idx > i) status = 'done';
+        if (sceneError && i === defs.length - 1) status = 'error';
+      } else if (idx >= 100) status = 'done';
+      else if (idx === 99) {
+        // scene loading after recon
+        status = i < defs.length - 1 ? 'done' : 'running';
+      } else if (idx > i) status = 'done';
       else if (idx === i) status = 'running';
       else status = 'pending';
       return {
@@ -294,6 +376,7 @@ export function useReconOpsProgress(opts: {
     sceneLoading,
     reconRunning,
     reconPhase,
+    reconStage,
     reconMessage,
     lastReconMessage,
     sceneError,
@@ -355,13 +438,21 @@ export function useReconOpsProgress(opts: {
     addEvent('modal', 'recon-ops retry', { kind: opKindRef.current });
   }, [onRetryRecon, onRetryTrain]);
 
+  // Prefer live SSE/status job_id over stale completed manifest
+  const liveJobId =
+    (reconRunning || phaseUi === 'work' || phaseUi === 'success' ? reconJobId : null) ||
+    reconJobId ||
+    (opKindRef.current === 'train' ? train.job_id : null) ||
+    manifest?.job_id ||
+    null;
+
   return {
     visible: open,
     minimized,
     finishing: phaseUi === 'success',
     isError: phaseUi === 'error',
     title,
-    jobId: (manifest?.job_id || train.job_id || null) as string | null,
+    jobId: liveJobId as string | null,
     steps,
     current,
     progressPct,

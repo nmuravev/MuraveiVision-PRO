@@ -108,7 +108,7 @@ cd D:\LLM\MuraveiVision-PRO-Base2
 
 - **«Построить 3D»** runs COLMAP → poses → sparse only. Does **not** call inline gsplat unless `GSPLAT_INLINE=1`.
 - Photoreal `model.ply` = Flight3D presets (Balanced / Bootstrap / High) or CLI wrappers below.
-- After sparse: `manifest.next_action = "balanced_for_splat"` drives the yellow CTA.
+- After sparse: `manifest.next_action = "balanced_for_splat"` drives the yellow CTA. Successful Balanced (`_patch_artifact` → `model.ply`) **clears** `next_action`; FE also hides the CTA when `classifyArtifact(artifact)==='splat'`.
 
 ```powershell
 # Rare: re-enable short inline train after COLMAP (not recommended for field UX)

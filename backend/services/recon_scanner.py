@@ -18,14 +18,18 @@ from services.job_ids import sanitize_job_id
 from services.recon_colmap import (
     choose_matcher,
     clamp_fps_sample,
+    colmap_stage_progress,
     count_registered_images,
     feature_extractor_args,
     format_colmap_error,
+    format_colmap_stage_message,
+    mapper_progress_from_snapshot,
     matcher_cli_args,
     max_frames,
     max_image_size,
     registration_failure_message,
     sequential_overlap,
+    sparse_mapper_snapshot,
 )
 from services.recon_diagnose import get_best_sparse_dir
 from services.security import archive_root, assert_in_archive
@@ -44,6 +48,7 @@ _state: dict[str, Any] = {
     "video_path": None,
     "source_video": None,
     "phase": None,
+    "stage": None,
     "progress": 0.0,
     "t_start": 0.0,
     "t_end": 0.0,
@@ -54,7 +59,6 @@ _state: dict[str, Any] = {
 _events: list[dict[str, Any]] = []
 _stop = threading.Event()
 _thread: threading.Thread | None = None
-
 
 def _log(msg: str) -> None:
     from services import runtime_log
@@ -68,10 +72,12 @@ def _log(msg: str) -> None:
     with LOG_PATH.open("a", encoding="utf-8") as fh:
         fh.write(line)
 
-
 def _emit(event: dict[str, Any]) -> None:
-    payload = {"ts": time.time(), **event}
     with _lock:
+        # Always attach live job_id so SSE clients never stick to a stale manifest id
+        if "job_id" not in event and _state.get("job_id"):
+            event = {**event, "job_id": _state["job_id"]}
+        payload = {"ts": time.time(), **event}
         _events.append(payload)
         if len(_events) > 800:
             del _events[:400]
@@ -84,7 +90,6 @@ def _emit(event: dict[str, Any]) -> None:
             _state["message"] = event["message"]
         if "error" in event:
             _state["error"] = event["error"]
-
 
 def _recover_stale_running_unlocked() -> bool:
     """If status is running but worker is dead OR disk job already terminal, reset to idle.
@@ -127,6 +132,7 @@ def _recover_stale_running_unlocked() -> bool:
     _state["message"] = ""
     _state["error"] = None
     _state["phase"] = None
+    _state["stage"] = None
     _state["progress"] = 0.0
     if not alive:
         _thread = None
@@ -134,7 +140,6 @@ def _recover_stale_running_unlocked() -> bool:
     if job_id:
         _state["_reap_colmap_job"] = job_id
     return True
-
 
 def terminate_colmap_for_job(job_id: str) -> int:
     """Terminate colmap processes whose cmdline references this job's colmap dir.
@@ -171,7 +176,6 @@ def terminate_colmap_for_job(job_id: str) -> int:
             continue
     return killed
 
-
 def force_release_for_train(target_job_id: str) -> dict[str, Any]:
     """Ensure scanner does not block train on a finished job (cross-job hung COLMAP)."""
     target_job_id = sanitize_job_id(target_job_id)
@@ -207,12 +211,12 @@ def force_release_for_train(target_job_id: str) -> dict[str, Any]:
             _state["message"] = ""
             _state["error"] = None
             _state["phase"] = None
+            _state["stage"] = None
             _state["progress"] = 0.0
             _state.pop("_reap_colmap_job", None)
     if released_job and released_job != target_job_id:
         terminate_colmap_for_job(released_job)
     return status()
-
 
 def _finalize_dead_job_on_disk(job_id: str) -> None:
     """Mark orphaned running manifest as colmap_done (if sparse points exist) or error."""
@@ -263,7 +267,6 @@ def _finalize_dead_job_on_disk(job_id: str) -> None:
     _write_manifest(job_dir, man)
     _log(f"marked dead job={job_id} status=error")
 
-
 def _scrub_orphan_running_manifests() -> None:
     """Disk manifests stuck at running with no live worker → finalize."""
     if not RECON_ROOT.is_dir():
@@ -288,7 +291,6 @@ def _scrub_orphan_running_manifests() -> None:
             return
         _finalize_dead_job_on_disk(jid)
 
-
 def status() -> dict[str, Any]:
     with _lock:
         _recover_stale_running_unlocked()
@@ -301,12 +303,10 @@ def status() -> dict[str, Any]:
         out.pop("_reap_colmap_job", None)
         return out
 
-
 def drain_events(after_idx: int = 0) -> tuple[list[dict[str, Any]], int]:
     with _lock:
         chunk = _events[after_idx:]
         return chunk, len(_events)
-
 
 def _canonical_source(path: Path) -> str:
     try:
@@ -314,7 +314,6 @@ def _canonical_source(path: Path) -> str:
         return f"archive/{rel.as_posix()}"
     except Exception:
         return str(path)
-
 
 def _resolve_video(video_path: str) -> tuple[Path, str]:
     raw = (video_path or "").strip()
@@ -336,7 +335,6 @@ def _resolve_video(video_path: str) -> tuple[Path, str]:
     source_key = _canonical_source(target)
     return target, source_key
 
-
 def _colmap_candidates(root: Path) -> list[Path]:
     names = (
         "COLMAP.bat",
@@ -350,7 +348,6 @@ def _colmap_candidates(root: Path) -> list[Path]:
         if cand.is_file():
             out.append(cand)
     return out
-
 
 def _colmap_bin() -> str | None:
     roots: list[Path] = []
@@ -370,23 +367,18 @@ def _colmap_bin() -> str | None:
     found = shutil.which("colmap")
     return found
 
-
 def colmap_available() -> bool:
     return _colmap_bin() is not None
-
 
 def colmap_path() -> str | None:
     return _colmap_bin()
 
-
 def _job_dir(job_id: str) -> Path:
     return RECON_ROOT / sanitize_job_id(job_id)
-
 
 def _write_manifest(job_dir: Path, data: dict[str, Any]) -> None:
     path = job_dir / "manifest.json"
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
 
 def _read_manifest(job_dir: Path) -> dict[str, Any] | None:
     path = job_dir / "manifest.json"
@@ -396,7 +388,6 @@ def _read_manifest(job_dir: Path) -> dict[str, Any] | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
-
 
 def _video_path_matches(manifest_path: str, key: str) -> bool:
     vp = manifest_path.replace("\\", "/")
@@ -409,7 +400,6 @@ def _video_path_matches(manifest_path: str, key: str) -> bool:
     if base and vp.split("/")[-1] == base:
         return True
     return False
-
 
 def _manifest_rank(man: dict[str, Any]) -> tuple[int, float]:
     st = str(man.get("status") or "")
@@ -424,7 +414,6 @@ def _manifest_rank(man: dict[str, Any]) -> tuple[int, float]:
     else:
         pri = 0
     return pri, float(man.get("created_at") or 0)
-
 
 def find_latest_job_for_video(source_video: str) -> dict[str, Any] | None:
     """Return best recon job for this video — prefer colmap_done/done over running."""
@@ -445,7 +434,6 @@ def find_latest_job_for_video(source_video: str) -> dict[str, Any] | None:
     if not matches:
         return None
     return max(matches, key=_manifest_rank)
-
 
 def _extract_frames(
     video: Path,
@@ -529,7 +517,6 @@ def _extract_frames(
         hud_crop = {**hud_crop, "full_width": full_w, "full_height": full_h}
     return frame_times, count, hud_crop
 
-
 def _run_colmap(job_dir: Path, frames_dir: Path) -> Path:
     colmap = _colmap_bin()
     if not colmap:
@@ -547,10 +534,40 @@ def _run_colmap(job_dir: Path, frames_dir: Path) -> Path:
     matcher = choose_matcher(n_frames, source="video")
     overlap = sequential_overlap()
     img_size = max_image_size()
+    matcher_stage = f"{matcher}_matcher"
     _log(
         f"COLMAP plan frames={n_frames} matcher={matcher} "
         f"overlap={overlap} max_image_size={img_size}"
     )
+    _emit(
+        {
+            "status": "running",
+            "phase": "colmap",
+            "stage": "plan",
+            "progress": colmap_stage_progress("plan"),
+            "message": format_colmap_stage_message(
+                "plan", n_frames=n_frames, matcher=matcher
+            ),
+        }
+    )
+
+    def emit_stage(stage: str, *, snap: dict[str, Any] | None = None) -> None:
+        prog = (
+            mapper_progress_from_snapshot(snap)
+            if stage == "mapper"
+            else colmap_stage_progress(stage)
+        )
+        _emit(
+            {
+                "status": "running",
+                "phase": "colmap",
+                "stage": stage,
+                "progress": prog,
+                "message": format_colmap_stage_message(
+                    stage, n_frames=n_frames, matcher=matcher, snap=snap
+                ),
+            }
+        )
 
     def run(args: list[str], timeout: int = 3600, *, stage: str = "") -> None:
         from services import runtime_log
@@ -563,15 +580,101 @@ def _run_colmap(job_dir: Path, frames_dir: Path) -> Path:
                 format_colmap_error(proc.returncode, combined, stage=stage or args[0])
             )
 
+    def run_mapper_with_poll(timeout: int = 7200, *, poll_sec: float = 5.0) -> None:
+        """Long mapper: Popen + sparse/N snapshot emits (real artifacts, not fake %)."""
+        from services import runtime_log
+
+        args = [
+            "mapper",
+            "--database_path",
+            str(db),
+            "--image_path",
+            str(frames_dir),
+            "--output_path",
+            str(sparse),
+        ]
+        cmd = [colmap, *args]
+        emit_stage("mapper")
+        runtime_log.cmd("recon", cmd)
+        # Capture to temp so pipe buffer never blocks COLMAP glog spam
+        log_path = colmap_ws / "mapper_live.log"
+        started = time.time()
+        last_emit_key: tuple[Any, ...] | None = None
+        with log_path.open("w", encoding="utf-8", errors="replace") as logf:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=logf,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            try:
+                while True:
+                    rc = proc.poll()
+                    if rc is not None:
+                        break
+                    if _stop.is_set():
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                        raise RuntimeError("COLMAP mapper остановлен")
+                    if time.time() - started > timeout:
+                        proc.kill()
+                        try:
+                            proc.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            pass
+                        raise RuntimeError(
+                            format_colmap_error(-1, "mapper timeout", stage="mapper")
+                        )
+                    snap = sparse_mapper_snapshot(sparse)
+                    # Emit when models change, or every poll with age bucket (10s) so UI stays live
+                    age = snap.get("last_write_age_sec")
+                    age_bucket = None if age is None else int(age) // 10
+                    key = (snap.get("model_count"), snap.get("last_model"), age_bucket)
+                    if key != last_emit_key:
+                        last_emit_key = key
+                        emit_stage("mapper", snap=snap)
+                    time.sleep(poll_sec)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        pass
+
+        combined = ""
+        try:
+            combined = log_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            combined = ""
+        if proc.returncode != 0:
+            if combined:
+                from services import runtime_log as rl
+
+                for line in combined.splitlines()[:8]:
+                    rl.write("warn", "recon", line, kind="stderr")
+                rl.warn("recon", f"exit code {proc.returncode}")
+            raise RuntimeError(
+                format_colmap_error(proc.returncode or 1, combined, stage="mapper")
+            )
+        from services import runtime_log as rl
+
+        rl.debug("recon", "exit 0")
+
+    emit_stage("feature_extractor")
     run(
         feature_extractor_args(db, frames_dir, use_gpu=True, image_size=img_size),
         stage="feature_extractor",
     )
 
     def run_matcher(*, use_gpu: bool) -> None:
+        emit_stage(matcher_stage)
         run(
             matcher_cli_args(matcher, db, overlap=overlap, use_gpu=use_gpu),
-            stage=f"{matcher}_matcher",
+            stage=matcher_stage,
         )
 
     try:
@@ -588,37 +691,18 @@ def _run_colmap(job_dir: Path, frames_dir: Path) -> Path:
         run_matcher(use_gpu=False)
 
     # COLMAP mapper writes sparse/0, sparse/1, … under --output_path.
-    run(
-        [
-            "mapper",
-            "--database_path",
-            str(db),
-            "--image_path",
-            str(frames_dir),
-            "--output_path",
-            str(sparse),
-        ],
-        timeout=7200,
-        stage="mapper",
-    )
+    run_mapper_with_poll(timeout=7200)
+
     sparse_model = get_best_sparse_dir(job_dir)
     if sparse_model is None:
         raise RuntimeError("COLMAP mapper produced no valid sparse model")
 
-    if not (sparse_model / "cameras.txt").is_file():
-        run(
-            [
-                "model_converter",
-                "--input_path",
-                str(sparse_model),
-                "--output_path",
-                str(sparse_model),
-                "--output_type",
-                "TXT",
-            ],
-            stage="model_converter",
-        )
-    if not (sparse_model / "points3D.txt").is_file() and (sparse_model / "points3D.bin").is_file():
+    need_txt = not (sparse_model / "cameras.txt").is_file() or (
+        not (sparse_model / "points3D.txt").is_file()
+        and (sparse_model / "points3D.bin").is_file()
+    )
+    if need_txt:
+        emit_stage("model_converter")
         run(
             [
                 "model_converter",
@@ -637,7 +721,6 @@ def _run_colmap(job_dir: Path, frames_dir: Path) -> Path:
     if weak:
         raise RuntimeError(weak)
     return sparse_model
-
 
 def _try_salvage_after_error(job_dir: Path, manifest: dict[str, Any]) -> bool:
     """If mapper left a usable sparse model, promote to colmap_done instead of error."""
@@ -689,7 +772,6 @@ def _try_salvage_after_error(job_dir: Path, manifest: dict[str, Any]) -> bool:
     except Exception as exc:  # noqa: BLE001
         _log(f"post-error salvage failed: {exc}")
         return False
-
 
 def _try_gsplat_train(job_dir: Path, frames_dir: Path, sparse0: Path) -> str | None:
     """Optional gsplat train → model.ply / preview.ply. Never fails the COLMAP job."""
@@ -776,6 +858,7 @@ def _run(
                 "status": "running",
                 "job_id": job_id,
                 "phase": "extracting",
+                "stage": "extract_frames",
                 "progress": 0.05,
                 "message": "Извлечение кадров…",
                 "video_path": str(video_abs),
@@ -795,10 +878,17 @@ def _run(
                 f"l={hud_crop.get('left')} r={hud_crop.get('right')}"
             )
 
-        _emit({"status": "running", "phase": "colmap", "progress": 0.35, "message": "COLMAP feature extract + mapper…"})
         sparse0 = _run_colmap(job_dir, frames_dir)
 
-        _emit({"status": "running", "phase": "export_poses", "progress": 0.65, "message": "Экспорт camera poses…"})
+        _emit(
+            {
+                "status": "running",
+                "phase": "export_poses",
+                "stage": "export_poses",
+                "progress": 0.65,
+                "message": "Экспорт camera poses…",
+            }
+        )
         poses_path = job_dir / "camera_poses.json"
         export_camera_poses(
             sparse0,
@@ -820,6 +910,7 @@ def _run(
                 {
                     "status": "running",
                     "phase": "training",
+                    "stage": "gsplat_inline",
                     "progress": 0.75,
                     "message": "gsplat train (optional)…",
                 }
@@ -854,6 +945,7 @@ def _run(
             {
                 "status": final_status,
                 "phase": final_status,
+                "stage": "colmap_done" if not artifact else "done",
                 "progress": 1.0,
                 "message": (
                     "готово (sparse) · запустите Balanced для splat"
@@ -871,6 +963,7 @@ def _run(
                 {
                     "status": "colmap_done",
                     "phase": "colmap_done",
+                    "stage": "colmap_done",
                     "progress": 1.0,
                     "message": "готово (sparse, salvaged) · запустите Balanced для splat",
                     "error": None,
@@ -911,7 +1004,6 @@ def _run(
                         "error": "Zombie job reset",
                     }
                 )
-
 
 def start(
     video_path: str,
@@ -954,6 +1046,7 @@ def start(
                 "video_path": str(video_abs),
                 "source_video": source_video,
                 "phase": "starting",
+                "stage": None,
                 "progress": 0.0,
                 "t_start": ts,
                 "t_end": te,
@@ -971,17 +1064,14 @@ def start(
         _thread.start()
     return status()
 
-
 def stop() -> dict[str, Any]:
     _stop.set()
     _emit({"message": "Остановка реконструкции…"})
     return status()
 
-
 def get_manifest(video_path: str) -> dict[str, Any] | None:
     _, source_video = _resolve_video(video_path)
     return find_latest_job_for_video(source_video)
-
 
 def get_poses_at_time(video_path: str, time_sec: float) -> dict[str, Any] | None:
     man = get_manifest(video_path)
@@ -1007,7 +1097,6 @@ def get_poses_at_time(video_path: str, time_sec: float) -> dict[str, Any] | None
         return None
     return {"job_id": job_id, "time_sec": time_sec, "pose": pose, "manifest": man}
 
-
 def update_manifest(job_id: str, patch: dict[str, Any]) -> dict[str, Any]:
     job_id = sanitize_job_id(job_id)
     job_dir = _job_dir(job_id)
@@ -1024,7 +1113,6 @@ def update_manifest(job_id: str, patch: dict[str, Any]) -> dict[str, Any]:
             man[k] = v
     _write_manifest(job_dir, man)
     return man
-
 
 def asset_path(job_id: str, name: str) -> Path:
     job_dir = _job_dir(sanitize_job_id(job_id))

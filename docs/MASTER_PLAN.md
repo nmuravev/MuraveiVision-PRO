@@ -2,13 +2,13 @@
 
 ## Meta
 
-- **Snapshot date:** 2026-09-04
+- **Snapshot date:** 2026-09-05
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `7da93bd` — COLMAP sequential matching + frame budget + honest errors
-- **Unit tests:** 220
+- **Commit:** (pending) — live COLMAP ops stages + job_id from SSE
+- **Unit tests:** 227
 - **E2E specs:** 6+
-- **Status:** Drone video Build3D uses sequential_matcher (not exhaustive); frame/image budget for 8 GB; GPU→CPU matcher retry; no glog INFO as failure reason; retry Build 3D after backend restart
-- **Last updated by:** fix: COLMAP sequential matching + frame budget for drone video
+- **Status:** Ops modal shows live COLMAP stages (plan/extractor/matcher/mapper sparse poll/converter) and the actual running `job_id` from status/SSE; Balanced `next_action` clear when `model.ply` exists; debug ingest removed
+- **Last updated by:** fix: live Geo 3D build progress in ops modal
 
 ---
 

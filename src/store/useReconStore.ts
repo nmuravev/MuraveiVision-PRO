@@ -42,14 +42,23 @@ export type RaycastRequest = {
   aiClassName?: string;
 };
 
+export type ReconProgressMeta = {
+  jobId?: string | null;
+  stage?: string | null;
+};
+
 type ReconState = {
   viewMode: 'geo' | 'scene';
   manifest: ReconManifest | null;
   colmapAvailable: boolean;
   reconMessage: string;
   reconPhase: string | null;
+  /** Fine-grained COLMAP stage from SSE (feature_extractor, mapper, …). */
+  reconStage: string | null;
   reconProgress: number;
   reconRunning: boolean;
+  /** Live job from status/SSE — not the last completed manifest job. */
+  reconJobId: string | null;
   lastReconMessage: string;
   sparsePoints: Float32Array | null;
   sparseWeak: boolean;
@@ -63,6 +72,7 @@ type ReconState = {
     progress: number,
     running: boolean,
     phase?: string | null,
+    meta?: ReconProgressMeta,
   ) => void;
   setSparsePoints: (pts: Float32Array | null, weak?: boolean) => void;
   requestRaycast: (req: RaycastRequest) => void;
@@ -77,8 +87,10 @@ export const useReconStore = create<ReconState>((set) => ({
   colmapAvailable: false,
   reconMessage: '',
   reconPhase: null,
+  reconStage: null,
   reconProgress: 0,
   reconRunning: false,
+  reconJobId: null,
   lastReconMessage: '',
   sparsePoints: null,
   sparseWeak: false,
@@ -95,12 +107,19 @@ export const useReconStore = create<ReconState>((set) => ({
         ...(changedJob ? { raycastMarkers: [], pendingRaycast: null, toast: null } : {}),
       };
     }),
-  setReconProgress: (reconMessage, reconProgress, reconRunning, reconPhase = null) =>
+  setReconProgress: (reconMessage, reconProgress, reconRunning, reconPhase = null, meta) =>
     set((s) => ({
       reconMessage,
       reconProgress,
       reconRunning,
       reconPhase,
+      reconJobId: meta && 'jobId' in meta ? meta.jobId ?? null : s.reconJobId,
+      reconStage:
+        meta && 'stage' in meta
+          ? meta.stage ?? null
+          : reconRunning
+            ? s.reconStage
+            : null,
       lastReconMessage: reconRunning ? s.lastReconMessage : reconMessage || s.lastReconMessage,
     })),
   setSparsePoints: (sparsePoints, sparseWeak = false) => set({ sparsePoints, sparseWeak }),

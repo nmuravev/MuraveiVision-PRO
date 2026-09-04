@@ -190,11 +190,13 @@ export async function loadSplatDropIn(
   parent: THREE.Group,
   blobUrl: string,
   formatHint?: 'ply' | 'splat' | 'ksplat',
+  three?: { camera?: THREE.Camera; renderer?: THREE.WebGLRenderer },
 ): Promise<SplatHandle> {
   const viewer = new GaussianSplats3D.DropInViewer({
-    gpuAcceleratedSort: true,
+    gpuAcceleratedSort: false,
     sharedMemoryForWorkers: false,
-    // Use parent scene camera/renderer via onBeforeRender of DropInViewer
+    ...(three?.camera ? { camera: three.camera } : {}),
+    ...(three?.renderer ? { renderer: three.renderer } : {}),
   });
   const opts: GaussianSplats3D.SplatSceneOptions = {
     splatAlphaRemovalThreshold: 5,
@@ -228,14 +230,56 @@ export async function loadSplatDropIn(
   };
 }
 
+export type SplatBoundsProbe = {
+  ready: boolean;
+  empty: boolean;
+  fakeUnit: boolean;
+  size: [number, number, number];
+  /** True when bounds are usable for framing (non-empty, not placeholder 2³). */
+  usable: boolean;
+};
+
+function isFakeUnitBox(sz: THREE.Vector3): boolean {
+  return (
+    Math.abs(sz.x - 2) < 0.05 && Math.abs(sz.y - 2) < 0.05 && Math.abs(sz.z - 2) < 0.05
+  );
+}
+
+/** DropInViewer often reports placeholder ≈[2,2,2] — not usable for camera framing. */
+export function isPlaceholderBounds(obj: THREE.Object3D): boolean {
+  const box = new THREE.Box3().setFromObject(obj);
+  if (box.isEmpty()) return true;
+  return isFakeUnitBox(box.getSize(new THREE.Vector3()));
+}
+
+type OrbitLike = {
+  target: THREE.Vector3;
+  update: () => void;
+  minDistance?: number;
+  maxDistance?: number;
+};
+
+/** Dolly limits relative to content size so zoom can approach small clouds. */
+export function tuneOrbitLimits(controls: OrbitLike, maxDim: number): void {
+  const dim = Math.max(maxDim, 0.01);
+  if (typeof controls.minDistance === 'number') {
+    controls.minDistance = Math.max(dim * 0.002, 0.005);
+  }
+  if (typeof controls.maxDistance === 'number') {
+    controls.maxDistance = Math.max(dim * 80, 20);
+  }
+}
+
 export function frameObject(
   obj: THREE.Object3D,
   camera: THREE.PerspectiveCamera,
-  controls: { target: THREE.Vector3; update: () => void },
-) {
+  controls: OrbitLike,
+): boolean {
   const box = new THREE.Box3().setFromObject(obj);
-  if (box.isEmpty()) return;
+  if (box.isEmpty()) return false;
   const size = box.getSize(new THREE.Vector3());
+  // Reject DropInViewer placeholder [2,2,2] — framing it leaves a distant "dot"
+  if (isFakeUnitBox(size)) return false;
   const maxDim = Math.max(size.x, size.y, size.z, 0.01);
   const minDim = Math.min(size.x, size.y, size.z);
   const center = box.getCenter(new THREE.Vector3());
@@ -263,5 +307,61 @@ export function frameObject(
     );
   }
   camera.position.copy(camPos);
+  camera.near = Math.min(camera.near, Math.max(maxDim * 0.0005, 0.001));
+  camera.far = Math.max(camera.far, maxDim * 200);
+  camera.updateProjectionMatrix();
+  tuneOrbitLimits(controls, maxDim);
   controls.update();
+  return true;
+}
+
+/**
+ * Poll DropInViewer world bounds after addSplatScene.
+ * Library often reports a placeholder ≈[2,2,2] until meshes settle — wait up to maxMs.
+ */
+export async function probeSplatBounds(
+  viewer: GaussianSplats3D.DropInViewer,
+  opts?: { maxMs?: number; isStale?: () => boolean },
+): Promise<SplatBoundsProbe> {
+  const maxMs = opts?.maxMs ?? 15_000;
+  const isStale = opts?.isStale ?? (() => false);
+  const t0 = performance.now();
+  let readySince: number | null = null;
+  let last: SplatBoundsProbe = {
+    ready: false,
+    empty: true,
+    fakeUnit: false,
+    size: [0, 0, 0],
+    usable: false,
+  };
+
+  while (performance.now() - t0 < maxMs && !isStale()) {
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    const inner = (viewer as unknown as { viewer?: { splatRenderReady?: boolean } }).viewer;
+    const ready = Boolean(inner?.splatRenderReady);
+    const box = new THREE.Box3().setFromObject(viewer);
+    const empty = box.isEmpty();
+    let size: [number, number, number] = [0, 0, 0];
+    let fakeUnit = false;
+    if (!empty) {
+      const sz = box.getSize(new THREE.Vector3());
+      size = [sz.x, sz.y, sz.z];
+      fakeUnit = isFakeUnitBox(sz);
+    }
+    last = {
+      ready,
+      empty,
+      fakeUnit,
+      size,
+      usable: !empty && !fakeUnit,
+    };
+    if (last.usable) break;
+    if (ready) {
+      if (readySince == null) readySince = performance.now();
+      // Placeholder [2,2,2] often sticks after ready — don't block 15s
+      if (fakeUnit && performance.now() - readySince > 3_000) break;
+    }
+  }
+
+  return last;
 }

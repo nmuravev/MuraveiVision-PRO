@@ -10,9 +10,9 @@ import {
   GraduationCap,
   LayoutGrid,
   Monitor,
-  MoreHorizontal,
   Radio,
   Settings,
+  Terminal,
   User,
 } from 'lucide-react';
 import {
@@ -69,8 +69,6 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [reportBusy, setReportBusy] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const [topBarNarrow, setTopBarNarrow] = useState(false);
   const [ollamaOk, setOllamaOk] = useState<boolean | null>(null);
   const [yoloMode, setYoloMode] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -112,22 +110,10 @@ export const TopBar: React.FC<TopBarProps> = ({
         setLayoutOpen(false);
         setSessionOpen(false);
         setExportOpen(false);
-        setMoreOpen(false);
       }
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
-  }, []);
-
-  useEffect(() => {
-    const el = menuRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width ?? 0;
-      setTopBarNarrow(w < 1100);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
   }, []);
 
   useEffect(() => {
@@ -223,10 +209,14 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   const yoloReady = yoloMode === 'ready' || yoloMode === 'gpu' || yoloMode === 'cpu';
   const roleLabel =
-    userRole === 'master' ? 'Мастер' : userRole === 'engineer' ? 'Инженер' : userRole === 'operator' ? 'Оператор' : null;
-  const focusedSourcePath = useViewerStore(
-    (s) => s.viewers[s.focusedViewerId]?.sourcePath,
-  );
+    userRole === 'master'
+      ? 'Мастер'
+      : userRole === 'engineer'
+        ? 'Инженер'
+        : userRole === 'operator'
+          ? 'Оператор'
+          : null;
+  const focusedSourcePath = useViewerStore((s) => s.viewers[s.focusedViewerId]?.sourcePath);
 
   const runExport = (kind: 'html' | 'pdf' | 'kml' | 'geojson') => {
     setExportOpen(false);
@@ -248,7 +238,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         return;
       }
       const q = encodeURIComponent(focusedSourcePath);
-      url = kind === 'kml' ? `/api/export/kml?source_video=${q}` : `/api/export/geojson?source_video=${q}`;
+      url =
+        kind === 'kml' ? `/api/export/kml?source_video=${q}` : `/api/export/geojson?source_video=${q}`;
       filename = kind === 'kml' ? `muravei-${stamp}.kml` : `muravei-${stamp}.geojson`;
     }
     void downloadAuthorized(url, { filename })
@@ -294,6 +285,22 @@ export const TopBar: React.FC<TopBarProps> = ({
     }
   };
 
+  const closeStripMenus = () => {
+    setWindowOpen(false);
+    setLayoutOpen(false);
+    setExportOpen(false);
+    setSessionOpen(false);
+  };
+
+  const stripBtn = (active: boolean) =>
+    `h-7 px-2 text-[11px] font-medium rounded-sm transition-all duration-150 inline-flex items-center gap-1 shrink-0 whitespace-nowrap ${
+      active
+        ? 'bg-dv-accent text-black shadow-sm'
+        : 'text-dv-muted hover:text-dv-text hover:bg-dv-hover'
+    }`;
+
+  const stripMenuOpen = exportOpen || layoutOpen || windowOpen;
+
   return (
     <>
       <div
@@ -310,18 +317,18 @@ export const TopBar: React.FC<TopBarProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-0.5 p-0.5 bg-dv-deep rounded-sm border border-dv-border/60 shrink-0 max-w-[min(100%,28rem)] overflow-x-auto">
+        <div
+          className={`flex-1 min-w-0 flex items-center gap-0.5 p-0.5 bg-dv-deep rounded-sm border border-dv-border/60 ${
+            stripMenuOpen ? 'overflow-visible' : 'overflow-x-auto'
+          }`}
+        >
           {WORKSPACE_TABS.map((tab) => (
             <button
               key={tab}
               type="button"
               aria-label={tab}
               onClick={() => onTabChange(tab)}
-              className={`h-7 px-2 text-[11px] font-medium rounded-sm transition-all duration-150 inline-flex items-center gap-1 shrink-0 whitespace-nowrap ${
-                activeTab === tab
-                  ? 'bg-dv-accent text-black shadow-sm'
-                  : 'text-dv-muted hover:text-dv-text hover:bg-dv-hover'
-              }`}
+              className={stripBtn(activeTab === tab)}
             >
               {TAB_ICONS[tab]}
               <span className="hidden md:inline">{tab}</span>
@@ -333,286 +340,163 @@ export const TopBar: React.FC<TopBarProps> = ({
               )}
             </button>
           ))}
-        </div>
 
-        <div className="flex-1 min-w-0 flex items-center justify-end gap-1.5">
-          {!topBarNarrow && (
-            <>
-              {isAuthenticated && (
-                <div className="relative">
-                  <Button
-                    size="md"
-                    disabled={reportBusy}
-                    active={exportOpen}
-                    title="Экспорт: HTML / PDF / KML / GeoJSON"
-                    onClick={() => {
-                      setExportOpen((v) => !v);
-                      setWindowOpen(false);
-                      setLayoutOpen(false);
-                      setSessionOpen(false);
-                      setMoreOpen(false);
-                    }}
-                  >
-                    <FileText size={13} />
-                    <span className="hidden lg:inline">{reportBusy ? 'Экспорт…' : 'Экспорт'}</span>
-                  </Button>
-                  <Menu open={exportOpen} className="w-52">
-                    <MenuItem onClick={() => runExport('html')}>HTML-отчёт</MenuItem>
-                    <MenuItem onClick={() => runExport('pdf')}>PDF (схема карты)</MenuItem>
-                    <MenuItem onClick={() => runExport('kml')}>KML (Google Earth)</MenuItem>
-                    <MenuItem onClick={() => runExport('geojson')}>GeoJSON (QGIS)</MenuItem>
-                  </Menu>
-                </div>
-              )}
-              {reportError && (
-                <span className="text-[10px] text-dv-danger max-w-[120px] truncate" title={reportError}>
-                  {reportError}
-                </span>
-              )}
+          <div className="w-px h-4 bg-dv-border/70 mx-0.5 shrink-0 self-center" aria-hidden />
 
-              <div className="relative">
-                <Button
-                  size="md"
-                  active={layoutOpen}
-                  onClick={() => {
-                    setLayoutOpen((v) => !v);
-                    setWindowOpen(false);
-                    setSessionOpen(false);
-                    setExportOpen(false);
-                    setMoreOpen(false);
-                  }}
-                >
-                  <LayoutGrid size={13} />
-                  <span className="hidden lg:inline">Раскладка</span>
-                </Button>
-                <Menu open={layoutOpen}>
-                  {LAYOUT_PRESETS.map(([key, label]) => (
-                    <MenuItem
-                      key={key}
-                      onClick={() => {
-                        applyPreset(key);
-                        setLayoutOpen(false);
-                      }}
-                    >
-                      {label}
-                    </MenuItem>
-                  ))}
-                  {onResetLayout && (
-                    <MenuItem
-                      danger
-                      className="border-t border-dv-border"
-                      onClick={() => {
-                        onResetLayout();
-                        setLayoutOpen(false);
-                      }}
-                    >
-                      Сбросить раскладку
-                    </MenuItem>
-                  )}
-                </Menu>
-              </div>
-
-              <div className="relative">
-                <Button
-                  size="md"
-                  active={windowOpen}
-                  onClick={() => {
-                    setWindowOpen((v) => !v);
-                    setLayoutOpen(false);
-                    setSessionOpen(false);
-                    setExportOpen(false);
-                    setMoreOpen(false);
-                  }}
-                >
-                  <Monitor size={13} />
-                  <span className="hidden lg:inline">Окна</span>
-                </Button>
-                <Menu open={windowOpen} className="max-h-96 overflow-auto w-56">
-                  {ALL_VIEW_IDS.map((id) => {
-                    const on = isPanelVisible(id);
-                    return (
-                      <MenuItem key={id} onClick={() => togglePanel(id)}>
-                        <span
-                          className={`w-3 h-3 border border-dv-border rounded-sm shrink-0 ${
-                            on ? 'bg-dv-accent' : ''
-                          }`}
-                        />
-                        {VIEW_TITLES[id]}
-                      </MenuItem>
-                    );
-                  })}
-                  <div className="px-3 py-2 text-[10px] text-dv-muted border-t border-dv-border font-mono leading-5">
-                    <div className="uppercase tracking-wider mb-1">Горячие клавиши</div>
-                    <div>Space — play/pause</div>
-                    <div>← / → — кадр (±10 с Shift)</div>
-                    <div>I / O — In / Out</div>
-                    <div>F / Ctrl+S — зафиксировать кадр</div>
-                    <div>1–4 — вьюер</div>
-                    <div>Ctrl+Z — отменить правку</div>
-                    <div>Del — удалить детекцию</div>
-                  </div>
-                </Menu>
-              </div>
-
-              <Button
-                size="md"
-                title="3D-траектория полёта (SRT/CSV)"
-                active={isPanelVisible('flight3d')}
-                onClick={toggleGeo3d}
-              >
-                <Globe2 size={13} />
-                <span className="hidden lg:inline">Гео 3D</span>
-              </Button>
-
-              <Button
-                size="md"
-                title="Session Trace dock (FE+BE). Код не удалять без явного приказа."
-                active={Boolean(traceDockOpen)}
-                onClick={() => onToggleTraceDock?.()}
-              >
-                <Bug size={13} />
-                <span className="hidden lg:inline">Трассировка</span>
-              </Button>
-
-              <Button size="md" title="Панель отладки" onClick={toggleDebug}>
-                <Bug size={13} />
-                <span className="hidden lg:inline">Отладка</span>
-              </Button>
-            </>
-          )}
-
-          {topBarNarrow && (
-            <div className="relative">
-              <Button
-                size="md"
-                active={moreOpen}
-                title="Ещё"
+          {isAuthenticated && (
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                className={stripBtn(exportOpen)}
+                disabled={reportBusy}
+                title="Экспорт: HTML / PDF / KML / GeoJSON"
                 onClick={() => {
-                  setMoreOpen((v) => !v);
+                  setExportOpen((v) => !v);
                   setWindowOpen(false);
                   setLayoutOpen(false);
                   setSessionOpen(false);
-                  setExportOpen(false);
                 }}
               >
-                <MoreHorizontal size={13} />
-                Ещё
-              </Button>
-              <Menu open={moreOpen} className="w-56 max-h-[min(70vh,28rem)] overflow-auto z-[110]" align="right">
-                {isAuthenticated && (
-                  <>
-                    <MenuItem
-                      disabled={reportBusy}
-                      onClick={() => {
-                        runExport('html');
-                        setMoreOpen(false);
-                      }}
-                    >
-                      Экспорт · HTML
-                    </MenuItem>
-                    <MenuItem
-                      disabled={reportBusy}
-                      onClick={() => {
-                        runExport('pdf');
-                        setMoreOpen(false);
-                      }}
-                    >
-                      Экспорт · PDF
-                    </MenuItem>
-                    <MenuItem
-                      disabled={reportBusy}
-                      onClick={() => {
-                        runExport('kml');
-                        setMoreOpen(false);
-                      }}
-                    >
-                      Экспорт · KML
-                    </MenuItem>
-                    <MenuItem
-                      disabled={reportBusy}
-                      onClick={() => {
-                        runExport('geojson');
-                        setMoreOpen(false);
-                      }}
-                    >
-                      Экспорт · GeoJSON
-                    </MenuItem>
-                  </>
-                )}
-                {LAYOUT_PRESETS.map(([key, label]) => (
-                  <MenuItem
-                    key={key}
-                    onClick={() => {
-                      applyPreset(key);
-                      setMoreOpen(false);
-                    }}
-                  >
-                    Раскладка · {label}
-                  </MenuItem>
-                ))}
-                {onResetLayout && (
-                  <MenuItem
-                    danger
-                    onClick={() => {
-                      onResetLayout();
-                      setMoreOpen(false);
-                    }}
-                  >
-                    Сбросить раскладку
-                  </MenuItem>
-                )}
-                {ALL_VIEW_IDS.map((id) => {
-                  const on = isPanelVisible(id);
-                  return (
-                    <MenuItem
-                      key={`more-${id}`}
-                      onClick={() => {
-                        togglePanel(id);
-                        setMoreOpen(false);
-                      }}
-                    >
-                      <span
-                        className={`w-3 h-3 border border-dv-border rounded-sm shrink-0 ${
-                          on ? 'bg-dv-accent' : ''
-                        }`}
-                      />
-                      {VIEW_TITLES[id]}
-                    </MenuItem>
-                  );
-                })}
-                <MenuItem
-                  onClick={() => {
-                    toggleGeo3d();
-                    setMoreOpen(false);
-                  }}
-                >
-                  <Globe2 size={12} />
-                  Гео 3D
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    onToggleTraceDock?.();
-                    setMoreOpen(false);
-                  }}
-                >
-                  <Bug size={12} />
-                  Трассировка
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    toggleDebug();
-                    setMoreOpen(false);
-                  }}
-                >
-                  <Bug size={12} />
-                  Отладка
-                </MenuItem>
+                <FileText size={12} />
+                <span className="hidden md:inline">{reportBusy ? 'Экспорт…' : 'Экспорт'}</span>
+              </button>
+              <Menu open={exportOpen} className="w-52 z-[110]" align="left">
+                <MenuItem onClick={() => runExport('html')}>HTML-отчёт</MenuItem>
+                <MenuItem onClick={() => runExport('pdf')}>PDF (схема карты)</MenuItem>
+                <MenuItem onClick={() => runExport('kml')}>KML (Google Earth)</MenuItem>
+                <MenuItem onClick={() => runExport('geojson')}>GeoJSON (QGIS)</MenuItem>
               </Menu>
             </div>
           )}
 
-          {reportError && topBarNarrow && (
-            <span className="text-[10px] text-dv-danger max-w-[80px] truncate" title={reportError}>
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              className={stripBtn(layoutOpen)}
+              title="Раскладка"
+              onClick={() => {
+                setLayoutOpen((v) => !v);
+                setWindowOpen(false);
+                setSessionOpen(false);
+                setExportOpen(false);
+              }}
+            >
+              <LayoutGrid size={12} />
+              <span className="hidden md:inline">Раскладка</span>
+            </button>
+            <Menu open={layoutOpen} className="z-[110]" align="left">
+              {LAYOUT_PRESETS.map(([key, label]) => (
+                <MenuItem
+                  key={key}
+                  onClick={() => {
+                    applyPreset(key);
+                    setLayoutOpen(false);
+                  }}
+                >
+                  {label}
+                </MenuItem>
+              ))}
+              {onResetLayout && (
+                <MenuItem
+                  danger
+                  className="border-t border-dv-border"
+                  onClick={() => {
+                    onResetLayout();
+                    setLayoutOpen(false);
+                  }}
+                >
+                  Сбросить раскладку
+                </MenuItem>
+              )}
+            </Menu>
+          </div>
+
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              className={stripBtn(windowOpen)}
+              title="Окна"
+              onClick={() => {
+                setWindowOpen((v) => !v);
+                setLayoutOpen(false);
+                setSessionOpen(false);
+                setExportOpen(false);
+              }}
+            >
+              <Monitor size={12} />
+              <span className="hidden md:inline">Окна</span>
+            </button>
+            <Menu open={windowOpen} className="max-h-96 overflow-auto w-56 z-[110]" align="left">
+              {ALL_VIEW_IDS.map((id) => {
+                const on = isPanelVisible(id);
+                return (
+                  <MenuItem key={id} onClick={() => togglePanel(id)}>
+                    <span
+                      className={`w-3 h-3 border border-dv-border rounded-sm shrink-0 ${
+                        on ? 'bg-dv-accent' : ''
+                      }`}
+                    />
+                    {VIEW_TITLES[id]}
+                  </MenuItem>
+                );
+              })}
+              <div className="px-3 py-2 text-[10px] text-dv-muted border-t border-dv-border font-mono leading-5">
+                <div className="uppercase tracking-wider mb-1">Горячие клавиши</div>
+                <div>Space — play/pause</div>
+                <div>← / → — кадр (±10 с Shift)</div>
+                <div>I / O — In / Out</div>
+                <div>F / Ctrl+S — зафиксировать кадр</div>
+                <div>1–4 — вьюер</div>
+                <div>Ctrl+Z — отменить правку</div>
+                <div>Del — удалить детекцию</div>
+              </div>
+            </Menu>
+          </div>
+
+          <button
+            type="button"
+            className={stripBtn(isPanelVisible('flight3d'))}
+            title="3D-траектория полёта (SRT/CSV)"
+            onClick={() => {
+              closeStripMenus();
+              toggleGeo3d();
+            }}
+          >
+            <Globe2 size={12} />
+            <span className="hidden md:inline">Гео 3D</span>
+          </button>
+
+          <button
+            type="button"
+            className={stripBtn(Boolean(traceDockOpen))}
+            title="Session Trace dock (FE+BE). Код не удалять без явного приказа."
+            onClick={() => {
+              closeStripMenus();
+              onToggleTraceDock?.();
+            }}
+          >
+            <Bug size={12} />
+            <span className="hidden md:inline">Трассировка</span>
+          </button>
+
+          <button
+            type="button"
+            className={stripBtn(isPanelVisible('debug'))}
+            title="Панель отладки"
+            onClick={() => {
+              closeStripMenus();
+              toggleDebug();
+            }}
+          >
+            <Terminal size={12} />
+            <span className="hidden md:inline">Отладка</span>
+          </button>
+
+          {reportError && (
+            <span
+              className="text-[10px] text-dv-danger max-w-[100px] truncate shrink-0 px-1"
+              title={reportError}
+            >
               {reportError}
             </span>
           )}
@@ -634,7 +518,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   setSessionOpen((v) => !v);
                   setLayoutOpen(false);
                   setWindowOpen(false);
-                  setMoreOpen(false);
+                  setExportOpen(false);
                 } else {
                   setLoginOpen(true);
                 }

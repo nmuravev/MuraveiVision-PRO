@@ -100,39 +100,95 @@ export function useReconTrain(jobId: string | null | undefined, isAuthenticated:
         if (st.status === 'done' || st.status === 'error' || st.status === 'idle') {
           abort.abort();
           clearPoll();
+          streamAbortRef.current = null;
           if (st.status === 'done') onDone?.();
         }
       };
 
-      void readSse('/api/recon/train/stream', apply, abort).catch(() => {
-        if (abort.signal.aborted) return;
-        // Fallback poll every 3s
+      const startStatusPoll = () => {
+        if (pollRef.current) return;
         void refreshStatus();
         pollRef.current = setInterval(() => {
           void (async () => {
             const res = await fetch('/api/recon/train/status', {
               headers: { ...authHeaders(), [SILENT_API_ERROR_HEADER]: '1' },
             });
-            if (!res.ok) return;
+            if (!res.ok) {
+              // Backend restart / expired session: unlock stuck «training» modal.
+              setTrain((prev) => {
+                if (prev.status !== 'training') return prev;
+                return {
+                  ...prev,
+                  status: 'error',
+                  error:
+                    res.status === 401
+                      ? 'Сессия истекла / backend перезапущен — войдите снова и повторите Balanced'
+                      : `Нет связи с train status (${res.status}) — backend мог перезапуститься`,
+                  message: 'Обучение прервано (потерян статус)',
+                };
+              });
+              clearPoll();
+              streamAbortRef.current = null;
+              abort.abort();
+              return;
+            }
             const st = (await res.json()) as TrainStatus;
             setTrain(st);
             if (st.status === 'done' || st.status === 'error' || st.status === 'idle') {
               clearPoll();
+              streamAbortRef.current = null;
+              abort.abort();
               if (st.status === 'done') onDone?.();
             }
           })();
         }, 3000);
-      });
+      };
+
+      // Parallel poll: SSE clean-close after uvicorn kill does not reject, so UI
+      // would stay on training forever without a status heartbeat.
+      startStatusPoll();
+
+      void readSse('/api/recon/train/stream', apply, abort)
+        .catch(() => {
+          if (abort.signal.aborted) return;
+          startStatusPoll();
+        })
+        .finally(() => {
+          if (abort.signal.aborted) return;
+          // Stream ended without terminal event (backend restart) — keep polling.
+          startStatusPoll();
+        });
     },
     [refreshStatus],
   );
 
   const startTrain = useCallback(
     async (preset: string, onDone?: () => void) => {
-      if (!jobId || startInFlightRef.current) return;
-      if (colmapRunning || train.status === 'training') return;
+      if (!jobId || startInFlightRef.current) {
+        if (!jobId) {
+          setTrain((s) => ({
+            ...s,
+            status: 'error',
+            error: 'Нет job_id — сначала «Построить 3D»',
+            message: 'Обучение не удалось: нет job_id',
+          }));
+        }
+        return;
+      }
+      if (train.status === 'training') {
+        return;
+      }
+      // Do not hard-block on stale colmapRunning flag — backend rejects if COLMAP truly running.
+      // UI already gates via trainBlocked; silent return here made Balanced look dead.
       startInFlightRef.current = true;
-      setTrain((s) => ({ ...s, status: 'training', message: 'Запуск…', error: null, preset }));
+      // Do not set status=training before POST succeeds — that attaches SSE which
+      // can overwrite a 409 error with idle within ~10ms (looked like "nothing happened").
+      setTrain((s) => ({
+        ...s,
+        message: 'Запуск…',
+        error: null,
+        preset,
+      }));
       try {
         const res = await fetch('/api/recon/train/start', {
           method: 'POST',
@@ -144,6 +200,8 @@ export function useReconTrain(jobId: string | null | undefined, isAuthenticated:
           body: JSON.stringify({ job_id: jobId, preset }),
         });
         if (!res.ok) {
+          streamAbortRef.current?.abort();
+          streamAbortRef.current = null;
           const err = (await res.json().catch(() => ({}))) as { detail?: string };
           const detail = err.detail || res.statusText;
           setTrain((s) => ({
@@ -164,7 +222,7 @@ export function useReconTrain(jobId: string | null | undefined, isAuthenticated:
         startInFlightRef.current = false;
       }
     },
-    [jobId, colmapRunning, train.status, attachStream],
+    [jobId, train.status, attachStream],
   );
 
   const stopTrain = useCallback(async () => {

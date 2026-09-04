@@ -12,6 +12,13 @@ export type HudZones = {
   ready: boolean;
 };
 
+export type HudMargins = Pick<HudZones, 'top' | 'bottom' | 'left' | 'right'>;
+
+export function clampHudMargin(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.min(0.35, Math.max(0, v));
+}
+
 export function useHudZones(sourcePath: string | null | undefined, enabled: boolean) {
   const [zones, setZones] = useState<HudZones | null>(null);
   const [archiveEnabled, setArchiveEnabled] = useState(true);
@@ -96,8 +103,15 @@ export function useHudZones(sourcePath: string | null | undefined, enabled: bool
   }, [sourcePath, enabled, refresh]);
 
   const saveManual = useCallback(
-    async (next: Pick<HudZones, 'top' | 'bottom' | 'left' | 'right'>) => {
+    async (next: HudMargins) => {
       if (!sourcePath || apiMissing) return;
+      const body = {
+        video_path: sourcePath,
+        top: clampHudMargin(next.top),
+        bottom: clampHudMargin(next.bottom),
+        left: clampHudMargin(next.left),
+        right: clampHudMargin(next.right),
+      };
       const res = await fetch('/api/hud/zones', {
         method: 'PUT',
         headers: {
@@ -105,7 +119,7 @@ export function useHudZones(sourcePath: string | null | undefined, enabled: bool
           'Content-Type': 'application/json',
           [SILENT_API_ERROR_HEADER]: '1',
         },
-        body: JSON.stringify({ video_path: sourcePath, ...next }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) return;
       const data = (await res.json()) as { zones?: HudZones };
@@ -113,6 +127,26 @@ export function useHudZones(sourcePath: string | null | undefined, enabled: bool
     },
     [sourcePath, apiMissing],
   );
+
+  const recompute = useCallback(async () => {
+    if (!sourcePath || apiMissing) return;
+    const res = await fetch('/api/hud/recompute', {
+      method: 'POST',
+      headers: {
+        ...authHeaders(),
+        'Content-Type': 'application/json',
+        [SILENT_API_ERROR_HEADER]: '1',
+      },
+      body: JSON.stringify({ video_path: sourcePath, force: true }),
+    });
+    if (!res.ok) {
+      await refresh();
+      return;
+    }
+    const data = (await res.json()) as { zones?: HudZones };
+    if (data.zones) setZones(data.zones);
+    else await refresh();
+  }, [sourcePath, apiMissing, refresh]);
 
   const disableForVideo = useCallback(async () => {
     await saveManual({ top: 0, bottom: 0, left: 0, right: 0 });
@@ -125,6 +159,7 @@ export function useHudZones(sourcePath: string | null | undefined, enabled: bool
     apiMissing,
     refresh,
     saveManual,
+    recompute,
     disableForVideo,
   };
 }

@@ -110,5 +110,66 @@ class TestRegistrationHint(unittest.TestCase):
             self.assertEqual(rc.count_registered_images(d), 2)
 
 
+class TestSparseMapperSnapshot(unittest.TestCase):
+    def test_empty_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            snap = rc.sparse_mapper_snapshot(Path(td))
+            self.assertEqual(snap["model_count"], 0)
+            self.assertIsNone(snap["last_model"])
+
+    def test_counts_numeric_models_and_age(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            sparse = Path(td)
+            for name in ("0", "1", "2"):
+                m = sparse / name
+                m.mkdir()
+                (m / "points3D.bin").write_bytes(b"x" * 64)
+            snap = rc.sparse_mapper_snapshot(sparse)
+            self.assertEqual(snap["model_count"], 3)
+            self.assertEqual(snap["last_model"], "2")
+            self.assertIsNotNone(snap["last_write_age_sec"])
+            self.assertGreaterEqual(int(snap["last_write_age_sec"]), 0)
+
+    def test_ignores_non_numeric(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            sparse = Path(td)
+            (sparse / "backup").mkdir()
+            (sparse / "0").mkdir()
+            (sparse / "0" / "cameras.bin").write_bytes(b"cam")
+            snap = rc.sparse_mapper_snapshot(sparse)
+            self.assertEqual(snap["model_count"], 1)
+            self.assertEqual(snap["last_model"], "0")
+
+
+class TestColmapStageProgress(unittest.TestCase):
+    def test_stage_progress_ordering(self) -> None:
+        self.assertLess(rc.colmap_stage_progress("plan"), rc.colmap_stage_progress("feature_extractor"))
+        self.assertLess(
+            rc.colmap_stage_progress("feature_extractor"),
+            rc.colmap_stage_progress("sequential_matcher"),
+        )
+        self.assertLess(rc.colmap_stage_progress("mapper"), rc.colmap_stage_progress("model_converter"))
+        self.assertLess(rc.colmap_stage_progress("model_converter"), 0.65)
+
+    def test_mapper_progress_grows_with_models(self) -> None:
+        p0 = rc.mapper_progress_from_snapshot({"model_count": 0})
+        p3 = rc.mapper_progress_from_snapshot({"model_count": 3})
+        self.assertGreater(p3, p0)
+        self.assertLessEqual(p3, 0.58)
+
+    def test_stage_messages(self) -> None:
+        plan = rc.format_colmap_stage_message("plan", n_frames=121, matcher="sequential")
+        self.assertIn("matcher=sequential", plan)
+        self.assertIn("frames=121", plan)
+        self.assertEqual(rc.format_colmap_stage_message("feature_extractor"), "feature_extractor…")
+        mapper = rc.format_colmap_stage_message(
+            "mapper",
+            snap={"model_count": 2, "last_model": "1", "last_write_age_sec": 12},
+        )
+        self.assertIn("models=2", mapper)
+        self.assertIn("sparse/1", mapper)
+        self.assertIn("12s", mapper)
+
+
 if __name__ == "__main__":
     unittest.main()

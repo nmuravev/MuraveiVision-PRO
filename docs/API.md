@@ -281,6 +281,8 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 
 `POST /start`, `POST /stop`, `GET /status`, `GET /stream`, `GET /manifest`, `PATCH /manifest/{job_id}`, `GET /poses`, `GET /asset/{job_id}/{name}`. `poses` отдаёт ближайшую COLMAP-позу и intrinsics для 2D→3D луча; UI использует Gaussian splat pick с fallback на sparse cloud.
 
+`GET /status` и SSE (`/stream`) несут live поля: `job_id`, `phase` (`starting`/`extracting`/`colmap`/`export_poses`/…), **`stage`** (`plan` / `feature_extractor` / `sequential_matcher`|`exhaustive_matcher` / `mapper` / `model_converter` / `export_poses` / …), `progress`, `message`. На длинном `mapper` backend поллит `archive/recon/{job}/colmap/sparse/N` и обновляет message (`models=…`, last write); stream шлёт status-heartbeat ~2 с. UI ops-модалка берёт `job_id` из этих полей, не из устаревшего manifest.
+
 Train (один job за раз; блокирует `POST /start` COLMAP пока идёт train):
 
 | Метод | Путь | Описание |

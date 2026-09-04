@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from services.gsplat_msvc import MSVC_NEED_MSG, clear_caches, gsplat_train_ready
+from services import recon_train
 from services.recon_train import format_train_error
 from services import train_presets
 
@@ -29,6 +30,15 @@ class TestFormatTrainError(unittest.TestCase):
         lines = ["alpha", "beta", "gamma"]
         err = format_train_error(2, lines)
         self.assertEqual(err, "exit code 2: alpha | beta | gamma")
+
+    def test_control_c_exit_unsigned(self) -> None:
+        err = format_train_error(3221225786, ["Traceback (most recent call last):"])
+        self.assertIn("прервано", err)
+        self.assertNotIn("Traceback", err)
+
+    def test_control_c_exit_signed(self) -> None:
+        err = format_train_error(-1073741510, [])
+        self.assertIn("прервано", err)
 
 
 class TestGsplatMsvcReady(unittest.TestCase):
@@ -64,6 +74,72 @@ class TestPresetsMsvcGate(unittest.TestCase):
         self.assertTrue(bal["disabled"])
         self.assertIn("MSVC", bal["disabled_reason"])
         self.assertFalse(boot["disabled"])
+
+
+class TestParseTqdmProgress(unittest.TestCase):
+    def setUp(self) -> None:
+        with recon_train._lock:
+            recon_train._state.update(
+                {
+                    "status": "training",
+                    "job_id": "deadbeefcafe",
+                    "preset": "balanced",
+                    "steps": 0,
+                    "max_steps": 7000,
+                    "loss": None,
+                    "psnr": None,
+                    "message": "",
+                    "error": None,
+                    "artifact": None,
+                }
+            )
+            recon_train._events.clear()
+            recon_train._thread = None
+            recon_train._proc = None
+
+    def test_tqdm_train_bar_updates_steps(self) -> None:
+        line = "loss=0.053| sh degree=2| :  30%|███       | 2123/7000 [00:21<00:45, 106.41it/s]"
+        recon_train._parse_line(line, 7000)
+        self.assertEqual(recon_train._state["steps"], 2123)
+        self.assertEqual(recon_train._state["max_steps"], 7000)
+        self.assertAlmostEqual(float(recon_train._state["loss"]), 0.053)
+
+    def test_downscale_bar_ignored(self) -> None:
+        recon_train._parse_line("100%|██████████| 121/121 [00:01<00:00, 67.59it/s]", 7000)
+        self.assertEqual(recon_train._state["steps"], 0)
+
+    def test_stale_training_recovered(self) -> None:
+        st = recon_train.status()
+        self.assertEqual(st["status"], "error")
+        self.assertIn("прервано", st["error"] or "")
+
+
+class TestPatchArtifactClearsNextAction(unittest.TestCase):
+    def test_model_ply_drops_balanced_cta(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as td:
+            job = Path(td)
+            (job / "model.ply").write_bytes(b"ply\n")
+            (job / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "job_id": "deadbeefcafe",
+                        "status": "colmap_done",
+                        "artifact": None,
+                        "next_action": "balanced_for_splat",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            art = recon_train._patch_artifact(job)
+            self.assertEqual(art, "model.ply")
+            man = json.loads((job / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(man["status"], "done")
+            self.assertEqual(man["artifact"], "model.ply")
+            self.assertNotIn("next_action", man)
 
 
 if __name__ == "__main__":

@@ -45,7 +45,8 @@ Desktop shell: `npm run desktop`.
 
 | Script | Действие |
 |--------|----------|
-| `backend` | uvicorn reload |
+| `backend` | uvicorn **без** `--reload` (безопасно для COLMAP/gsplat train) |
+| `backend:watch` | uvicorn с `--reload` (только UI/API dev; **не** во время train) |
 | `backend:install` | pip requirements |
 | `desktop` | pywebview launcher |
 | `smoke:phase3` / `smoke:phase4` | регрессии API |

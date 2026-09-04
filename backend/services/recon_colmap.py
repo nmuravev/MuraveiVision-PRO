@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from pathlib import Path
+from typing import Any
 
 # Defaults tuned for continuous drone video on ~8 GB VRAM edge laptops.
 DEFAULT_SEQUENTIAL_OVERLAP = 15
@@ -254,3 +256,112 @@ def registration_failure_message(n_frames: int, n_registered: int) -> str | None
         "Недостаточно перекрытий/текстуры: попробуйте другой сегмент "
         "или более медленный пролёт"
     )
+
+
+# Coarse progress within phase=colmap (export_poses starts ~0.65).
+_STAGE_PROGRESS: dict[str, float] = {
+    "plan": 0.18,
+    "feature_extractor": 0.25,
+    "sequential_matcher": 0.35,
+    "exhaustive_matcher": 0.35,
+    "mapper": 0.45,
+    "model_converter": 0.60,
+}
+
+
+def colmap_stage_progress(stage: str) -> float:
+    """Progress fraction for a named COLMAP stage (not a fake percentage clock)."""
+    return float(_STAGE_PROGRESS.get((stage or "").strip().lower(), 0.35))
+
+
+def sparse_mapper_snapshot(sparse_dir: Path | None) -> dict[str, Any]:
+    """Count sparse/N models and latest write — for live mapper progress (no fake %)."""
+    out: dict[str, Any] = {
+        "model_count": 0,
+        "last_model": None,
+        "last_write_age_sec": None,
+        "last_write_ts": None,
+    }
+    if sparse_dir is None or not sparse_dir.is_dir():
+        return out
+    models: list[tuple[str, float]] = []
+    try:
+        children = list(sparse_dir.iterdir())
+    except OSError:
+        return out
+    for child in children:
+        if not child.is_dir():
+            continue
+        name = child.name
+        if not name.isdigit():
+            continue
+        latest = 0.0
+        for marker in (
+            "points3D.bin",
+            "points3D.txt",
+            "images.bin",
+            "images.txt",
+            "cameras.bin",
+            "cameras.txt",
+            "project.ini",
+        ):
+            p = child / marker
+            if p.is_file():
+                try:
+                    latest = max(latest, p.stat().st_mtime)
+                except OSError:
+                    continue
+        if latest <= 0:
+            try:
+                latest = child.stat().st_mtime
+            except OSError:
+                latest = 0.0
+        models.append((name, latest))
+    if not models:
+        return out
+    models.sort(key=lambda x: int(x[0]))
+    # Tie-break equal mtimes by higher model index (Windows often shares 1s resolution)
+    newest_name, newest_ts = max(models, key=lambda x: (x[1], int(x[0])))
+    out["model_count"] = len(models)
+    out["last_model"] = newest_name
+    if newest_ts > 0:
+        out["last_write_ts"] = newest_ts
+        out["last_write_age_sec"] = max(0, int(time.time() - newest_ts))
+    return out
+
+
+def format_colmap_stage_message(
+    stage: str,
+    *,
+    n_frames: int = 0,
+    matcher: str = "",
+    snap: dict[str, Any] | None = None,
+) -> str:
+    """Human-readable stage line for SSE / ops modal (RU-friendly, stage id kept)."""
+    st = (stage or "").strip().lower()
+    if st == "plan":
+        m = matcher or "sequential"
+        return f"COLMAP plan (matcher={m}, frames={int(n_frames)})"
+    if st == "feature_extractor":
+        return "feature_extractor…"
+    if st in ("sequential_matcher", "exhaustive_matcher"):
+        return f"{st}…"
+    if st == "mapper":
+        if snap and int(snap.get("model_count") or 0) > 0:
+            age = snap.get("last_write_age_sec")
+            last = snap.get("last_model")
+            age_bit = f" · last write {age}s ago" if age is not None else ""
+            last_bit = f" · sparse/{last}" if last is not None else ""
+            return f"mapper · models={snap['model_count']}{last_bit}{age_bit}"
+        return "mapper…"
+    if st == "model_converter":
+        return "model_converter…"
+    return st or "COLMAP…"
+
+
+def mapper_progress_from_snapshot(snap: dict[str, Any] | None) -> float:
+    """Bump progress slightly as sparse models appear (capped below export_poses)."""
+    base = colmap_stage_progress("mapper")
+    n = int((snap or {}).get("model_count") or 0)
+    # Each new model +0.02, hard cap 0.58 (export_poses uses 0.65)
+    return min(0.58, base + 0.02 * max(0, n))
