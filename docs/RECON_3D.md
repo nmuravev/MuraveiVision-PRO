@@ -53,6 +53,20 @@ npm run backend
 | GET | `/api/recon/poses?video_path=&time_sec=` |
 | GET | `/api/recon/asset/{job_id}/{name}` |
 
+## Job ID format and CLI usage
+
+- Job IDs are **12-character hex** strings from `uuid4().hex[:12]` (never contain spaces at creation).
+- Prefer a PowerShell variable so line-wrap copy-paste cannot split the token:
+
+```powershell
+$jid = '<12-hex-chars>'
+$env:PYTHONPATH = 'backend'
+.\muravei_env\Scripts\python.exe backend\scripts\diagnose_recon_scenes.py --job-id $jid --json
+```
+
+- Recon CLIs (`diagnose_recon_scenes`, `batch_gsplat_train`) accept `--job-id` with multiple tokens and **join + sanitize** whitespace. `run_gsplat_train_windows.ps1 -JobId` also strips whitespace. Warnings go to stderr if the id was cleaned or is not 12 hex chars.
+- If UI shows only a sparse cloud: check `manifest.status` / `artifact`. `colmap_done` + missing `model.ply` means gsplat train has not finished — run the train wrapper with `-JobId $jid`.
+
 ## Artifacts
 
 ```

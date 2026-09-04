@@ -14,6 +14,7 @@ from typing import Any
 
 from services.colmap_poses import export_camera_poses, export_sparse_points, nearest_pose
 from services.ffmpeg_util import video_duration_sec
+from services.job_ids import sanitize_job_id
 from services.recon_diagnose import get_best_sparse_dir
 from services.security import archive_root, assert_in_archive
 
@@ -156,7 +157,7 @@ def colmap_path() -> str | None:
 
 
 def _job_dir(job_id: str) -> Path:
-    return RECON_ROOT / job_id
+    return RECON_ROOT / sanitize_job_id(job_id)
 
 
 def _write_manifest(job_dir: Path, data: dict[str, Any]) -> None:
@@ -548,7 +549,7 @@ def start(
         if dur > 0:
             te = min(te, dur)
 
-        job_id = uuid.uuid4().hex[:12]
+        job_id = sanitize_job_id(uuid.uuid4().hex[:12])
         _stop.clear()
         _events.clear()
         _state.update(
@@ -614,6 +615,7 @@ def get_poses_at_time(video_path: str, time_sec: float) -> dict[str, Any] | None
 
 
 def update_manifest(job_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+    job_id = sanitize_job_id(job_id)
     job_dir = _job_dir(job_id)
     if not job_dir.is_dir():
         raise FileNotFoundError(f"Job not found: {job_id}")
@@ -631,7 +633,7 @@ def update_manifest(job_id: str, patch: dict[str, Any]) -> dict[str, Any]:
 
 
 def asset_path(job_id: str, name: str) -> Path:
-    job_dir = _job_dir(job_id)
+    job_dir = _job_dir(sanitize_job_id(job_id))
     target = (job_dir / name).resolve()
     if not str(target).startswith(str(job_dir.resolve())):
         raise ValueError("Invalid asset path")

@@ -9,6 +9,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(BASE / "backend"))
 
+from services.job_ids import join_job_id_tokens  # noqa: E402
 from services.recon_diagnose import (  # noqa: E402
     exit_code_for,
     scan_recon_root,
@@ -55,7 +56,12 @@ def _print_table(diagnoses: list) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Diagnose archive/recon job folders")
     ap.add_argument("--json", action="store_true", help="JSON output")
-    ap.add_argument("--job-id", help="Single job id under archive/recon/")
+    ap.add_argument(
+        "--job-id",
+        nargs="+",
+        metavar="HEX",
+        help="Single job id under archive/recon/ (whitespace tokens are joined)",
+    )
     ap.add_argument(
         "--recon-root",
         type=Path,
@@ -64,7 +70,8 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    diagnoses = scan_recon_root(args.recon_root, job_id=args.job_id)
+    job_id = join_job_id_tokens(args.job_id)
+    diagnoses = scan_recon_root(args.recon_root, job_id=job_id)
     if args.json:
         print(json.dumps([d.to_dict() for d in diagnoses], indent=2, ensure_ascii=False))
     else:

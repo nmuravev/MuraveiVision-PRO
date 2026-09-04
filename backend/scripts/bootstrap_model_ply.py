@@ -12,6 +12,7 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(BASE / "backend"))
+from services.job_ids import sanitize_job_dir  # noqa: E402
 from services.recon_diagnose import get_best_sparse_dir  # noqa: E402
 
 C0 = 0.28209479177387814
@@ -92,6 +93,7 @@ def main() -> int:
     job_dir = args.job_dir
     if not job_dir.is_absolute():
         job_dir = (BASE / job_dir).resolve()
+    job_dir = sanitize_job_dir(job_dir)
     sparse = get_best_sparse_dir(job_dir)
     if sparse is None:
         print(

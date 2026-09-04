@@ -10,6 +10,7 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(BASE / "backend"))
+from services.job_ids import join_job_id_tokens  # noqa: E402
 from services.recon_diagnose import get_best_sparse_dir  # noqa: E402
 
 RECON_ROOT = BASE / "archive" / "recon"
@@ -108,7 +109,12 @@ def _train_job(job_dir: Path, max_steps: int, data_factor: int, force: bool, boo
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Batch gsplat train for recon jobs")
-    ap.add_argument("--job-id", help="Single job id under archive/recon/")
+    ap.add_argument(
+        "--job-id",
+        nargs="+",
+        metavar="HEX",
+        help="Single job id under archive/recon/ (whitespace tokens are joined)",
+    )
     ap.add_argument("--force", action="store_true", help="Retrain even if model.ply exists")
     ap.add_argument(
         "--max-steps",
@@ -128,8 +134,9 @@ def main() -> int:
         return 1
 
     job_dirs: list[Path] = []
-    if args.job_id:
-        job_dirs = [args.recon_root / args.job_id]
+    job_id = join_job_id_tokens(args.job_id)
+    if job_id:
+        job_dirs = [args.recon_root / job_id]
     else:
         for child in sorted(args.recon_root.iterdir()):
             if child.is_dir() and (child / "manifest.json").is_file():

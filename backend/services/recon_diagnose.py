@@ -163,13 +163,16 @@ def scan_recon_root(
     recon_root: Path | None = None,
     job_id: str | None = None,
 ) -> list[JobDiagnosis]:
+    from services.job_ids import sanitize_job_id  # noqa: PLC0415
+
     root = recon_root or RECON_ROOT
     if not root.is_dir():
         return []
 
     cuda, gsplat = _env_checks()
     if job_id:
-        return [diagnose_job(root / job_id, cuda=cuda, gsplat=gsplat)]
+        cleaned = sanitize_job_id(job_id)
+        return [diagnose_job(root / cleaned, cuda=cuda, gsplat=gsplat)]
 
     jobs: list[JobDiagnosis] = []
     for child in sorted(root.iterdir()):

@@ -17,6 +17,15 @@ $Py = Join-Path $RepoRoot "muravei_env\Scripts\python.exe"
 if (-not (Test-Path $Vcvars)) { throw "vcvars not found: $Vcvars" }
 if (-not (Test-Path $Py)) { throw "python not found: $Py" }
 
+# Strip copy-paste whitespace / line wraps from -JobId (any job, not a specific id).
+if ($JobId) {
+    $originalJobId = $JobId
+    $JobId = ($JobId -replace '\s', '')
+    if ($JobId -ne $originalJobId) {
+        Write-Warning "JobId sanitized from '$originalJobId' to '$JobId'"
+    }
+}
+
 $forceArg = if ($Force) { "--force" } else { "" }
 $bootArg = if ($BootstrapOnly) { "--bootstrap-only" } else { "" }
 $jobArg = if ($JobId) { "--job-id $JobId" } else { "" }
