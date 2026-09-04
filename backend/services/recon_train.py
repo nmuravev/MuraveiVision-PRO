@@ -6,10 +6,16 @@ import re
 import subprocess
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any
 
 from services import recon_scanner
+from services.gsplat_msvc import (
+    MSVC_NEED_MSG,
+    build_gsplat_launch,
+    gsplat_train_ready,
+)
 from services.job_ids import sanitize_job_id
 from services.runtime_log import write as runtime_write
 from services.security import BASE_DIR
@@ -19,6 +25,7 @@ RECON_ROOT = BASE_DIR / "archive" / "recon"
 PY = BASE_DIR / "muravei_env" / "Scripts" / "python.exe"
 BOOTSTRAP = BASE_DIR / "backend" / "scripts" / "bootstrap_model_ply.py"
 TRAIN_JOB = BASE_DIR / "backend" / "scripts" / "gsplat_train_job.py"
+PATCH_JIT = BASE_DIR / "scripts" / "patch_gsplat_windows_jit.py"
 
 _lock = threading.Lock()
 _proc: subprocess.Popen[str] | None = None
@@ -123,6 +130,32 @@ def _patch_artifact(job_dir: Path, *, error: str | None = None) -> str | None:
 _STEP_RE = re.compile(r"(?:step|iter)[s\s:=]+(\d+)", re.I)
 _LOSS_RE = re.compile(r"loss[=\s:]+([0-9.eE+-]+)", re.I)
 _PSNR_RE = re.compile(r"psnr[=\s:]+([0-9.eE+-]+)", re.I)
+_IMPORTANT_RE = re.compile(
+    r"Error|Traceback|cl\.?exe|\bcl\b|CUDA|JIT|gsplat_train:|fatal|cannot find|MSVC|vcvars",
+    re.I,
+)
+
+
+def format_train_error(code: int, lines: list[str]) -> str:
+    """Human snippet from train log tail; always prefixes exit code."""
+    base = f"exit code {code}"
+    if not lines:
+        return base
+    important = [ln.strip() for ln in lines if ln.strip() and _IMPORTANT_RE.search(ln)]
+    chosen = important[-3:] if important else [ln.strip() for ln in lines if ln.strip()][-3:]
+    snippet = " | ".join(chosen)
+    if len(snippet) > 280:
+        snippet = snippet[:277] + "..."
+    return f"{base}: {snippet}" if snippet else base
+
+
+def _line_interesting(line: str) -> bool:
+    return bool(
+        _IMPORTANT_RE.search(line)
+        or _STEP_RE.search(line)
+        or _LOSS_RE.search(line)
+        or _PSNR_RE.search(line)
+    )
 
 
 def _parse_line(line: str, max_steps: int) -> None:
@@ -132,8 +165,6 @@ def _parse_line(line: str, max_steps: int) -> None:
         steps = int(m.group(1))
         upd["steps"] = steps
         if max_steps > 0 and steps > 0:
-            remaining = max(0, max_steps - steps)
-            # rough ETA unknown without rate; leave None unless we track time
             upd["eta_seconds"] = None
     m = _LOSS_RE.search(line)
     if m:
@@ -160,6 +191,8 @@ def _run_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) -> None:
     script = str(cfg.get("script") or "gsplat")
     max_steps = int(cfg.get("max_steps") or 0)
     t0 = time.time()
+    log_path = job_dir / "train.log"
+    ring: deque[str] = deque(maxlen=40)
 
     _emit(
         {
@@ -177,6 +210,7 @@ def _run_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) -> None:
         }
     )
 
+    env: dict[str, str] | None = None
     if script == "bootstrap":
         cmd = [
             py,
@@ -187,8 +221,19 @@ def _run_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) -> None:
             str(int(cfg.get("max_points") or 80_000)),
         ]
     else:
-        cmd = [
-            py,
+        if PATCH_JIT.is_file():
+            try:
+                subprocess.run(
+                    [py, str(PATCH_JIT)],
+                    cwd=str(BASE_DIR),
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                runtime_write("warn", "recon_train", f"JIT patch skip: {exc}")
+        script_args = [
             str(TRAIN_JOB),
             "--job-dir",
             str(job_dir),
@@ -197,37 +242,54 @@ def _run_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) -> None:
             "--data-factor",
             str(int(cfg.get("data_factor") or 4)),
         ]
+        try:
+            cmd, env = build_gsplat_launch(py, script_args, cwd=BASE_DIR)
+        except RuntimeError as exc:
+            err = str(exc)
+            _patch_artifact(job_dir, error=err)
+            _emit({"status": "error", "error": err, "message": f"Обучение не удалось: {err}"})
+            runtime_write("error", "recon_train", f"preflight job={job_id} {err}")
+            return
 
     runtime_write("info", "recon_train", f"start preset={preset_id} job={job_id}")
     try:
-        proc = subprocess.Popen(
-            cmd,
-            cwd=str(BASE_DIR),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            bufsize=1,
-        )
-        with _lock:
-            _proc = proc
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            line = line.rstrip()
-            if line:
+        with log_path.open("w", encoding="utf-8", errors="replace") as log_f:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(BASE_DIR),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+                env=env,
+            )
+            with _lock:
+                _proc = proc
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                line = line.rstrip("\r\n")
+                if not line:
+                    continue
+                ring.append(line)
+                log_f.write(line + "\n")
+                log_f.flush()
                 _parse_line(line, max_steps)
+                if _line_interesting(line):
+                    msg = line if len(line) <= 240 else line[:237] + "..."
+                    _emit({"message": msg})
                 if max_steps > 0 and _state.get("steps"):
                     steps = int(_state["steps"] or 0)
                     elapsed = max(1.0, time.time() - t0)
                     rate = steps / elapsed
                     if rate > 0:
                         _emit({"eta_seconds": int(max(0, (max_steps - steps) / rate))})
-        code = proc.wait()
+            code = proc.wait()
         with _lock:
             _proc = None
         if code != 0:
-            err = f"exit code {code}"
+            err = format_train_error(code, list(ring))
             _patch_artifact(job_dir, error=err)
             _emit(
                 {
@@ -281,6 +343,11 @@ def start(job_id: str, preset: str) -> dict[str, Any]:
     if preset not in presets:
         raise ValueError(f"unknown preset: {preset}")
     cfg = presets[preset]
+    script = str(cfg.get("script") or "gsplat")
+    if script == "gsplat":
+        ok, reason = gsplat_train_ready()
+        if not ok:
+            raise RuntimeError(reason or MSVC_NEED_MSG)
     min_v = float(cfg.get("min_vram_gb") or 0)
     vram = total_vram_gb()
     if min_v and (vram <= 0 or vram < min_v):

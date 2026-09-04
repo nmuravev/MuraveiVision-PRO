@@ -120,11 +120,15 @@ def used_vram_gb() -> float:
 
 
 def presets_for_client() -> list[dict[str, Any]]:
+    from services.gsplat_msvc import gsplat_train_ready
+
     presets, _ = load_presets()
     vram = total_vram_gb()
+    msvc_ok, msvc_reason = gsplat_train_ready()
     items: list[dict[str, Any]] = []
     for pid, cfg in presets.items():
         min_v = float(cfg.get("min_vram_gb") or 0)
+        script = str(cfg.get("script") or "")
         disabled = bool(min_v and vram > 0 and vram < min_v)
         reason = ""
         if disabled:
@@ -132,6 +136,9 @@ def presets_for_client() -> list[dict[str, Any]]:
         elif vram <= 0 and min_v:
             reason = f"Нужно ≥{min_v:g} ГБ VRAM (CUDA недоступна)"
             disabled = True
+        elif script == "gsplat" and not msvc_ok:
+            disabled = True
+            reason = msvc_reason or "Нужен MSVC 14.44 (см. ENGINEER_GUIDE) или пресет Bootstrap"
         items.append(
             {
                 "id": pid,

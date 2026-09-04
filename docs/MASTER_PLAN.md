@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `6ebd994` in-panel 3D ops progress modal + stale COLMAP fix
-- **Unit tests:** 185
+- **Commit:** *(pending — gsplat train exit-code / MSVC wrap)*
+- **Unit tests:** 191
 - **E2E specs:** 6+
-- **Status:** Stale COLMAP unlock + in-panel ops progress modal (minimize/chip, auto-dismiss)
-- **Last updated by:** feat: in-panel 3D ops progress modal (`6ebd994`)
+- **Status:** Train tee+snippet + MSVC vcvars wrap/preflight for Balanced/High
+- **Last updated by:** fix: gsplat train exit code 1 (MSVC wrap + train.log)
 
 ---
 

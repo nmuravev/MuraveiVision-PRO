@@ -146,6 +146,8 @@ PyPI `gsplat` is **JIT-only** (no `csrc`). First CUDA call compiles kernels. On 
    powershell -ExecutionPolicy Bypass -File scripts\run_gsplat_train_windows.ps1 -Force -MaxSteps 30000
    ```
 
+**In-app UI train** (`/api/recon/train/*`): Balanced/High call the same gsplat path. Backend discovers `vcvars64` (env `MURAVEI_VCVARS64` / vswhere / Program Files) and launches under MSVC 14.44 when `cl` is not already on PATH. Without MSVC, presets are disabled with a clear reason — use **Bootstrap**. Full stdout is teed to `archive/recon/<job>/train.log`; failures include a short log snippet (not only `exit code N`).
+
 Expect `model.ply` **≫ 1 MB** and `gsplat_meta.json` with `"gsplat": true`. Tiny ply (~KB) with `"gsplat": true` means train ran but COLMAP gave almost no Gaussians (weak scene).
 
 **Multi-model COLMAP:** if mapper writes several `sparse/N` folders, diagnose / train / bootstrap / in-app recon pick the **largest valid** points cloud (`get_best_sparse_dir`). Trainer staging still copies that model into `gsplat_data/sparse/0/` for gsplat examples.
