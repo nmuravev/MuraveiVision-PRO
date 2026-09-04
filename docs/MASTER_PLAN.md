@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `9f678fe` silence recon train 404 modal; kill stale uvicorn note
+- **Commit:** (pending) sparse points UX vs photoreal splat CTA
 - **Unit tests:** 183
 - **E2E specs:** 6+
-- **Status:** Train API live after hard kill of zombie uvicorn; silent 404 for presets/status; inline presetsError
-- **Last updated by:** fix: silence recon train 404 modal (`9f678fe`)
+- **Status:** Sparse COLMAP preview clarified (circular points + Balanced CTA); train 404 modal fixed
+- **Last updated by:** fix: sparse points UX — not cubes; CTA for Balanced splat
 
 ---
 

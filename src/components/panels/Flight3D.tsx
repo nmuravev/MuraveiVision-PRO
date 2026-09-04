@@ -113,13 +113,6 @@ export const Flight3D: React.FC = () => {
     stopTrain,
   } = useReconTrain(manifest?.job_id, isAuthenticated);
 
-  const needsTrainBanner =
-    viewMode === 'scene' &&
-    manifest?.status === 'colmap_done' &&
-    classifyArtifact(manifest.artifact) !== 'splat' &&
-    !training &&
-    train.status !== 'error';
-
   const [track, setTrack] = useState<GeoPoint[]>([]);
   const [geoDets, setGeoDets] = useState<DetMarker[]>([]);
   const [status, setStatus] = useState<string>('Нет данных');
@@ -132,6 +125,16 @@ export const Flight3D: React.FC = () => {
   const [sceneLoading, setSceneLoading] = useState(false);
   const [sceneError, setSceneError] = useState<string | null>(null);
   const [sceneKind, setSceneKind] = useState<'points' | 'splat' | 'empty'>('empty');
+  const [splatKind, setSplatKind] = useState<'train' | 'bootstrap' | null>(null);
+
+  const needsTrainBanner =
+    viewMode === 'scene' &&
+    !training &&
+    train.status !== 'error' &&
+    (sceneKind === 'points' ||
+      (Boolean(manifest?.status === 'colmap_done') &&
+        classifyArtifact(manifest?.artifact) !== 'splat'));
+
   const viewModeRef = useRef(viewMode);
   const scalePickRef = useRef(scalePick);
   const sparseRef = useRef(sparsePoints);
@@ -302,6 +305,14 @@ export const Flight3D: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reconRunning, manifest?.job_id, manifest?.status]);
+
+  useEffect(() => {
+    if (train.status === 'done' && train.artifact) {
+      framedKeyRef.current = '';
+      void loadManifest();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [train.status, train.artifact]);
 
   const runBuild3d = () => {
     const { tStart, tEnd } = computeReconSegment(playheadPosition, mediaDuration);
@@ -591,6 +602,7 @@ export const Flight3D: React.FC = () => {
         splatHandleRef.current = null;
       }
       disposeSceneChildren(st.sceneGroup);
+      setSplatKind(null);
     };
 
     const snapCamera = () => {
@@ -686,24 +698,45 @@ export const Flight3D: React.FC = () => {
             setSceneLoading(false);
             return;
           }
+          let isBootstrap = false;
+          try {
+            const metaRes = await fetch(`/api/recon/asset/${jobId}/gsplat_meta.json`, {
+              headers: { ...authHeaders(), [SILENT_API_ERROR_HEADER]: '1' },
+            });
+            if (metaRes.ok) {
+              const meta = (await metaRes.json()) as { kind?: string };
+              isBootstrap = meta.kind === 'bootstrap_colmap';
+            }
+          } catch {
+            /* optional meta */
+          }
           const hint = artifact.toLowerCase().endsWith('.ksplat')
             ? 'ksplat'
             : artifact.toLowerCase().endsWith('.splat')
               ? 'splat'
               : 'ply';
-          const handle = await loadSplatDropIn(st.sceneGroup, blobUrl, hint);
-          if (cancelled) {
-            handle.dispose();
+          try {
+            const handle = await loadSplatDropIn(st.sceneGroup, blobUrl, hint);
+            if (cancelled) {
+              handle.dispose();
+              setSceneLoading(false);
+              return;
+            }
+            splatHandleRef.current = handle;
+            if (manifest?.rotation_x) st.sceneGroup.rotation.x = manifest.rotation_x;
+            else st.sceneGroup.rotation.x = 0;
+            applyCamera(handle.viewer);
+            setSplatKind(isBootstrap ? 'bootstrap' : 'train');
+            setSceneKind('splat');
             setSceneLoading(false);
             return;
+          } catch (splatErr) {
+            URL.revokeObjectURL(blobUrl);
+            framedKeyRef.current = '';
+            throw splatErr instanceof Error
+              ? splatErr
+              : new Error('Не удалось загрузить Gaussian splat');
           }
-          splatHandleRef.current = handle;
-          if (manifest?.rotation_x) st.sceneGroup.rotation.x = manifest.rotation_x;
-          else st.sceneGroup.rotation.x = 0;
-          applyCamera(handle.viewer);
-          setSceneKind('splat');
-          setSceneLoading(false);
-          return;
         }
 
         if (artifactKind === 'points' && jobId && artifact) {
@@ -812,14 +845,20 @@ export const Flight3D: React.FC = () => {
       const ok = manifest.status === 'colmap_done' || manifest.status === 'done';
       const art = manifest.artifact ? ` · ${manifest.artifact}` : '';
       const kind =
-        sceneKind === 'splat' ? 'Gaussian splat' : sceneKind === 'points' ? `${nPts || 'PLY'} точек` : 'нет облака';
+        sceneKind === 'splat'
+          ? splatKind === 'bootstrap'
+            ? 'Bootstrap splat (не фотореализм)'
+            : 'Gaussian splat'
+          : sceneKind === 'points'
+            ? `sparse COLMAP · нужен train (${nPts || 'PLY'} точек)`
+            : 'нет облака';
       setStatus(
         ok
           ? `Сцена: ${manifest.status} · ${manifest.job_id}${art} · ${kind} · сегмент ${seg}`
           : `Сцена: ${manifest.status}${manifest.job_id ? ` · ${manifest.job_id}` : ''}`,
       );
     }
-  }, [viewMode, manifest, sparsePoints, sceneKind]);
+  }, [viewMode, manifest, sparsePoints, sceneKind, splatKind]);
 
   const applyScale = async () => {
     if (!manifest?.job_id || scalePick.length !== 2) return;
@@ -952,9 +991,11 @@ export const Flight3D: React.FC = () => {
             {' '}
             ·{' '}
             {sceneKind === 'splat'
-              ? 'Gaussian splat'
+              ? splatKind === 'bootstrap'
+                ? 'Bootstrap (не фотореализм)'
+                : 'Gaussian splat'
               : sceneKind === 'points'
-                ? 'point cloud'
+                ? 'sparse COLMAP · нужен train'
                 : manifest?.status === 'error'
                   ? 'ошибка'
                   : 'нет сцены'}
@@ -968,7 +1009,12 @@ export const Flight3D: React.FC = () => {
         <div className="px-2 py-1 border-b border-[var(--dv-border)] flex flex-col gap-1 text-[10px] flex-shrink-0">
           {needsTrainBanner && (
             <div className="text-amber-300 bg-amber-950/40 border border-amber-700/50 rounded-sm px-2 py-1">
-              COLMAP завершён. Выберите профиль обучения для фотореалистичной сцены.
+              Облако COLMAP — не фотореализм. Выберите Balanced (5–10 мин) или High Quality.
+            </div>
+          )}
+          {sceneKind === 'splat' && splatKind === 'bootstrap' && !training && (
+            <div className="text-amber-300 bg-amber-950/40 border border-amber-700/50 rounded-sm px-2 py-1">
+              Bootstrap загружен (минимальный splat). Для фотореализма запустите Balanced / High.
             </div>
           )}
           {presetsError && (
@@ -1007,6 +1053,7 @@ export const Flight3D: React.FC = () => {
                 className="px-2 py-0.5 bg-[var(--dv-surface)] hover:bg-[var(--dv-hover)] disabled:opacity-40 rounded-sm"
                 onClick={() =>
                   void startTrain(p.id, () => {
+                    framedKeyRef.current = '';
                     void loadManifest();
                   })
                 }
@@ -1082,6 +1129,17 @@ export const Flight3D: React.FC = () => {
             </div>
           </div>
         )}
+        {viewMode === 'scene' &&
+          sceneKind === 'points' &&
+          !sparseWeak &&
+          !reconRunning &&
+          !training && (
+            <div className="absolute bottom-2 left-2 right-2 pointer-events-none z-10">
+              <div className="px-2 py-1 rounded-sm bg-black/70 text-[10px] text-[var(--dv-text-muted)] border border-[var(--dv-border)] text-center">
+                Sparse COLMAP (точки) — не фотореализм. Нажмите Balanced выше для gsplat.
+              </div>
+            </div>
+          )}
       </div>
     </div>
   );

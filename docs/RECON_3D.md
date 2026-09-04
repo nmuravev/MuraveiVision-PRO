@@ -50,6 +50,8 @@ After COLMAP (`colmap_done`), open **Гео 3D → Сцена**. Yellow banner p
 | Balanced | `balanced` (default) | 5–10 мин | gsplat ~7000 steps |
 | High Quality | `high` | 15–30 мин | ~30000 steps; **disabled if VRAM &lt; 12 ГБ** |
 
+**UI note:** after COLMAP, «Сцена» may show a light-blue **point cloud** (sparse). That is expected — not a broken canvas. Photorealism requires Balanced/High. Square «cubes» were WebGL point sprites; UI now uses circular discs + CTA banner.
+
 Progress (SSE `/api/recon/train/stream`, poll fallback 3s): steps, loss/PSNR when parsed, VRAM. One train at a time; COLMAP and train mutually disable each other.
 
 Engineer overrides: edit [`config/train_presets.json`](../config/train_presets.json) at **repo root**. Invalid/missing → built-in Balanced + warning in `logs/runtime.log`. UI never exposes raw step inputs.

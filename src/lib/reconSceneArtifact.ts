@@ -90,18 +90,48 @@ export function isSparseClusterWeak(sparse: Float32Array): boolean {
   return false;
 }
 
+let _discMap: THREE.CanvasTexture | null = null;
+
+/** Soft disc sprite so points render as circles, not WebGL squares («кубики»). */
+export function pointDiscTexture(): THREE.CanvasTexture {
+  if (_discMap) return _discMap;
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.55, 'rgba(255,255,255,0.85)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+  }
+  _discMap = new THREE.CanvasTexture(canvas);
+  _discMap.needsUpdate = true;
+  return _discMap;
+}
+
+function sparsePointSize(maxDim: number): number {
+  return Math.max(0.01, Math.min(0.08, maxDim * 0.01));
+}
+
 /** Build Points from Float32Array xyz in COLMAP/source coordinates. */
 export function pointsFromSparse(sparse: Float32Array): THREE.Points {
-  const { maxDim, minDim } = sparseClusterMetrics(sparse);
-  const pointSize = Math.max(0.04, Math.min(1.2, (minDim || maxDim) * 0.35));
+  const { maxDim } = sparseClusterMetrics(sparse);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(sparse, 3));
   return new THREE.Points(
     geo,
     new THREE.PointsMaterial({
-      color: 0x88ccff,
-      size: pointSize,
+      color: 0x7ab8e8,
+      size: sparsePointSize(maxDim),
       sizeAttenuation: true,
+      map: pointDiscTexture(),
+      transparent: true,
+      depthWrite: false,
+      alphaTest: 0.05,
     }),
   );
 }
@@ -115,12 +145,35 @@ export async function loadPlyAsPoints(url: string): Promise<THREE.Points> {
   if (!geo.getAttribute('position')) {
     throw new Error('PLY без позиций');
   }
+  const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+  const arr = pos.array as Float32Array;
+  const xyz =
+    pos.itemSize === 3 && arr.length === pos.count * 3
+      ? arr
+      : (() => {
+          const out = new Float32Array(pos.count * 3);
+          for (let i = 0; i < pos.count; i++) {
+            out[i * 3] = pos.getX(i);
+            out[i * 3 + 1] = pos.getY(i);
+            out[i * 3 + 2] = pos.getZ(i);
+          }
+          return out;
+        })();
+  const { maxDim } = sparseClusterMetrics(xyz);
   const hasColor = Boolean(geo.getAttribute('color'));
   const mat = new THREE.PointsMaterial({
-    size: 2.0,
+    size: sparsePointSize(maxDim),
     sizeAttenuation: true,
     vertexColors: hasColor,
-    color: hasColor ? 0xffffff : 0x88ccff,
+    color: hasColor ? 0xffffff : 0x7ab8e8,
+    ...(hasColor
+      ? {}
+      : {
+          map: pointDiscTexture(),
+          transparent: true,
+          depthWrite: false,
+          alphaTest: 0.05,
+        }),
   });
   return new THREE.Points(geo, mat);
 }
