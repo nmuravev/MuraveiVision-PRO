@@ -4,11 +4,24 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `d6c6fbd` — HUD exclusion overlay collapsible eye chip
-- **Unit tests:** 227
+- **Commit:** _(RC commit hash — see git log)_
+- **Unit tests:** 227 OK
 - **E2E specs:** 6+
-- **Status:** HUD exclusion Viewer chip defaults to collapsed eye-icon button; expand shows margins + правка/сброс; ops modal still shows live COLMAP stages
-- **Last updated by:** fix: collapse HUD exclusion chip to eye button (d6c6fbd)
+- **Status:** Ready for merge to main
+- **Last updated by:** docs: update MASTER_PLAN for v3.1 release candidate
+
+## Major Changes in This Release
+
+- 3D Reconstruction: COLMAP sequential matching + frame budget (stable on 8GB VRAM)
+- HUD Exclusion: Auto-detection + blur/crop for detect/CD/recon
+- Session Trace: Page-lifetime singleton + sessionStorage UUID
+- Media Paths: Canonical `archive/...` paths, no hardcoded `D:\` paths
+- 3D Train UI: Presets (Bootstrap/Balanced/High) with VRAM gate
+- CSP Security: `blob:` support for 3D splat
+- Zero-Hardcode Policy: Systematic scan + durable Cursor rule
+- Portable build hardening: unique `stage_*`, host-pip bake, offline wheels, stable CA bundle
+- Network Replication 3.1: multi-machine target sync via JWT
+- Phase 3 closed: Batch Seg / SAM3 / Change Detection v3 (incl. Batch CD)
 
 ---
 

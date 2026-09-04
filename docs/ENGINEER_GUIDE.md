@@ -156,7 +156,7 @@ Do **not** set `PYTHONHOME` to `muravei_env`. Details: [RECON_3D.md](RECON_3D.md
 ## Обслуживание
 
 - **Обновление:** `git pull` → `pip install -r requirements.txt` → `npm install` → `npm run build`. Схема БД мигрируется автоматически (`init_db`, аддитивные `ALTER TABLE`).
-- **Portable:** `npm run portable` (Lite) / `npm run portable:full` — [PORTABLE.md](PORTABLE.md). Пекётся embeddable 3.12.10, не хостовый 3.14.
+- **Portable:** `npm run portable` (Lite) / `portable:mini` / `portable:full` — [PORTABLE.md](PORTABLE.md). Пекётся embeddable 3.12.10, не хостовый 3.14. Уникальный `stage_*`, host-pip + `portable/cache/wheels`, CA вне site-packages. Перед сборкой остановите backend; при DLL/AV lock — reboot. Wheels: `scripts\cache_portable_wheels.ps1`.
 - **Кэш/логи:** `logs/` растут — чистить по необходимости. `MURAVEI_TRASH_PURGE` — автоочистка корзины при старте.
 - **Тесты перед коммитом:** `npm run build` → `python -m unittest discover -s tests` (из `backend/`) → `npm run test:field` → `smoke_lbs_ft.py`.
 

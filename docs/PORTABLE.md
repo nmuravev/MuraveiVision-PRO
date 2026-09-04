@@ -8,6 +8,22 @@
 
 **Python:** только embeddable / `muravei_env` **3.12.10**. Host `C:\Python314` и bare `python` запрещены.
 
+## Hardening (v3.1)
+
+- **Unique staging:** каждый запуск пишет в `portable/stage_<Kit>_<yyyyMMdd_HHmmss>/`; в начале чистятся старые `stage_*`, `*.locked_*` и legacy fixed-name dirs. ZIP-имена стабильны (`MuraveiVision_PRO_Mini.zip` и т.д.).
+- **Host-pip bake:** зависимости ставятся через host `muravei_env\Scripts\python.exe -m pip --python <staged_python>` — **не** через staged `python -m pip` (ломается AV / пропадает `cacert.pem`).
+- **Offline wheels:** предпочтительно `portable/cache/wheels` (`--no-index --find-links`). Один раз на машине сборки:
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts\cache_portable_wheels.ps1
+  # FullKit + cu128 torch:
+  powershell -ExecutionPolicy Bypass -File scripts\cache_portable_wheels.ps1 -WithTorchCu128
+  ```
+- **CA bundle:** стабильный `portable/cache/cacert.pem` (вне stage site-packages); env `SSL_CERT_FILE` / `PIP_CERT` / …
+- **Robocopy fallback:** только если host-pip bake упал, или `MURAVEI_PORTABLE_MIRROR=1`.
+- **Перед сборкой:** остановите host `uvicorn` / portable stage (DLL locks). Если AV держит файлы — перезагрузка ПК, затем повтор.
+
+Все пути в скриптах — относительно корня репо / env (`OLLAMA_MODELS`, `%USERPROFILE%\.ollama`, `-OllamaModelsRoot`). Без абсолютных `D:\…` machine paths.
+
 ## Матрица комплектов
 
 | Режим | npm / флаг | Содержимое | ZIP |
@@ -50,7 +66,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_portable.ps1 -FetchEmbedd
 npm run portable:full
 ```
 
-Опционально: `-OllamaZipPath`, `-OllamaVersion v0.11.4`, `-OllamaModelsRoot` (папка с `blobs\` + `manifests\`; build-time candidates: `OLLAMA_MODELS`, `D:\LLM\ollama`, `%USERPROFILE%\.ollama` — **не** runtime-пути в ZIP), `-SkipNpmBuild`, `-SkipZip`.
+Опционально: `-OllamaZipPath`, `-OllamaVersion v0.11.4`, `-OllamaModelsRoot` (папка с `blobs\` + `manifests\`; build-time candidates: `OLLAMA_MODELS`, `%USERPROFILE%\.ollama` / `.ollama\models` — **не** runtime-пути в ZIP), `-SkipNpmBuild`, `-SkipZip`.
 
 В FullKit копируется **только** `qwen2.5vl:7b` (~6 GB blobs), не весь локальный store Ollama.  
 3D: `sidecars/colmap` + `sidecars/gsplat_examples` (если есть в репо; иначе WARNING).

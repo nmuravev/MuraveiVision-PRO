@@ -20,6 +20,12 @@
 - **`ECONNRESET` на `POST /api/active-learning/collect`** при конкурентных воркерах Playwright. Mitigation: `workers: 1` в [playwright.config.ts](../playwright.config.ts) (уже выставлено). При ручном запуске нескольких тест-наборов против одного backend — возможен reset; перезапустите backend.
 - **SAHI `pip check` warning**: `sahi 0.12.6` декларирует `opencv-python>=4.12.0.88` (имя non-headless пакета), но установлен `opencv-python-headless`. `cv2` предоставляется headless-сборкой, runtime работает. Benign — можно игнорировать.
 
+## Portable build (RESOLVED 2026-09-05)
+
+- **Stale staging / DLL locks:** fixed-name stage dirs + live host uvicorn → `Remove-Item` / robocopy fails. Fix: timestamped `portable/stage_<Kit>_<stamp>/`, purge of `stage_*` / `*.locked_*` at start; stop backend before build; reboot if AV holds DLLs.
+- **`cacert.pem` vanishes mid-pip:** staged `python -m pip` self-upgrade deletes vendor CA while `SSL_CERT_FILE` still points at it. Fix: host `pip --python <staged>`; stable `portable/cache/cacert.pem` + env pins.
+- **AV breaking staged pip (`INSTALLER*.tmp`):** prefer offline `portable/cache/wheels` (`scripts/cache_portable_wheels.ps1`); robocopy host site-packages only as fallback / `MURAVEI_PORTABLE_MIRROR=1`. See [PORTABLE.md](PORTABLE.md).
+
 ## Не поддерживается (осознанно)
 
 - **Intel Arc/XPU** — не тестируется, провайдеры ORT могут отсутствовать. Только CUDA и CPU.
