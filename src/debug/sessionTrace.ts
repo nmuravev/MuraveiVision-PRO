@@ -6,6 +6,7 @@
 
 export const TRACE_HEADER = 'X-Muravei-Trace-Id';
 export const LS_KEY = 'muravei_session_trace';
+export const SESSION_UUID_KEY = 'muravei_session_trace_uuid';
 export const MAX_EVENTS = 500;
 
 export type TraceKind =
@@ -42,10 +43,33 @@ let sessionUuid = '';
 let seq = 0;
 let recording = true;
 let installed = false;
+let storeWatchersInstalled = false;
+let pageshowInstalled = false;
 let events: TraceEvent[] = [];
 const storeThrottleAt = new Map<string, number>();
 let fetchPatched = false;
 let originalFetch: typeof window.fetch | null = null;
+let onModalHandler: ((event: Event) => void) | null = null;
+
+function ensureSessionUuid(): string {
+  if (sessionUuid) return sessionUuid;
+  try {
+    const stored = sessionStorage.getItem(SESSION_UUID_KEY);
+    if (stored) {
+      sessionUuid = stored;
+      return sessionUuid;
+    }
+  } catch {
+    /* ignore */
+  }
+  sessionUuid = uuid();
+  try {
+    sessionStorage.setItem(SESSION_UUID_KEY, sessionUuid);
+  } catch {
+    /* ignore */
+  }
+  return sessionUuid;
+}
 
 function uuid(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -71,7 +95,7 @@ export function getTraceSessionId(): string {
 }
 
 export function nextTraceHeaderValue(): string {
-  if (!sessionUuid) sessionUuid = uuid();
+  ensureSessionUuid();
   seq += 1;
   return `${sessionUuid}-${seq}`;
 }
@@ -125,10 +149,10 @@ export function addEvent(
   data?: Record<string, unknown>,
 ): TraceEvent | null {
   if (!recording && kind !== 'note') return null;
-  if (!sessionUuid) sessionUuid = uuid();
+  ensureSessionUuid();
   seq += 1;
   const ev: TraceEvent = {
-    id: `fe-${seq}`,
+    id: `${sessionUuid}-${seq}`,
     ts: Date.now(),
     kind,
     traceId: `${sessionUuid}-${seq}`,
@@ -348,14 +372,9 @@ function installFetchPatch() {
   };
 }
 
-function uninstallFetchPatch() {
-  if (!fetchPatched || !originalFetch) return;
-  window.fetch = originalFetch;
-  fetchPatched = false;
-  originalFetch = null;
-}
-
 function installStoreWatchers() {
+  if (storeWatchersInstalled) return;
+  storeWatchersInstalled = true;
   // Lazy imports to avoid circular deps at module load
   void import('../store/useViewerStore').then(({ useViewerStore }) => {
     let prevPath = useViewerStore.getState().viewers['viewer-1']?.sourcePath;
@@ -426,37 +445,44 @@ function installStoreWatchers() {
   });
 }
 
-export function initSessionTrace(): () => void {
-  if (typeof window === 'undefined') return () => undefined;
-  if (installed) return () => undefined;
-  installed = true;
-  sessionUuid = uuid();
-  seq = 0;
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    // default ON when unset
-    recording = raw !== '0';
-  } catch {
-    recording = true;
-  }
-
+function attachDomListeners() {
   document.addEventListener('click', onClickCapture, true);
   document.addEventListener('keydown', onKeyDownCapture, true);
-  installFetchPatch();
-  installStoreWatchers();
+  if (!onModalHandler) {
+    onModalHandler = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      addEvent(
+        'modal',
+        `ErrorDetails ${detail?.code ?? ''} ${detail?.title || detail?.message || ''}`.trim(),
+        { name: detail?.name, message: detail?.message },
+      );
+    };
+  }
+  window.addEventListener('muravei:show-error-modal', onModalHandler);
+}
 
-  const onModal = (event: Event) => {
-    const detail = (event as CustomEvent).detail;
-    addEvent(
-      'modal',
-      `ErrorDetails ${detail?.code ?? ''} ${detail?.title || detail?.message || ''}`.trim(),
-      { name: detail?.name, message: detail?.message },
-    );
-  };
-  window.addEventListener('muravei:show-error-modal', onModal);
+function detachDomListeners() {
+  document.removeEventListener('click', onClickCapture, true);
+  document.removeEventListener('keydown', onKeyDownCapture, true);
+  if (onModalHandler) {
+    window.removeEventListener('muravei:show-error-modal', onModalHandler);
+  }
+}
 
-  addEvent('note', `Session trace init session=${sessionUuid.slice(0, 8)} rec=${recording}`);
+function installPageshowHandler() {
+  if (pageshowInstalled) return;
+  pageshowInstalled = true;
+  window.addEventListener('pageshow', (event) => {
+    if (!event.persisted) return;
+    // bfcache restore: module singleton still alive — re-attach DOM listeners only
+    if (!installed) {
+      attachDomListeners();
+      installed = true;
+    }
+  });
+}
 
+function exposeDebugApi() {
   const w = window as unknown as Record<string, unknown>;
   w.__muraveiSessionTrace = {
     getEvents,
@@ -474,12 +500,39 @@ export function initSessionTrace(): () => void {
       data?: Record<string, unknown>,
     ) => addEvent(kind, summary, data),
   };
+}
+
+/**
+ * Page-lifetime singleton. Strict Mode remount re-attaches listeners without
+ * resetting seq / sessionUuid / events (avoids duplicate React keys).
+ */
+export function initSessionTrace(): () => void {
+  if (typeof window === 'undefined') return () => undefined;
+
+  const firstBoot = !sessionUuid && seq === 0 && events.length === 0;
+  ensureSessionUuid();
+
+  if (!installed) {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      recording = raw !== '0';
+    } catch {
+      recording = true;
+    }
+    attachDomListeners();
+    installFetchPatch();
+    installStoreWatchers();
+    installPageshowHandler();
+    exposeDebugApi();
+    installed = true;
+    if (firstBoot) {
+      addEvent('note', `Session trace init session=${sessionUuid.slice(0, 8)} rec=${recording}`);
+    }
+  }
 
   return () => {
-    document.removeEventListener('click', onClickCapture, true);
-    document.removeEventListener('keydown', onKeyDownCapture, true);
-    window.removeEventListener('muravei:show-error-modal', onModal);
-    uninstallFetchPatch();
+    // Detach only; keep uuid/seq/events/fetch patch for remount + bfcache
+    detachDomListeners();
     installed = false;
   };
 }

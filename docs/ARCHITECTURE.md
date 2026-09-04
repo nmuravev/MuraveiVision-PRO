@@ -136,7 +136,7 @@ Viewer поддерживает до 4 инстансов, Архив|Live, pan/
 - JWT после PIN.
 - Relative `/api` пути.
 - Ограничение FS к `archive/` (медиа); USB-импорт — только removable root.
-- Portable CSP meta в `dist/index.html`.
+- Portable CSP meta в `dist/index.html` (`connect-src` includes `blob:` for gaussian-splats-3d ObjectURL fetch).
 
 ## Что не является частью текущего PRO
 

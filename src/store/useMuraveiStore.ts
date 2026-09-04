@@ -33,15 +33,7 @@ export function detectionCropSrc(id: string, _cropPath?: string | null): string 
 }
 
 /** Ensure Viewer sourcePath is under archive/ for media/stream. */
-export function archiveMediaPath(sourceVideo: string): string {
-  const raw = (sourceVideo || '').trim();
-  if (!raw) return raw;
-  if (/^live:/i.test(raw)) return raw;
-  const norm = raw.replace(/\\/g, '/');
-  if (/^[a-zA-Z]:\//.test(norm) || norm.startsWith('//')) return raw;
-  if (norm.toLowerCase().startsWith('archive/')) return norm;
-  return `archive/${norm.replace(/^\/+/, '')}`;
-}
+export { toArchiveMediaPath as archiveMediaPath } from '../lib/mediaPaths';
 
 export function xyxyFromRow(row: PersistedDetection): BoundingBox {
   return {
@@ -259,7 +251,6 @@ export const useMuraveiStore = create<MuraveiState>((set, get) => ({
 
   hydrateDetections: async (sourceVideo) => {
     const prevHydrated = get().hydratedSourceVideo;
-    console.log('[Store] hydrateDetections:', { sourceVideo, previous: prevHydrated });
 
     if (hydrateAbort) {
       hydrateAbort.abort();
@@ -268,7 +259,6 @@ export const useMuraveiStore = create<MuraveiState>((set, get) => ({
 
     const path = (sourceVideo || '').trim();
     if (!path) {
-      console.log('[Store] clearDetections (no sourceVideo)');
       set({
         detections: [],
         suppressedDetections: [],
@@ -340,7 +330,6 @@ export const useMuraveiStore = create<MuraveiState>((set, get) => ({
       const suppressed = [...serverSuppressed, ...clientStubs];
       const activeId = get().activeDetectionId;
       const activeRow = live.find((d) => d.id === activeId);
-      console.log('[Store] loaded detections:', { sourceVideo: path, count: live.length });
       set({
         detections: live,
         suppressedDetections: suppressed,

@@ -25,7 +25,7 @@ import {
 import type { BoundingBox, DetectedObject, PersistedDetection } from '../../types/muravei';
 import { Button, IconButton, Menu, MenuItem, ToolbarGroup } from '../ui';
 import { logger } from '../../services/logger';
-import { formatMediaTime, mediaPathsMatch } from '../../lib/mediaPaths';
+import { formatMediaTime, mediaPathsMatch, toArchiveMediaPath } from '../../lib/mediaPaths';
 import { useBatchScanHydrate } from '../../hooks/useBatchScanHydrate';
 import { batchScanProgressPct, useBatchScanStore } from '../../store/useBatchScanStore';
 import { yoloDebug } from '../../debug/yoloDebug';
@@ -2083,7 +2083,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
       onDrop={(e) => {
         e.preventDefault();
         const path = e.dataTransfer.getData('text/plain');
-        if (path) setSource(viewerId, path, null);
+        if (path) setSource(viewerId, toArchiveMediaPath(path), null);
       }}
     >
       <YoloDebugOverlay />

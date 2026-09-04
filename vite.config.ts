@@ -30,6 +30,8 @@ export default defineConfig({
         '**/runs/**',
         '**/muravei_env/**',
         '**/reports/**',
+        '**/portable/**',
+        '**/sidecars/**',
         '**/.backup/**',
         '**/openreel-reference/**',
       ],

@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `2dd2485` operator blockers 403/3D + detection tracks
-- **Unit tests:** 162
+- **Commit:** (pending) CSP blob + SessionTrace ids + archive paths
+- **Unit tests:** 179
 - **E2E specs:** 6+
-- **Status:** crop via /detections/crop; tracks in gallery; recon zombie recover; session trace KEEP
-- **Last updated by:** fix: 403 crop, stuck 3D, gallery tracks
+- **Status:** CSP connect-src blob for 3D splat; SessionTrace remount-safe; MediaPool archive/ paths
+- **Last updated by:** fix: CSP blob for splat; SessionTrace ids; archive media paths
 
 ---
 
