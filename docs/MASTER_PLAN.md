@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** *(pending — HUD zones 404 spam fix)*
+- **Commit:** `374a04d` HUD zones 404 spam fix
 - **Unit tests:** 198
 - **E2E specs:** 6+
 - **Status:** HUD zones 404 modal spam fixed (silent + smart poll)
-- **Last updated by:** fix: HUD /api/hud/zones 404 ErrorDetails spam
+- **Last updated by:** fix: HUD zones 404 spam (`374a04d`)
 
 ---
 
