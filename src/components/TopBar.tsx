@@ -124,7 +124,7 @@ export const TopBar: React.FC<TopBarProps> = ({
     if (!el || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width ?? 0;
-      setTopBarNarrow(w < 1400);
+      setTopBarNarrow(w < 1100);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -310,7 +310,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-0.5 p-0.5 bg-dv-deep rounded-sm border border-dv-border/60 min-w-0 flex-1 overflow-x-auto">
+        <div className="flex items-center gap-0.5 p-0.5 bg-dv-deep rounded-sm border border-dv-border/60 shrink-0 max-w-[min(100%,28rem)] overflow-x-auto">
           {WORKSPACE_TABS.map((tab) => (
             <button
               key={tab}
@@ -324,7 +324,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               }`}
             >
               {TAB_ICONS[tab]}
-              <span className="hidden xl:inline">{tab}</span>
+              <span className="hidden md:inline">{tab}</span>
               {tab === 'AI-анализ' && ollamaOk === false && (
                 <AlertTriangle
                   size={11}
@@ -335,9 +335,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           ))}
         </div>
 
-        <div className="ml-auto flex items-center gap-1.5 shrink-0">
-          {isAuthenticated && <VramIndicator />}
-
+        <div className="flex-1 min-w-0 flex items-center justify-end gap-1.5">
           {!topBarNarrow && (
             <>
               {isAuthenticated && (
@@ -356,7 +354,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                     }}
                   >
                     <FileText size={13} />
-                    {reportBusy ? 'Экспорт…' : 'Экспорт'}
+                    <span className="hidden lg:inline">{reportBusy ? 'Экспорт…' : 'Экспорт'}</span>
                   </Button>
                   <Menu open={exportOpen} className="w-52">
                     <MenuItem onClick={() => runExport('html')}>HTML-отчёт</MenuItem>
@@ -385,7 +383,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   }}
                 >
                   <LayoutGrid size={13} />
-                  Раскладка
+                  <span className="hidden lg:inline">Раскладка</span>
                 </Button>
                 <Menu open={layoutOpen}>
                   {LAYOUT_PRESETS.map(([key, label]) => (
@@ -427,7 +425,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   }}
                 >
                   <Monitor size={13} />
-                  Окна
+                  <span className="hidden lg:inline">Окна</span>
                 </Button>
                 <Menu open={windowOpen} className="max-h-96 overflow-auto w-56">
                   {ALL_VIEW_IDS.map((id) => {
@@ -463,7 +461,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 onClick={toggleGeo3d}
               >
                 <Globe2 size={13} />
-                Гео 3D
+                <span className="hidden lg:inline">Гео 3D</span>
               </Button>
 
               <Button
@@ -473,12 +471,12 @@ export const TopBar: React.FC<TopBarProps> = ({
                 onClick={() => onToggleTraceDock?.()}
               >
                 <Bug size={13} />
-                Трассировка
+                <span className="hidden lg:inline">Трассировка</span>
               </Button>
 
               <Button size="md" title="Панель отладки" onClick={toggleDebug}>
                 <Bug size={13} />
-                Отладка
+                <span className="hidden lg:inline">Отладка</span>
               </Button>
             </>
           )}
@@ -618,6 +616,10 @@ export const TopBar: React.FC<TopBarProps> = ({
               {reportError}
             </span>
           )}
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {isAuthenticated && <VramIndicator />}
 
           <div className="relative">
             <button
