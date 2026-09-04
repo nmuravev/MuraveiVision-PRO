@@ -124,7 +124,7 @@ export const TopBar: React.FC<TopBarProps> = ({
     if (!el || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width ?? 0;
-      setTopBarNarrow(w < 1280);
+      setTopBarNarrow(w < 1400);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -300,31 +300,31 @@ export const TopBar: React.FC<TopBarProps> = ({
         ref={menuRef}
         className="h-12 bg-dv-header border-b border-dv-border flex items-center px-3 flex-shrink-0 relative z-[100] gap-2 min-w-0 overflow-visible"
       >
-        <div className="flex items-center gap-2 mr-3 shrink-0">
+        <div className="flex items-center gap-2 mr-2 shrink-0">
           <div className="w-7 h-7 bg-dv-hot rounded-sm flex items-center justify-center text-white font-bold text-xs">
             M
           </div>
-          <div className="leading-tight">
+          <div className="leading-tight hidden sm:block">
             <div className="text-dv-text font-semibold text-sm tracking-wide">MuraveiVision</div>
             <div className="text-[9px] text-dv-muted tracking-wider uppercase">PRO</div>
           </div>
         </div>
 
-        <div className="flex gap-0.5 p-0.5 bg-dv-deep rounded-sm border border-dv-border/60 min-w-0 shrink">
+        <div className="flex items-center gap-0.5 p-0.5 bg-dv-deep rounded-sm border border-dv-border/60 min-w-0 flex-1 overflow-x-auto">
           {WORKSPACE_TABS.map((tab) => (
             <button
               key={tab}
               type="button"
               aria-label={tab}
               onClick={() => onTabChange(tab)}
-              className={`px-2.5 py-1.5 text-[11px] font-medium rounded-sm transition-all duration-150 inline-flex items-center gap-1.5 ${
+              className={`h-7 px-2 text-[11px] font-medium rounded-sm transition-all duration-150 inline-flex items-center gap-1 shrink-0 whitespace-nowrap ${
                 activeTab === tab
                   ? 'bg-dv-accent text-black shadow-sm'
                   : 'text-dv-muted hover:text-dv-text hover:bg-dv-hover'
               }`}
             >
               {TAB_ICONS[tab]}
-              <span className="hidden md:inline">{tab}</span>
+              <span className="hidden xl:inline">{tab}</span>
               {tab === 'AI-анализ' && ollamaOk === false && (
                 <AlertTriangle
                   size={11}
@@ -335,41 +335,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           ))}
         </div>
 
-        <div className="ml-auto flex items-center gap-2 shrink-0 min-w-0">
-          {/* Status strip */}
-          <div
-            className="hidden lg:flex items-center gap-2 text-[10px] text-dv-muted px-2 py-1 rounded-sm bg-dv-deep border border-dv-border/50 max-w-[280px]"
-            title="Статус системы"
-          >
-            <span className="inline-flex items-center gap-1">
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  yoloReady ? 'bg-dv-success' : yoloMode ? 'bg-amber-400' : 'bg-dv-muted'
-                }`}
-              />
-              YOLO {yoloMode ?? '—'}
-            </span>
-            <span className="text-dv-border">|</span>
-            <span className="inline-flex items-center gap-1">
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  ollamaOk === true
-                    ? 'bg-dv-success'
-                    : ollamaOk === false
-                      ? 'bg-amber-400'
-                      : 'bg-dv-muted'
-                }`}
-              />
-              Ollama {ollamaOk === true ? 'ок' : ollamaOk === false ? 'нет' : '—'}
-            </span>
-            {roleLabel && (
-              <>
-                <span className="text-dv-border">|</span>
-                <span className="text-dv-text truncate">{roleLabel}</span>
-              </>
-            )}
-          </div>
-
+        <div className="ml-auto flex items-center gap-1.5 shrink-0">
           {isAuthenticated && <VramIndicator />}
 
           {!topBarNarrow && (
@@ -656,7 +622,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           <div className="relative">
             <button
               type="button"
-              className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors shrink-0 ${
                 isAuthenticated
                   ? 'bg-dv-accent/20 ring-1 ring-dv-accent/40'
                   : 'bg-dv-surface hover:bg-dv-hover'
@@ -675,10 +641,34 @@ export const TopBar: React.FC<TopBarProps> = ({
             >
               <User size={14} className="text-dv-text" />
             </button>
-            <Menu open={sessionOpen && isAuthenticated} className="w-48 p-0">
-              <div className="px-3 py-2 text-[10px] text-dv-muted border-b border-dv-border">
-                Сессия:{' '}
-                <span className="text-dv-text">{roleLabel ?? userRole}</span>
+            <Menu open={sessionOpen && isAuthenticated} className="w-56 p-0 z-[110]" align="right">
+              <div className="px-3 py-2 text-[10px] text-dv-muted border-b border-dv-border space-y-1.5">
+                <div>
+                  Сессия:{' '}
+                  <span className="text-dv-text">{roleLabel ?? userRole ?? '—'}</span>
+                </div>
+                <div className="flex items-center gap-1.5 font-mono">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      yoloReady ? 'bg-dv-success' : yoloMode ? 'bg-amber-400' : 'bg-dv-muted'
+                    }`}
+                  />
+                  <span className="text-dv-text">YOLO {yoloMode ?? '—'}</span>
+                </div>
+                <div className="flex items-center gap-1.5 font-mono">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      ollamaOk === true
+                        ? 'bg-dv-success'
+                        : ollamaOk === false
+                          ? 'bg-amber-400'
+                          : 'bg-dv-muted'
+                    }`}
+                  />
+                  <span className="text-dv-text">
+                    Ollama {ollamaOk === true ? 'ок' : ollamaOk === false ? 'нет' : '—'}
+                  </span>
+                </div>
               </div>
               <MenuItem
                 onClick={() => {
