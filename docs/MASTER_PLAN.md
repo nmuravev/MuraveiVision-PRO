@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** (pending push) zero-hardcode rule + docs RESOLVED
+- **Commit:** `5b027ce` zero-hardcode rule + docs RESOLVED (fixes `9735176`)
 - **Unit tests:** 179
 - **E2E specs:** 6+
 - **Status:** Fixed CSP blob for 3D splat, SessionTrace remount duplicates, canonicalized archive media paths, enforced zero-hardcode policy.
