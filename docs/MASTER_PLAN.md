@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** (pending) — live COLMAP ops stages + job_id from SSE
+- **Commit:** `5ba16b6` — live COLMAP ops stages + job_id from SSE
 - **Unit tests:** 227
 - **E2E specs:** 6+
 - **Status:** Ops modal shows live COLMAP stages (plan/extractor/matcher/mapper sparse poll/converter) and the actual running `job_id` from status/SSE; Balanced `next_action` clear when `model.ply` exists; debug ingest removed
-- **Last updated by:** fix: live Geo 3D build progress in ops modal
+- **Last updated by:** fix: live Geo 3D build progress in ops modal (5ba16b6)
 
 ---
 
