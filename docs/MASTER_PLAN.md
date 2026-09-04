@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** *(pending — sparse UX + ops modal idle card)*
+- **Commit:** `4590201` sparse canvas idle legend + ops modal clarity
 - **Unit tests:** 198
 - **E2E specs:** 6+
-- **Status:** Flight3D idle pipeline card + clearer ops modal train steps; softer sparse points
-- **Last updated by:** feat: sparse canvas legend + ops modal clarity
+- **Status:** Flight3D idle pipeline card + clearer ops modal; Balanced→model.ply verified
+- **Last updated by:** feat: sparse canvas idle legend (`4590201`)
 
 ---
 
