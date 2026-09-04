@@ -102,6 +102,7 @@ function shouldSkipApiErrorReport(url: string, status: number, init?: RequestIni
   if (url.includes('/api/geo/import')) return true;
   if (url.includes('/api/recon/train/presets')) return true;
   if (url.includes('/api/recon/train/status')) return true;
+  if (url.includes('/api/hud/')) return true;
   return false;
 }
 

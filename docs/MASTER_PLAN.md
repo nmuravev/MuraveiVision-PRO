@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `dc0b3c5` HUD auto-exclusion + recon SSE 409 fix
+- **Commit:** *(pending — HUD zones 404 spam fix)*
 - **Unit tests:** 198
 - **E2E specs:** 6+
-- **Status:** HUD auto-exclusion (mask detect/CD, crop recon) + recon SSE 409 fix
-- **Last updated by:** feat: automatic HUD/overlay exclusion (`dc0b3c5`)
+- **Status:** HUD zones 404 modal spam fixed (silent + smart poll)
+- **Last updated by:** fix: HUD /api/hud/zones 404 ErrorDetails spam
 
 ---
 

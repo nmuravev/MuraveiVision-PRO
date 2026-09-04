@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addEvent } from '../debug/sessionTrace';
+import { SILENT_API_ERROR_HEADER } from '../lib/apiError';
 import { authHeaders } from '../store/useMuraveiStore';
 
 export type HudZones = {
@@ -15,19 +16,31 @@ export function useHudZones(sourcePath: string | null | undefined, enabled: bool
   const [zones, setZones] = useState<HudZones | null>(null);
   const [archiveEnabled, setArchiveEnabled] = useState(true);
   const [liveEnabled, setLiveEnabled] = useState(false);
+  const [apiMissing, setApiMissing] = useState(false);
   const tracedKey = useRef<string>('');
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<'ok' | 'pending' | 'ready' | 'missing' | 'idle'> => {
     if (!sourcePath || !enabled) {
       setZones(null);
-      return;
+      return 'idle';
     }
     try {
       const res = await fetch(
         `/api/hud/zones?video_path=${encodeURIComponent(sourcePath)}`,
-        { headers: authHeaders() },
+        {
+          headers: {
+            ...authHeaders(),
+            [SILENT_API_ERROR_HEADER]: '1',
+          },
+        },
       );
-      if (!res.ok) return;
+      if (res.status === 404) {
+        setApiMissing(true);
+        setZones(null);
+        return 'missing';
+      }
+      if (!res.ok) return 'idle';
+      setApiMissing(false);
       const data = (await res.json()) as {
         zones?: HudZones;
         archive_enabled?: boolean;
@@ -50,33 +63,55 @@ export function useHudZones(sourcePath: string | null | undefined, enabled: bool
           });
         }
       }
+      if (!z) return 'idle';
+      if (!z.ready || z.source === 'pending') return 'pending';
+      return 'ready';
     } catch {
-      /* ignore */
+      return 'idle';
     }
   }, [sourcePath, enabled]);
 
   useEffect(() => {
-    void refresh();
-    if (!sourcePath || !enabled) return;
-    const id = window.setInterval(() => {
-      void refresh();
-    }, 2500);
-    return () => window.clearInterval(id);
+    setApiMissing(false);
+    tracedKey.current = '';
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const tick = async () => {
+      const status = await refresh();
+      if (cancelled) return;
+      if (status === 'pending') {
+        timer = window.setTimeout(() => {
+          void tick();
+        }, 2500);
+      }
+      // ready | missing | idle → stop polling
+    };
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer != null) window.clearTimeout(timer);
+    };
   }, [sourcePath, enabled, refresh]);
 
   const saveManual = useCallback(
     async (next: Pick<HudZones, 'top' | 'bottom' | 'left' | 'right'>) => {
-      if (!sourcePath) return;
+      if (!sourcePath || apiMissing) return;
       const res = await fetch('/api/hud/zones', {
         method: 'PUT',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        headers: {
+          ...authHeaders(),
+          'Content-Type': 'application/json',
+          [SILENT_API_ERROR_HEADER]: '1',
+        },
         body: JSON.stringify({ video_path: sourcePath, ...next }),
       });
       if (!res.ok) return;
       const data = (await res.json()) as { zones?: HudZones };
       if (data.zones) setZones(data.zones);
     },
-    [sourcePath],
+    [sourcePath, apiMissing],
   );
 
   const disableForVideo = useCallback(async () => {
@@ -87,6 +122,7 @@ export function useHudZones(sourcePath: string | null | undefined, enabled: bool
     zones,
     archiveEnabled,
     liveEnabled,
+    apiMissing,
     refresh,
     saveManual,
     disableForVideo,
