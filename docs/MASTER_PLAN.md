@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** (pending) in-panel 3D ops progress modal + stale COLMAP fix
-- **Unit tests:** 185+
+- **Commit:** `6ebd994` in-panel 3D ops progress modal + stale COLMAP fix
+- **Unit tests:** 185
 - **E2E specs:** 6+
 - **Status:** Stale COLMAP unlock + in-panel ops progress modal (minimize/chip, auto-dismiss)
-- **Last updated by:** feat: in-panel 3D operations progress modal
+- **Last updated by:** feat: in-panel 3D ops progress modal (`6ebd994`)
 
 ---
 
