@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `7647ae2` 3D train UI with safe presets + recon UX fixes
+- **Commit:** (pending) fix train presets 404 modal + zombie uvicorn
 - **Unit tests:** 183
 - **E2E specs:** 6+
-- **Status:** 3D train UI with safe presets implemented; recon UX 409 lock + stale status fixed
-- **Last updated by:** feat: 3D train UI with safe presets + recon UX fixes (`7647ae2`)
+- **Status:** Train API live after hard kill of zombie uvicorn; silent 404 for presets/status; inline presetsError
+- **Last updated by:** fix: recon train 404 modal + restart stale backend
 
 ---
 

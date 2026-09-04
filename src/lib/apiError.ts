@@ -100,6 +100,8 @@ function shouldSkipApiErrorReport(url: string, status: number, init?: RequestIni
   if (status !== 404) return false;
   if (url.includes('/api/recon/asset/')) return true;
   if (url.includes('/api/geo/import')) return true;
+  if (url.includes('/api/recon/train/presets')) return true;
+  if (url.includes('/api/recon/train/status')) return true;
   return false;
 }
 

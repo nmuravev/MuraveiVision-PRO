@@ -32,6 +32,7 @@ export type TrainStatus = {
 
 export function useReconTrain(jobId: string | null | undefined, isAuthenticated: boolean) {
   const [presets, setPresets] = useState<TrainPreset[]>([]);
+  const [presetsError, setPresetsError] = useState<string | null>(null);
   const [train, setTrain] = useState<TrainStatus>({ status: 'idle' });
   const [colmapRunning, setColmapRunning] = useState(false);
   const streamAbortRef = useRef<AbortController | null>(null);
@@ -45,22 +46,45 @@ export function useReconTrain(jobId: string | null | undefined, isAuthenticated:
     }
   };
 
+  const silentHeaders = () => ({
+    ...authHeaders(),
+    [SILENT_API_ERROR_HEADER]: '1',
+  });
+
   const refreshPresets = useCallback(async () => {
     if (!isAuthenticated) return;
-    const res = await fetch('/api/recon/train/presets', { headers: authHeaders() });
-    if (!res.ok) return;
-    const data = (await res.json()) as { presets?: TrainPreset[]; colmap_running?: boolean };
-    setPresets(data.presets || []);
-    setColmapRunning(Boolean(data.colmap_running));
+    try {
+      const res = await fetch('/api/recon/train/presets', { headers: silentHeaders() });
+      if (!res.ok) {
+        setPresets([]);
+        setPresetsError(
+          res.status === 404
+            ? 'API обучения недоступен (404). Перезапустите backend.'
+            : `Не удалось загрузить профили (${res.status}).`,
+        );
+        return;
+      }
+      const data = (await res.json()) as { presets?: TrainPreset[]; colmap_running?: boolean };
+      setPresets(data.presets || []);
+      setColmapRunning(Boolean(data.colmap_running));
+      setPresetsError(null);
+    } catch {
+      setPresets([]);
+      setPresetsError('Не удалось загрузить профили обучения (сеть).');
+    }
   }, [isAuthenticated]);
 
   const refreshStatus = useCallback(async () => {
     if (!isAuthenticated) return;
-    const res = await fetch('/api/recon/train/status', { headers: authHeaders() });
-    if (!res.ok) return;
-    const st = (await res.json()) as TrainStatus;
-    setTrain(st);
-    setColmapRunning(Boolean(st.colmap_running));
+    try {
+      const res = await fetch('/api/recon/train/status', { headers: silentHeaders() });
+      if (!res.ok) return;
+      const st = (await res.json()) as TrainStatus;
+      setTrain(st);
+      setColmapRunning(Boolean(st.colmap_running));
+    } catch {
+      /* ignore */
+    }
   }, [isAuthenticated]);
 
   const attachStream = useCallback(
@@ -86,7 +110,9 @@ export function useReconTrain(jobId: string | null | undefined, isAuthenticated:
         void refreshStatus();
         pollRef.current = setInterval(() => {
           void (async () => {
-            const res = await fetch('/api/recon/train/status', { headers: authHeaders() });
+            const res = await fetch('/api/recon/train/status', {
+              headers: { ...authHeaders(), [SILENT_API_ERROR_HEADER]: '1' },
+            });
             if (!res.ok) return;
             const st = (await res.json()) as TrainStatus;
             setTrain(st);
@@ -172,6 +198,7 @@ export function useReconTrain(jobId: string | null | undefined, isAuthenticated:
 
   return {
     presets,
+    presetsError,
     train,
     training,
     colmapRunning,

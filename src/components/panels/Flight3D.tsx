@@ -105,6 +105,7 @@ export const Flight3D: React.FC = () => {
   const { pct: reconPct, startRecon, stopRecon } = useReconBuild(sourcePath, isAuthenticated);
   const {
     presets: trainPresets,
+    presetsError,
     train,
     training,
     colmapRunning: trainSeesColmap,
@@ -968,6 +969,11 @@ export const Flight3D: React.FC = () => {
           {needsTrainBanner && (
             <div className="text-amber-300 bg-amber-950/40 border border-amber-700/50 rounded-sm px-2 py-1">
               COLMAP завершён. Выберите профиль обучения для фотореалистичной сцены.
+            </div>
+          )}
+          {presetsError && (
+            <div className="text-red-300 bg-red-950/40 border border-red-700/50 rounded-sm px-2 py-1">
+              {presetsError}
             </div>
           )}
           {train.status === 'error' && (
