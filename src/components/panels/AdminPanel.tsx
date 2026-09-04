@@ -59,6 +59,8 @@ export const AdminPanel: React.FC = () => {
     validator_min_bbox_area: number;
     validator_max_bbox_area: number;
     validator_min_confidence: number;
+    hud_exclude_archive: boolean;
+    hud_exclude_live: boolean;
   };
   const [detectCfg, setDetectCfg] = useState<DetectCfg | null>(null);
   const [detectCfgSaved, setDetectCfgSaved] = useState<string | null>(null);
@@ -511,6 +513,32 @@ export const AdminPanel: React.FC = () => {
                     })
                   }
                 />
+              </label>
+            </div>
+
+            <div className="flex flex-col gap-1 text-[11px] border-t border-[var(--dv-border)] pt-2">
+              <div className="text-[var(--dv-text-muted)]">Исключить HUD (авто)</div>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  data-testid="cfg-hud-archive"
+                  checked={detectCfg.hud_exclude_archive !== false}
+                  onChange={(e) =>
+                    setDetectCfg({ ...detectCfg, hud_exclude_archive: e.target.checked })
+                  }
+                />
+                <span>Архив / скан / CD / recon (по умолчанию ВКЛ)</span>
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  data-testid="cfg-hud-live"
+                  checked={Boolean(detectCfg.hud_exclude_live)}
+                  onChange={(e) =>
+                    setDetectCfg({ ...detectCfg, hud_exclude_live: e.target.checked })
+                  }
+                />
+                <span>Live WS (по умолчанию ВЫКЛ)</span>
               </label>
             </div>
 

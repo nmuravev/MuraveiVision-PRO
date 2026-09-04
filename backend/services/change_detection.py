@@ -138,6 +138,12 @@ def _downscale_bgr(frame: np.ndarray, max_side: int = _MAX_FRAME_SIDE) -> tuple[
 
 def extract_video_frame(source_video: str, time_sec: float) -> np.ndarray | None:
     from services.batch_scanner import _resolve_video
+    from services.hud_exclusion import (
+        apply_blur_mask,
+        archive_hud_enabled,
+        ensure_zones_async,
+        get_zones,
+    )
 
     video_abs, _ = _resolve_video(source_video)
     cap = cv2.VideoCapture(str(video_abs))
@@ -148,6 +154,11 @@ def extract_video_frame(source_video: str, time_sec: float) -> np.ndarray | None
         ok, frame = cap.read()
         if not ok or frame is None:
             return None
+        if archive_hud_enabled():
+            ensure_zones_async(source_video)
+            z = get_zones(source_video, kickoff=True, wait=False)
+            if z.has_exclusion():
+                frame = apply_blur_mask(frame, z)
         frame, _ = _downscale_bgr(frame)
         return frame
     finally:

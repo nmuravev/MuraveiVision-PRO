@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `535766f` gsplat train exit-code / MSVC wrap + train.log
-- **Unit tests:** 191
+- **Commit:** *(pending — HUD exclusion + recon 409)*
+- **Unit tests:** 198
 - **E2E specs:** 6+
-- **Status:** Train tee+snippet + MSVC vcvars wrap/preflight for Balanced/High
-- **Last updated by:** fix: gsplat train exit code 1 (`535766f`)
+- **Status:** HUD auto-exclusion (mask detect/CD, crop recon) + recon SSE 409 fix
+- **Last updated by:** feat: automatic HUD/overlay exclusion
 
 ---
 

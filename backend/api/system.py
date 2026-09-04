@@ -187,6 +187,9 @@ class DetectConfigBody(BaseModel):
     validator_min_bbox_area: float = Field(default=0.0001, ge=0.0, le=0.9)
     validator_max_bbox_area: float = Field(default=0.9, ge=0.0, le=1.0)
     validator_min_confidence: float = Field(default=0.01, ge=0.0, le=1.0)
+    # HUD exclusion
+    hud_exclude_archive: bool = True
+    hud_exclude_live: bool = False
 
 
 def _read_detect_config() -> dict[str, Any]:
@@ -199,6 +202,8 @@ def _read_detect_config() -> dict[str, Any]:
         "validator_min_bbox_area": float(get_setting("validator_min_bbox_area") or "0.0001"),
         "validator_max_bbox_area": float(get_setting("validator_max_bbox_area") or "0.9"),
         "validator_min_confidence": float(get_setting("validator_min_confidence") or "0.01"),
+        "hud_exclude_archive": (get_setting("hud_exclude_archive") or "1") == "1",
+        "hud_exclude_live": (get_setting("hud_exclude_live") or "0") == "1",
     }
 
 
@@ -222,4 +227,6 @@ async def put_detect_config(
     set_setting("validator_min_bbox_area", str(body.validator_min_bbox_area))
     set_setting("validator_max_bbox_area", str(body.validator_max_bbox_area))
     set_setting("validator_min_confidence", str(body.validator_min_confidence))
+    set_setting("hud_exclude_archive", "1" if body.hud_exclude_archive else "0")
+    set_setting("hud_exclude_live", "1" if body.hud_exclude_live else "0")
     return _read_detect_config()

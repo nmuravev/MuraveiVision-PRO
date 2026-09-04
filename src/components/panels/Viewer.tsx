@@ -27,10 +27,12 @@ import { Button, IconButton, Menu, MenuItem, ToolbarGroup } from '../ui';
 import { logger } from '../../services/logger';
 import { formatMediaTime, mediaPathsMatch, toArchiveMediaPath } from '../../lib/mediaPaths';
 import { useBatchScanHydrate } from '../../hooks/useBatchScanHydrate';
+import { useHudZones } from '../../hooks/useHudZones';
 import { batchScanProgressPct, useBatchScanStore } from '../../store/useBatchScanStore';
 import { yoloDebug } from '../../debug/yoloDebug';
 import { traceWs } from '../../debug/sessionTrace';
 import { YoloDebugOverlay } from '../debug/YoloDebugOverlay';
+import { HudExclusionOverlay } from '../viewer/HudExclusionOverlay';
 import { playRuleAlertTone, useRulesStore } from '../../store/useRulesStore';
 import {
   useChangeDetectionStore,
@@ -288,6 +290,12 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const analysisConfig = useMuraveiStore((s) => s.analysisConfig);
   const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
   useBatchScanHydrate(viewer?.sourcePath ?? undefined, isAuthenticated);
+  const {
+    zones: hudZones,
+    archiveEnabled: hudArchiveOn,
+    liveEnabled: hudLiveOn,
+    disableForVideo: disableHudForVideo,
+  } = useHudZones(viewer?.sourcePath, isAuthenticated && Boolean(viewer?.sourcePath));
   const startBatchScan = useBatchScanStore((s) => s.startScan);
   const stopBatchScan = useBatchScanStore((s) => s.stopScan);
   const scanStatus = useBatchScanStore((s) => s.status);
@@ -1154,6 +1162,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           frameIdx: frameRef.current,
           timeSec: tSec,
           image,
+          ...(viewer?.sourcePath ? { sourceVideo: viewer.sourcePath } : {}),
         }),
       );
       return true;
@@ -2932,6 +2941,17 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                 }
               }}
             />
+            )}
+            {hudArchiveOn && !isLive && (
+              <HudExclusionOverlay
+                zones={hudZones}
+                onDisable={() => void disableHudForVideo()}
+              />
+            )}
+            {hudLiveOn && isLive && (
+              <div className="absolute bottom-1 left-1 z-10 rounded-sm bg-black/70 px-1.5 py-0.5 text-[10px] text-amber-200">
+                HUD live ON
+              </div>
             )}
             {compareMode && showHeatmap && cdResult?.image_diff?.heatmap_b64 ? (
               <HeatmapOverlay

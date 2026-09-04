@@ -249,10 +249,33 @@ def _extract_frames(
     t_start: float,
     t_end: float,
     fps_sample: float,
-) -> tuple[dict[str, float], int]:
+    *,
+    source_video: str | None = None,
+) -> tuple[dict[str, float], int, dict[str, float] | None]:
     import cv2
 
+    from services.hud_exclusion import (
+        archive_hud_enabled,
+        crop_frame,
+        ensure_zones_async,
+        get_zones,
+    )
+
     frames_dir.mkdir(parents=True, exist_ok=True)
+    hud_crop: dict[str, float] | None = None
+    zones = None
+    if source_video and archive_hud_enabled():
+        ensure_zones_async(source_video)
+        z = get_zones(source_video, kickoff=True, wait=False)
+        if z.has_exclusion():
+            zones = z
+            hud_crop = {
+                "top": z.top,
+                "bottom": z.bottom,
+                "left": z.left,
+                "right": z.right,
+            }
+
     cap = cv2.VideoCapture(str(video))
     if not cap.isOpened():
         raise RuntimeError(f"Не удалось открыть видео: {video.name}")
@@ -262,6 +285,8 @@ def _extract_frames(
     frame_times: dict[str, float] = {}
     count = 0
     t = float(t_start)
+    full_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    full_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
     while t <= t_end + 1e-6:
         if _stop.is_set():
             cap.release()
@@ -271,6 +296,10 @@ def _extract_frames(
         if not ok or frame is None:
             t += step_sec
             continue
+        if full_w <= 0 or full_h <= 0:
+            full_h, full_w = frame.shape[:2]
+        if zones is not None:
+            frame, _ = crop_frame(frame, zones)
         count += 1
         name = f"{count:06d}.jpg"
         out = frames_dir / name
@@ -280,7 +309,9 @@ def _extract_frames(
     cap.release()
     if count < 3:
         raise RuntimeError(f"Слишком мало кадров ({count}). Нужно ≥3 для COLMAP.")
-    return frame_times, count
+    if hud_crop is not None:
+        hud_crop = {**hud_crop, "full_width": full_w, "full_height": full_h}
+    return frame_times, count, hud_crop
 
 
 def _run_colmap(job_dir: Path, frames_dir: Path) -> Path:
@@ -455,10 +486,15 @@ def _run(
                 "error": None,
             }
         )
-        frame_times, n_frames = _extract_frames(
-            video_abs, frames_dir, t_start, t_end, fps_sample
+        frame_times, n_frames, hud_crop = _extract_frames(
+            video_abs, frames_dir, t_start, t_end, fps_sample, source_video=source_video
         )
         _log(f"extracted {n_frames} frames → {frames_dir}")
+        if hud_crop:
+            _log(
+                f"HUD crop t={hud_crop.get('top')} b={hud_crop.get('bottom')} "
+                f"l={hud_crop.get('left')} r={hud_crop.get('right')}"
+            )
 
         _emit({"phase": "colmap", "progress": 0.35, "message": "COLMAP feature extract + mapper…"})
         sparse0 = _run_colmap(job_dir, frames_dir)
@@ -471,6 +507,7 @@ def _run(
             frame_times=frame_times,
             t_start=t_start,
             fps_sample=fps_sample,
+            hud_crop=hud_crop,
         )
         sparse_path = job_dir / "sparse_points.json"
         n_sparse = export_sparse_points(sparse0, sparse_path)
@@ -489,6 +526,13 @@ def _run(
                 "finished_at": time.time(),
             }
         )
+        if hud_crop:
+            manifest["hud_crop"] = {
+                "top": hud_crop.get("top", 0),
+                "bottom": hud_crop.get("bottom", 0),
+                "left": hud_crop.get("left", 0),
+                "right": hud_crop.get("right", 0),
+            }
         _write_manifest(job_dir, manifest)
 
         _emit(

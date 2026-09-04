@@ -101,6 +101,23 @@ async def detect_ws(websocket: WebSocket, viewer_id: str) -> None:
             img = payload.get("image")
             if img:
                 raw = _decode_image(img if isinstance(img, str) else None)
+            # Optional live HUD mask (default OFF) — needs sourceVideo in payload
+            try:
+                from services.hud_exclusion import (
+                    ensure_zones_async,
+                    get_zones,
+                    live_hud_enabled,
+                    mask_jpeg_bytes,
+                )
+
+                src_v = payload.get("sourceVideo") or payload.get("source_video")
+                if live_hud_enabled() and src_v and raw:
+                    ensure_zones_async(str(src_v))
+                    z = get_zones(str(src_v), kickoff=True, wait=False)
+                    if z.has_exclusion():
+                        raw = mask_jpeg_bytes(raw, z)
+            except Exception as hud_exc:  # noqa: BLE001
+                logger.debug("live HUD skip: %s", hud_exc)
             use_sahi_flag = payload.get("useSahi")
             if use_sahi_flag is None and payload.get("use_sahi") is not None:
                 use_sahi_flag = payload.get("use_sahi")

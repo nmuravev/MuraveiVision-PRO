@@ -11,6 +11,12 @@ from typing import Any
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 from services.db import insert_detection, normalize_media_path, save_crop_jpeg
+from services.hud_exclusion import (
+    apply_blur_mask,
+    archive_hud_enabled,
+    ensure_zones_async,
+    get_zones,
+)
 from services.security import archive_root, assert_in_archive
 from services.telemetry import attach_gps, ensure_track_for_video
 from services.yolo_engine import get_yolo_engine
@@ -226,6 +232,9 @@ def _run(
             f"step={frame_step} segment={seg_start:.1f}-{seg_end:.1f}s conf={conf}"
         )
 
+        if archive_hud_enabled():
+            ensure_zones_async(source_video)
+
         track: list[dict[str, Any]] = []
         try:
             track = ensure_track_for_video(source_video)
@@ -261,7 +270,12 @@ def _run(
                 continue
 
             time_sec = float(frame_idx) / fps
-            ok_enc, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+            work = frame
+            if archive_hud_enabled():
+                z = get_zones(source_video, kickoff=True, wait=False)
+                if z.has_exclusion():
+                    work = apply_blur_mask(frame, z)
+            ok_enc, buf = cv2.imencode(".jpg", work, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
             if not ok_enc:
                 frame_idx += frame_step
                 continue

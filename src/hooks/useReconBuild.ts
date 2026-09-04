@@ -111,6 +111,19 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
             progress?: number;
             phase?: string;
           };
+          if (st.status === 'running') {
+            // Job still alive — keep busy and re-attach; never clear reconRunning
+            setReconProgress(
+              st.message || 'Выполняется…',
+              Math.min(1, Number(st.progress ?? 0)),
+              true,
+              st.phase || 'running',
+            );
+            if (streamAbortRef.current === abort) {
+              attachStream(openSceneOnDone);
+            }
+            return;
+          }
           const done = st.status === 'colmap_done' || st.status === 'done';
           setReconProgress(
             st.message || (done ? 'Готово' : 'Поток SSE прерван'),
