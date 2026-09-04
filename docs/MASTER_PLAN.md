@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** *(pending — HUD exclusion + recon 409)*
+- **Commit:** `dc0b3c5` HUD auto-exclusion + recon SSE 409 fix
 - **Unit tests:** 198
 - **E2E specs:** 6+
 - **Status:** HUD auto-exclusion (mask detect/CD, crop recon) + recon SSE 409 fix
-- **Last updated by:** feat: automatic HUD/overlay exclusion
+- **Last updated by:** feat: automatic HUD/overlay exclusion (`dc0b3c5`)
 
 ---
 
