@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** *(pending — gsplat train exit-code / MSVC wrap)*
+- **Commit:** `535766f` gsplat train exit-code / MSVC wrap + train.log
 - **Unit tests:** 191
 - **E2E specs:** 6+
 - **Status:** Train tee+snippet + MSVC vcvars wrap/preflight for Balanced/High
-- **Last updated by:** fix: gsplat train exit code 1 (MSVC wrap + train.log)
+- **Last updated by:** fix: gsplat train exit code 1 (`535766f`)
 
 ---
 
