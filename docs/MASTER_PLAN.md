@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** (pending) 3D train UI with safe presets
+- **Commit:** `7647ae2` 3D train UI with safe presets + recon UX fixes
 - **Unit tests:** 183
 - **E2E specs:** 6+
 - **Status:** 3D train UI with safe presets implemented; recon UX 409 lock + stale status fixed
-- **Last updated by:** feat: 3D train UI with safe presets + recon UX fixes
+- **Last updated by:** feat: 3D train UI with safe presets + recon UX fixes (`7647ae2`)
 
 ---
 
