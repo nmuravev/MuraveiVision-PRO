@@ -58,6 +58,16 @@ Engineer overrides: edit [`config/train_presets.json`](../config/train_presets.j
 
 API: `GET/POST /api/recon/train/presets|status|start|stop|stream`.
 
+## In-panel operations progress modal
+
+Long ops (COLMAP «Построить 3D», train presets, scene load) open a **panel-scoped** progress modal inside Flight3D (not a global app modal):
+
+- Step list from existing SSE/status (`extracting` → COLMAP combined → export → load; or train_start → training → load).
+- Live metrics on the current step; collapsible log tail (last **20** lines).
+- **Свернуть в фон** → corner chip (spinner + step + %); click restores. Blocking of conflicting controls stays while the op runs even when minimized.
+- Success → brief «Готово» (~1.8 s) → auto-dismiss. Error → no auto-dismiss; **Закрыть** / **Повторить**.
+- Session Trace: `modal` events for open / minimize / restore / auto-dismiss / error / retry.
+
 ## Layout
 
 5. **Inspector** → **Показать в 3D** on a detection → raycast marker (or «Пересечение не найдено»).

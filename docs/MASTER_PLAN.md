@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `d1fd4a0` sparse points UX vs photoreal splat CTA
-- **Unit tests:** 183
+- **Commit:** (pending) in-panel 3D ops progress modal + stale COLMAP fix
+- **Unit tests:** 185+
 - **E2E specs:** 6+
-- **Status:** Sparse COLMAP preview clarified (circular points + Balanced CTA); train 404 modal fixed
-- **Last updated by:** fix: sparse points UX — not cubes; CTA for Balanced splat
+- **Status:** Stale COLMAP unlock + in-panel ops progress modal (minimize/chip, auto-dismiss)
+- **Last updated by:** feat: in-panel 3D operations progress modal
 
 ---
 

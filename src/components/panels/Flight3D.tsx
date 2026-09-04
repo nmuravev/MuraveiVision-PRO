@@ -29,6 +29,8 @@ import { OpsStatusBar } from '../OpsStatusBar';
 import { SILENT_API_ERROR_HEADER } from '../../lib/apiError';
 import { computeReconSegment, isReconReady, useReconBuild } from '../../hooks/useReconBuild';
 import { useReconTrain } from '../../hooks/useReconTrain';
+import { useReconOpsProgress } from '../../hooks/useReconOpsProgress';
+import { ReconOpsProgressModal } from './ReconOpsProgressModal';
 import {
   formatTimecode,
   interpolateTrack,
@@ -127,6 +129,10 @@ export const Flight3D: React.FC = () => {
   const [sceneKind, setSceneKind] = useState<'points' | 'splat' | 'empty'>('empty');
   const [splatKind, setSplatKind] = useState<'train' | 'bootstrap' | null>(null);
 
+  const colmapBusy =
+    reconRunning || (trainSeesColmap && !isReconReady(manifest));
+  const opsBlocking = reconRunning || training || sceneLoading;
+
   const needsTrainBanner =
     viewMode === 'scene' &&
     !training &&
@@ -140,6 +146,7 @@ export const Flight3D: React.FC = () => {
   const sparseRef = useRef(sparsePoints);
   const splatHandleRef = useRef<SplatHandle | null>(null);
   const framedKeyRef = useRef('');
+  const loadManifestRef = useRef<() => void>(() => undefined);
   const cameraSnapRef = useRef<{
     jobId: string;
     pos: THREE.Vector3;
@@ -194,6 +201,10 @@ export const Flight3D: React.FC = () => {
       setSparsePoints(null, false);
     }
   }, [sourcePath, isAuthenticated, setManifest, setSparsePoints]);
+
+  loadManifestRef.current = () => {
+    void loadManifest();
+  };
 
   useEffect(() => {
     void loadManifest();
@@ -318,6 +329,21 @@ export const Flight3D: React.FC = () => {
     const { tStart, tEnd } = computeReconSegment(playheadPosition, mediaDuration);
     void startRecon({ tStart, tEnd, openSceneOnDone: true });
   };
+
+  const ops = useReconOpsProgress({
+    training,
+    train,
+    sceneLoading,
+    sceneError,
+    onRetryRecon: () => runBuild3d(),
+    onRetryTrain: (preset) => {
+      if (!preset) return;
+      void startTrain(preset, () => {
+        framedKeyRef.current = '';
+        loadManifestRef.current();
+      });
+    },
+  });
 
   useEffect(() => {
     if (!pendingRaycast || !sourcePath) return;
@@ -897,6 +923,7 @@ export const Flight3D: React.FC = () => {
           <button
             type="button"
             className={`px-2 py-0.5 ${viewMode === 'geo' ? 'bg-[var(--dv-accent)] text-black' : 'bg-[var(--dv-bg-deep)]'}`}
+            disabled={opsBlocking}
             onClick={() => setViewMode('geo')}
           >
             Гео
@@ -904,6 +931,7 @@ export const Flight3D: React.FC = () => {
           <button
             type="button"
             className={`px-2 py-0.5 ${viewMode === 'scene' ? 'bg-[var(--dv-accent)] text-black' : 'bg-[var(--dv-bg-deep)]'}`}
+            disabled={opsBlocking}
             onClick={() => setViewMode('scene')}
           >
             Сцена
@@ -911,10 +939,16 @@ export const Flight3D: React.FC = () => {
         </div>
         <button
           type="button"
-          disabled={!sourcePath || reconRunning || training}
+          disabled={!sourcePath || opsBlocking || colmapBusy}
           className="px-2 py-0.5 bg-[var(--dv-surface)] hover:bg-[var(--dv-hover)] disabled:opacity-40 rounded-sm"
           onClick={() => runBuild3d()}
-          title={training ? 'Дождитесь завершения обучения' : undefined}
+          title={
+            training
+              ? 'Дождитесь завершения обучения'
+              : colmapBusy
+                ? 'Дождитесь завершения COLMAP'
+                : undefined
+          }
         >
           {reconRunning ? 'Строим…' : 'Построить 3D'}
         </button>
@@ -969,7 +1003,7 @@ export const Flight3D: React.FC = () => {
                 type="button"
                 className="px-1.5 py-0.5 bg-[var(--dv-surface)] rounded-sm"
                 onClick={() => void applyScale()}
-                disabled={scalePick.length !== 2}
+                disabled={scalePick.length !== 2 || opsBlocking}
               >
                 Масштаб ({scalePick.length}/2)
               </button>
@@ -1038,13 +1072,13 @@ export const Flight3D: React.FC = () => {
                 type="button"
                 disabled={
                   training ||
-                  reconRunning ||
-                  trainSeesColmap ||
+                  opsBlocking ||
+                  colmapBusy ||
                   p.disabled ||
                   !isReconReady(manifest)
                 }
                 title={
-                  trainSeesColmap || reconRunning
+                  colmapBusy
                     ? 'Дождитесь завершения COLMAP'
                     : p.disabled
                       ? p.disabled_reason
@@ -1105,6 +1139,24 @@ export const Flight3D: React.FC = () => {
         </div>
       )}
       <div ref={mountRef} className="flex-1 min-h-0 relative">
+        <ReconOpsProgressModal
+          visible={ops.visible}
+          minimized={ops.minimized}
+          finishing={ops.finishing}
+          isError={ops.isError}
+          title={ops.title}
+          jobId={ops.jobId}
+          steps={ops.steps}
+          progressPct={ops.progressPct}
+          elapsedSec={ops.elapsedSec}
+          logLines={ops.logLines}
+          errorMessage={ops.errorMessage}
+          currentLabel={ops.current?.label}
+          onMinimize={ops.minimize}
+          onRestore={ops.restore}
+          onCloseError={ops.closeError}
+          onRetry={ops.retry}
+        />
         {viewMode === 'scene' && !sceneLoading && sceneKind === 'empty' && !reconRunning && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
             <div className="px-3 py-2 rounded-sm bg-black/70 text-[11px] text-[var(--dv-text-muted)] text-center max-w-[80%]">

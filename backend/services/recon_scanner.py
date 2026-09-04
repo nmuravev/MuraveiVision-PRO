@@ -74,8 +74,31 @@ def _emit(event: dict[str, Any]) -> None:
             _state["error"] = event["error"]
 
 
+def _recover_stale_running_unlocked() -> bool:
+    """If status is running but worker thread is dead, reset to idle. Caller holds _lock."""
+    global _thread
+    alive = bool(_thread and _thread.is_alive())
+    if _state.get("status") == "running" and not alive:
+        from services.trace_middleware import pipeline_trace
+
+        pipeline_trace(
+            "recon",
+            "stale running recovered (dead thread)",
+            level="warn",
+        )
+        _state["status"] = "idle"
+        _state["message"] = ""
+        _state["error"] = None
+        _state["phase"] = None
+        _state["progress"] = 0.0
+        _thread = None
+        return True
+    return False
+
+
 def status() -> dict[str, Any]:
     with _lock:
+        _recover_stale_running_unlocked()
         return dict(_state)
 
 
@@ -523,19 +546,8 @@ def start(
 ) -> dict[str, Any]:
     global _thread
     with _lock:
+        _recover_stale_running_unlocked()
         alive = bool(_thread and _thread.is_alive())
-        if _state["status"] == "running" and not alive:
-            from services.trace_middleware import pipeline_trace
-
-            pipeline_trace(
-                "recon",
-                "stale running recovered (dead thread)",
-                level="warn",
-            )
-            _state["status"] = "idle"
-            _state["message"] = ""
-            _state["error"] = None
-            _thread = None
         if _state["status"] == "running" or alive:
             raise RuntimeError("Реконструкция уже выполняется")
         video_abs, source_video = _resolve_video(video_path)
