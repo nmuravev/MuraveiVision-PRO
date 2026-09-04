@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** (pending) sparse points UX vs photoreal splat CTA
+- **Commit:** `d1fd4a0` sparse points UX vs photoreal splat CTA
 - **Unit tests:** 183
 - **E2E specs:** 6+
 - **Status:** Sparse COLMAP preview clarified (circular points + Balanced CTA); train 404 modal fixed
