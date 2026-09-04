@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** (pending push) COLMAP sequential matching + frame budget + honest errors
+- **Commit:** `7da93bd` — COLMAP sequential matching + frame budget + honest errors
 - **Unit tests:** 220
 - **E2E specs:** 6+
 - **Status:** Drone video Build3D uses sequential_matcher (not exhaustive); frame/image budget for 8 GB; GPU→CPU matcher retry; no glog INFO as failure reason; retry Build 3D after backend restart
