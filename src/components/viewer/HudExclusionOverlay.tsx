@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Eye } from 'lucide-react';
 import { clampHudMargin, type HudMargins, type HudZones } from '../../hooks/useHudZones';
 
 type Side = 'top' | 'bottom' | 'left' | 'right';
@@ -29,7 +30,7 @@ function pctLabel(v: number): string {
   return `${Math.round(v * 100)}%`;
 }
 
-/** Semi-transparent HUD exclusion bands + badge; edit mode with drag + sliders. */
+/** Semi-transparent HUD exclusion bands + collapsible badge; edit mode with drag + sliders. */
 export function HudExclusionOverlay({
   visible,
   zones,
@@ -38,6 +39,8 @@ export function HudExclusionOverlay({
   onAuto,
   onReset,
 }: Props) {
+  /** Collapsed by default so the amber chip does not cover the overview. */
+  const [panelOpen, setPanelOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<HudMargins>(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -51,11 +54,17 @@ export function HudExclusionOverlay({
   const enterEdit = () => {
     setDraft(marginsFromZones(zones));
     setEditing(true);
+    setPanelOpen(true);
   };
 
   const cancelEdit = () => {
     setDraft(marginsFromZones(zones));
     setEditing(false);
+  };
+
+  const togglePanel = () => {
+    if (panelOpen && editing) cancelEdit();
+    setPanelOpen((open) => !open);
   };
 
   const run = async (fn: () => void | Promise<void>) => {
@@ -203,45 +212,66 @@ export function HudExclusionOverlay({
         data-testid="hud-badge"
         onPointerDown={(e) => e.stopPropagation()}
       >
-        <div className="flex flex-wrap items-center gap-1 rounded-sm bg-black/75 px-1.5 py-0.5 text-[10px] text-amber-200">
-          <span className="font-semibold text-amber-100">HUD</span>
-          {pending ? (
-            <span className="text-amber-200/80">определение…</span>
-          ) : hasBands ? (
-            <span title={`source=${source}`}>
-              исключён: {parts.join(', ')}
-              {source && source !== '—' ? ` · ${source}` : ''}
-            </span>
-          ) : (
-            <span className="text-amber-200/80">выкл (нет полос)</span>
-          )}
-          {!editing && (
-            <>
-              <button
-                type="button"
-                className="ml-0.5 underline text-amber-100/90 hover:text-white"
-                onClick={enterEdit}
-                disabled={busy || saving}
-                title="Ручная правка краевых полос (0–35%)"
-              >
-                правка
-              </button>
-              {hasBands && (
-                <button
-                  type="button"
-                  className="underline text-amber-100/80 hover:text-white"
-                  onClick={() => void run(onReset)}
-                  disabled={busy || saving}
-                  title="Сбросить HUD-исключение для этого видео"
-                >
-                  сброс
-                </button>
+        <div className="flex items-start gap-1">
+          <button
+            type="button"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-black/75 text-amber-200 hover:text-white hover:bg-black/90"
+            aria-expanded={panelOpen}
+            aria-controls="hud-exclusion-panel"
+            title={panelOpen ? 'Свернуть' : 'HUD исключение'}
+            aria-label={panelOpen ? 'Свернуть' : 'HUD исключение'}
+            data-testid="hud-badge-toggle"
+            onClick={togglePanel}
+          >
+            <Eye size={14} strokeWidth={2} aria-hidden />
+          </button>
+
+          {panelOpen && (
+            <div
+              id="hud-exclusion-panel"
+              className="flex flex-wrap items-center gap-1 rounded-sm bg-black/75 px-1.5 py-0.5 text-[10px] text-amber-200"
+              data-testid="hud-badge-panel"
+            >
+              <span className="font-semibold text-amber-100">HUD</span>
+              {pending ? (
+                <span className="text-amber-200/80">определение…</span>
+              ) : hasBands ? (
+                <span title={`source=${source}`}>
+                  исключён: {parts.join(', ')}
+                  {source && source !== '—' ? ` · ${source}` : ''}
+                </span>
+              ) : (
+                <span className="text-amber-200/80">выкл (нет полос)</span>
               )}
-            </>
+              {!editing && (
+                <>
+                  <button
+                    type="button"
+                    className="ml-0.5 underline text-amber-100/90 hover:text-white"
+                    onClick={enterEdit}
+                    disabled={busy || saving}
+                    title="Ручная правка краевых полос (0–35%)"
+                  >
+                    правка
+                  </button>
+                  {hasBands && (
+                    <button
+                      type="button"
+                      className="underline text-amber-100/80 hover:text-white"
+                      onClick={() => void run(onReset)}
+                      disabled={busy || saving}
+                      title="Сбросить HUD-исключение для этого видео"
+                    >
+                      сброс
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           )}
         </div>
 
-        {editing && (
+        {panelOpen && editing && (
           <div className="rounded-sm bg-black/85 border border-amber-500/40 px-2 py-1.5 text-[10px] text-amber-100 space-y-1.5 shadow-lg">
             {(['top', 'bottom', 'left', 'right'] as const).map((side) => {
               const labels = { top: 'Верх', bottom: 'Низ', left: 'Лево', right: 'Право' };
