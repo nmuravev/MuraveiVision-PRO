@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** _(local, uncommitted)_ — HUD exclusion overlay collapsible eye chip
+- **Commit:** `d6c6fbd` — HUD exclusion overlay collapsible eye chip
 - **Unit tests:** 227
 - **E2E specs:** 6+
 - **Status:** HUD exclusion Viewer chip defaults to collapsed eye-icon button; expand shows margins + правка/сброс; ops modal still shows live COLMAP stages
-- **Last updated by:** UI: collapsible HudExclusionOverlay (eye toggle)
+- **Last updated by:** fix: collapse HUD exclusion chip to eye button (d6c6fbd)
 
 ---
 
