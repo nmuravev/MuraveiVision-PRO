@@ -28,6 +28,7 @@ import {
 import { OpsStatusBar } from '../OpsStatusBar';
 import { SILENT_API_ERROR_HEADER } from '../../lib/apiError';
 import { computeReconSegment, isReconReady, useReconBuild } from '../../hooks/useReconBuild';
+import { useReconTrain } from '../../hooks/useReconTrain';
 import {
   formatTimecode,
   interpolateTrack,
@@ -102,6 +103,21 @@ export const Flight3D: React.FC = () => {
   const setToast = useReconStore((s) => s.setToast);
 
   const { pct: reconPct, startRecon, stopRecon } = useReconBuild(sourcePath, isAuthenticated);
+  const {
+    presets: trainPresets,
+    train,
+    training,
+    colmapRunning: trainSeesColmap,
+    startTrain,
+    stopTrain,
+  } = useReconTrain(manifest?.job_id, isAuthenticated);
+
+  const needsTrainBanner =
+    viewMode === 'scene' &&
+    manifest?.status === 'colmap_done' &&
+    classifyArtifact(manifest.artifact) !== 'splat' &&
+    !training &&
+    train.status !== 'error';
 
   const [track, setTrack] = useState<GeoPoint[]>([]);
   const [geoDets, setGeoDets] = useState<DetMarker[]>([]);
@@ -611,7 +627,7 @@ export const Flight3D: React.FC = () => {
       return;
     }
 
-    if (reconRunning) {
+    if (reconRunning || training) {
       clearScene();
       setSceneKind('empty');
       setSceneError(null);
@@ -738,6 +754,7 @@ export const Flight3D: React.FC = () => {
     manifest?.rotation_x,
     sparsePoints,
     reconRunning,
+    training,
   ]);
 
   useEffect(() => {
@@ -854,9 +871,10 @@ export const Flight3D: React.FC = () => {
         </div>
         <button
           type="button"
-          disabled={!sourcePath || reconRunning}
+          disabled={!sourcePath || reconRunning || training}
           className="px-2 py-0.5 bg-[var(--dv-surface)] hover:bg-[var(--dv-hover)] disabled:opacity-40 rounded-sm"
           onClick={() => runBuild3d()}
+          title={training ? 'Дождитесь завершения обучения' : undefined}
         >
           {reconRunning ? 'Строим…' : 'Построить 3D'}
         </button>
@@ -937,15 +955,94 @@ export const Flight3D: React.FC = () => {
               : sceneKind === 'points'
                 ? 'point cloud'
                 : manifest?.status === 'error'
-                  ? 'ошибка построения'
-                  : 'ожидание модели'}
-            {' '}
-            · raycast из Inspector (sparse)
+                  ? 'ошибка'
+                  : 'нет сцены'}
+            {manifest?.job_id ? ` · raycast из Inspector (sparse)` : ''}
           </span>
         )}
         {sceneError && <span className="ml-2 text-[var(--dv-danger)]">{sceneError}</span>}
         {toast && <span className="ml-2 text-[var(--dv-accent)]">{toast}</span>}
       </div>
+      {viewMode === 'scene' && manifest?.job_id && (
+        <div className="px-2 py-1 border-b border-[var(--dv-border)] flex flex-col gap-1 text-[10px] flex-shrink-0">
+          {needsTrainBanner && (
+            <div className="text-amber-300 bg-amber-950/40 border border-amber-700/50 rounded-sm px-2 py-1">
+              COLMAP завершён. Выберите профиль обучения для фотореалистичной сцены.
+            </div>
+          )}
+          {train.status === 'error' && (
+            <div className="text-red-300 bg-red-950/40 border border-red-700/50 rounded-sm px-2 py-1">
+              Обучение не удалось: {train.error || train.message || 'ошибка'}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[var(--dv-text-muted)] font-mono">
+              train: {train.status}
+              {manifest.artifact ? ` · ${manifest.artifact}` : ' · artifact: null'}
+            </span>
+            {trainPresets.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                disabled={
+                  training ||
+                  reconRunning ||
+                  trainSeesColmap ||
+                  p.disabled ||
+                  !isReconReady(manifest)
+                }
+                title={
+                  trainSeesColmap || reconRunning
+                    ? 'Дождитесь завершения COLMAP'
+                    : p.disabled
+                      ? p.disabled_reason
+                      : p.eta
+                }
+                className="px-2 py-0.5 bg-[var(--dv-surface)] hover:bg-[var(--dv-hover)] disabled:opacity-40 rounded-sm"
+                onClick={() =>
+                  void startTrain(p.id, () => {
+                    void loadManifest();
+                  })
+                }
+              >
+                {p.label}
+                {p.eta ? ` (${p.eta})` : ''}
+              </button>
+            ))}
+            {training && (
+              <button
+                type="button"
+                className="px-2 py-0.5 bg-[var(--dv-surface)] hover:bg-[var(--dv-hover)] rounded-sm"
+                onClick={() => void stopTrain()}
+              >
+                Стоп train
+              </button>
+            )}
+          </div>
+          {training && (
+            <div className="font-mono text-[var(--dv-accent)]">
+              {(train.steps ?? 0)}/{(train.max_steps ?? 0)} steps
+              {train.loss != null ? ` · loss ${train.loss.toFixed(4)}` : ''}
+              {train.psnr != null ? ` · PSNR ${train.psnr.toFixed(1)}` : ''}
+              {` · VRAM ${(train.vram_used_gb ?? 0).toFixed(1)}/${(train.vram_total_gb ?? 0).toFixed(1)} GB`}
+              {train.eta_seconds != null ? ` · ETA ~${Math.round(train.eta_seconds / 60)}м` : ''}
+              <div className="mt-0.5 h-1 bg-[var(--dv-bg-deep)] rounded-sm overflow-hidden">
+                <div
+                  className="h-full bg-[var(--dv-accent)]"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      Math.round(
+                        ((train.steps ?? 0) / Math.max(1, train.max_steps ?? 1)) * 100,
+                      ),
+                    )}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {reconRunning && (
         <div className="h-1 bg-[var(--dv-bg-deep)] flex-shrink-0">
           <div

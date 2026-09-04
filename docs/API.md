@@ -281,6 +281,16 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 
 `POST /start`, `POST /stop`, `GET /status`, `GET /stream`, `GET /manifest`, `PATCH /manifest/{job_id}`, `GET /poses`, `GET /asset/{job_id}/{name}`. `poses` отдаёт ближайшую COLMAP-позу и intrinsics для 2D→3D луча; UI использует Gaussian splat pick с fallback на sparse cloud.
 
+Train (один job за раз; блокирует `POST /start` COLMAP пока идёт train):
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/train/presets` | профили из `config/train_presets.json` + VRAM gate (`disabled` для HQ) |
+| GET | `/train/status` | текущий train state |
+| POST | `/train/start` | `{ job_id, preset }` — 409 если уже train/COLMAP |
+| POST | `/train/stop` | остановить subprocess |
+| GET | `/train/stream` | SSE progress (steps/loss/psnr/vram) |
+
 ## Network — `/api/network`
 
 Репликация целей между машинами. Инстанс `mode=server` — хаб (принимает JWT-запросы). `mode=client` — фоновый worker (`backend/services/network_sync.py`, тик 30 с): heartbeat, push локальных `direction=out` с `synced_at IS NULL`, pull `GET /targets?since=`, upsert как `direction=in`. Worker стартует вместе с backend всегда; тик no-op, если режим не `client`. Хаб недоступен — UI живой, в статусе `hub_reachable=false`.

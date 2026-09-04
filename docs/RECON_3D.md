@@ -40,6 +40,24 @@ npm run backend
 
 4. After `colmap_done`: toggle **Сцена**, optional **Масштаб** (2 clicks + metres).
 
+## 3D Training via UI
+
+After COLMAP (`colmap_done`), open **Гео 3D → Сцена**. Yellow banner prompts for a train profile (no CLI required):
+
+| Button | Preset | Typical time | Notes |
+|--------|--------|--------------|--------|
+| Bootstrap | `bootstrap` | ≈30 с | COLMAP→minimal `model.ply` (not photoreal) |
+| Balanced | `balanced` (default) | 5–10 мин | gsplat ~7000 steps |
+| High Quality | `high` | 15–30 мин | ~30000 steps; **disabled if VRAM &lt; 12 ГБ** |
+
+Progress (SSE `/api/recon/train/stream`, poll fallback 3s): steps, loss/PSNR when parsed, VRAM. One train at a time; COLMAP and train mutually disable each other.
+
+Engineer overrides: edit [`config/train_presets.json`](../config/train_presets.json) at **repo root**. Invalid/missing → built-in Balanced + warning in `logs/runtime.log`. UI never exposes raw step inputs.
+
+API: `GET/POST /api/recon/train/presets|status|start|stop|stream`.
+
+## Layout
+
 5. **Inspector** → **Показать в 3D** on a detection → raycast marker (or «Пересечение не найдено»).
 
 ## API

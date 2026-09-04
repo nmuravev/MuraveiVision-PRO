@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `5b027ce` zero-hardcode rule + docs RESOLVED (fixes `9735176`)
-- **Unit tests:** 179
+- **Commit:** (pending) 3D train UI with safe presets
+- **Unit tests:** 183
 - **E2E specs:** 6+
-- **Status:** Fixed CSP blob for 3D splat, SessionTrace remount duplicates, canonicalized archive media paths, enforced zero-hardcode policy.
-- **Last updated by:** docs: zero-hardcode scan rule; resolve path/SessionTrace issues
+- **Status:** 3D train UI with safe presets implemented; recon UX 409 lock + stale status fixed
+- **Last updated by:** feat: 3D train UI with safe presets + recon UX fixes
 
 ---
 

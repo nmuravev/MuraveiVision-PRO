@@ -85,11 +85,17 @@ export const OpsStatusBar: React.FC<Props> = ({ sourcePath, className = '' }) =>
     const msg =
       manifest.status === 'error'
         ? manifest.error || 'ошибка'
-        : lastReconMessage || manifest.status;
+        : manifest.status === 'done'
+          ? 'готово (splat)'
+          : 'готово (sparse) · нужен train для splat';
     const cls =
       manifest.status === 'error' ? 'text-red-400' : 'text-[var(--dv-text-muted)] opacity-80';
     reconLine = <span className={cls}> · 3D: {msg}</span>;
-  } else if (lastReconMessage && lastReconMessage !== 'Реконструкция уже выполняется') {
+  } else if (
+    lastReconMessage &&
+    lastReconMessage !== 'Реконструкция уже выполняется' &&
+    !/feature extract/i.test(lastReconMessage)
+  ) {
     reconLine = (
       <span className="text-[var(--dv-text-muted)] opacity-70"> · 3D: {lastReconMessage}</span>
     );

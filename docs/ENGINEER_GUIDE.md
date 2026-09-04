@@ -104,6 +104,14 @@ cd D:\LLM\MuraveiVision-PRO-Base2
 
 ## 3D / gsplat (build machine)
 
+### UI presets (`config/train_presets.json`)
+
+Repo-root JSON controls Flight3D **Сцена** buttons (Bootstrap / Balanced / High). Example keys: `script` (`bootstrap`|`gsplat`), `max_steps`, `data_factor`, `max_points`, `min_vram_gb`, `eta`, `default`. Missing/invalid file → built-in Balanced defaults.
+
+VRAM gate for High uses `torch.cuda.get_device_properties(0).total_memory` (no `nvidia-smi`).
+
+### CLI (optional)
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\stage_gsplat_examples.ps1
 $env:PYTHONPATH = "backend"

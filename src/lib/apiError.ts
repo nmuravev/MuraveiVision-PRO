@@ -95,6 +95,8 @@ function requestHasSilentHeader(init?: RequestInit): boolean {
 
 function shouldSkipApiErrorReport(url: string, status: number, init?: RequestInit): boolean {
   if (requestHasSilentHeader(init)) return true;
+  if (status === 409 && url.includes('/api/recon/start')) return true;
+  if (status === 409 && url.includes('/api/recon/train/start')) return true;
   if (status !== 404) return false;
   if (url.includes('/api/recon/asset/')) return true;
   if (url.includes('/api/geo/import')) return true;

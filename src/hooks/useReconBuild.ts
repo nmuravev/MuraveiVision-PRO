@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { readSse } from '../lib/readSse';
+import { SILENT_API_ERROR_HEADER } from '../lib/apiError';
 import { authHeaders } from '../store/useMuraveiStore';
 import { useReconStore, type ReconManifest } from '../store/useReconStore';
 
@@ -38,6 +39,7 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
   const setManifest = useReconStore((s) => s.setManifest);
   const setViewMode = useReconStore((s) => s.setViewMode);
   const streamAbortRef = useRef<AbortController | null>(null);
+  const startInFlightRef = useRef(false);
 
   const loadManifest = useCallback(async (): Promise<ReconManifest | null> => {
     if (!sourcePath || !isAuthenticated) {
@@ -81,12 +83,15 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
           ) {
             abort.abort();
             const done = data.status === 'done' || data.status === 'colmap_done';
-            setReconProgress(
-              String(data.message || (done ? 'Готово' : 'Остановлено')),
-              done ? 1 : progress,
-              false,
-              done ? 'done' : data.status === 'error' ? 'error' : null,
-            );
+            const terminalMsg = done
+              ? data.status === 'done'
+                ? 'готово (splat)'
+                : 'готово (sparse) · нужен train для splat'
+              : data.status === 'error'
+                ? String(data.message || 'ошибка')
+                : 'Остановлено';
+            setReconProgress(terminalMsg, done ? 1 : progress, false, done ? 'done' : data.status === 'error' ? 'error' : null);
+            useReconStore.setState({ lastReconMessage: terminalMsg });
             void loadManifest();
             if (done && openSceneOnDone) setViewMode('scene');
           }
@@ -132,12 +137,17 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
       fpsSample?: number;
       openSceneOnDone?: boolean;
     }) => {
-      if (!sourcePath || useReconStore.getState().reconRunning) return;
+      if (!sourcePath || useReconStore.getState().reconRunning || startInFlightRef.current) return;
+      startInFlightRef.current = true;
       setReconProgress('Запуск реконструкции…', 0, true, 'starting');
       try {
         const res = await fetch('/api/recon/start', {
           method: 'POST',
-          headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+          headers: {
+            ...authHeaders(),
+            'Content-Type': 'application/json',
+            [SILENT_API_ERROR_HEADER]: '1',
+          },
           body: JSON.stringify({
             video_path: sourcePath,
             t_start: opts?.tStart,
@@ -148,7 +158,7 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
         if (!res.ok) {
           const err = (await res.json().catch(() => ({}))) as { detail?: string };
           const detail = err.detail || res.statusText;
-          if (String(detail).includes('уже выполняется')) {
+          if (res.status === 409 || String(detail).includes('уже выполняется')) {
             const stRes = await fetch('/api/recon/status', { headers: authHeaders() });
             if (stRes.ok) {
               const st = (await stRes.json()) as {
@@ -177,6 +187,8 @@ export function useReconBuild(sourcePath: string | null | undefined, isAuthentic
         attachStream(Boolean(opts?.openSceneOnDone));
       } catch (err) {
         setReconProgress(err instanceof Error ? err.message : 'Ошибка recon', 0, false, 'error');
+      } finally {
+        startInFlightRef.current = false;
       }
     },
     [sourcePath, setReconProgress, attachStream, loadManifest],
