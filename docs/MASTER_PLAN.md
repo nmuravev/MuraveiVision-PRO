@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** (pending) CSP blob + SessionTrace ids + archive paths
+- **Commit:** `9735176` CSP blob + SessionTrace ids + archive paths
 - **Unit tests:** 179
 - **E2E specs:** 6+
 - **Status:** CSP connect-src blob for 3D splat; SessionTrace remount-safe; MediaPool archive/ paths
