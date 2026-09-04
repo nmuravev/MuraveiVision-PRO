@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** _(RC commit hash — see git log)_
+- **Commit:** `2f7673b` — portable build hardening
 - **Unit tests:** 227 OK
 - **E2E specs:** 6+
 - **Status:** Ready for merge to main
-- **Last updated by:** docs: update MASTER_PLAN for v3.1 release candidate
+- **Last updated by:** fix: harden portable build (2f7673b)
 
 ## Major Changes in This Release
 
