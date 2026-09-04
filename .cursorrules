@@ -48,6 +48,10 @@ See also: `docs/DOCS_SYNC_CHECKLIST.md`, `docs/MASTER_PLAN.md` §9.
 - Whitelisted weights only (`assets/models/`)
 - Graceful degradation (503 + error catalog if missing)
 
+## Zero-hardcode scan (MANDATORY before commit)
+
+See [`.cursor/rules/zero-hardcode-scan.mdc`](.cursor/rules/zero-hardcode-scan.mdc). Before committing production changes, grep touched files for machine paths (`D:\LLM`, `C:\Users`, host usernames), chat job IDs, and fixed session UUIDs. Report: `Hardcode scan passed: 0 absolute paths or specific job IDs found in logic.`
+
 ## Test Requirements
 
 Before committing:

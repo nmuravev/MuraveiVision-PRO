@@ -1,0 +1,37 @@
+---
+description: Zero-hardcode scan before commit — no machine paths or chat job IDs in logic
+globs:
+  - src/**
+  - backend/**
+  - index.html
+alwaysApply: false
+---
+
+# Zero-hardcode scan (MuraveiVision PRO)
+
+Before **every** commit that touches `src/`, `backend/`, or `index.html`, run a hardcode scan on staged/touched **production** files.
+
+## Forbidden in production logic
+
+- Absolute machine paths: `D:\LLM\...`, `C:\Users\...`, `Users\MECHREVO`, host usernames baked into strings
+- Chat/session job IDs copied from logs (e.g. 12-hex ids from a prior run used as fallbacks)
+- Fixed session UUIDs: `'session-1'`, `'test-uuid'` — use `crypto.randomUUID()` / `sessionStorage`
+
+## Required instead
+
+- Paths: `BASE_DIR`, `__file__`, `archive_root()`, `assert_in_archive` / `resolve_under_archive`, env vars
+- Session Trace: `sessionStorage` + `crypto.randomUUID()` (see `src/debug/sessionTrace.ts`)
+- Media to Viewer: `toArchiveMediaPath` / `archiveMediaPath` → `archive/...`
+
+## Tests
+
+Synthetic abs paths are OK: `D:/proj/archive/x.mp4`, `/home/user/project/archive/x.mp4`.  
+Do **not** paste real host paths from the conversation into tests or runtime code.
+
+## Agent report
+
+After the scan, state explicitly:
+
+`Hardcode scan passed: 0 absolute paths or specific job IDs found in logic.`
+
+If anything matches in production logic, refactor before committing.

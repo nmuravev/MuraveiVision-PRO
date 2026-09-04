@@ -2,6 +2,8 @@
 
 Visual-only photogrammetry for archive MP4 **without GPS**. Designed for EW/jammed environments where SRT telemetry is unavailable.
 
+**Paths:** recon `video_path` and media assets resolve through dynamic `archive_root()` / `assert_in_archive` — never bake host absolute paths into manifests or client state. Prefer `archive/...` from the Media API.
+
 ## Requirements
 
 | Component | Where |
@@ -17,9 +19,8 @@ Visual-only photogrammetry for archive MP4 **without GPS**. Designed for EW/jamm
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\stage_colmap_sidecar.ps1
-$env:COLMAP_ROOT = "D:\LLM\MuraveiVision-PRO\sidecars\colmap"
-Test-Path "$env:COLMAP_ROOT\colmap.exe"   # True, or COLMAP.bat
-& "$env:COLMAP_ROOT\colmap.exe" -h         # quick CLI check (or COLMAP.bat help)
+$env:COLMAP_ROOT = (Resolve-Path ".\sidecars\colmap").Path
+Test-Path (Join-Path $env:COLMAP_ROOT "COLMAP.bat")   # or colmap.exe
 ```
 
 2. Start backend (sets `COLMAP_ROOT=sidecars\colmap` automatically):
@@ -31,7 +32,7 @@ npm run backend
 Manual override if needed:
 
 ```powershell
-$env:COLMAP_ROOT = "D:\LLM\MuraveiVision-PRO\sidecars\colmap"
+$env:COLMAP_ROOT = (Resolve-Path ".\sidecars\colmap").Path
 npm run backend
 ```
 

@@ -7,16 +7,17 @@ from pathlib import Path
 from services.db import normalize_media_path
 from services.security import archive_root
 
+
 class TestNormalizeMediaPath(unittest.TestCase):
     def test_windows_absolute(self) -> None:
         self.assertEqual(
-            normalize_media_path(r"D:\LLM\MuraveiVision-PRO\archive\video_2026.mp4"),
+            normalize_media_path(r"D:\proj\archive\video_2026.mp4"),
             "video_2026.mp4",
         )
 
     def test_windows_forward_slashes(self) -> None:
         self.assertEqual(
-            normalize_media_path("D:/LLM/MuraveiVision-PRO/archive/clips/a.mp4"),
+            normalize_media_path("D:/proj/archive/clips/a.mp4"),
             "clips/a.mp4",
         )
 
@@ -35,7 +36,7 @@ class TestNormalizeMediaPath(unittest.TestCase):
 
     def test_mixed_slashes(self) -> None:
         self.assertEqual(
-            normalize_media_path(r"D:/LLM\MuraveiVision-PRO\archive\sub\v.mp4"),
+            normalize_media_path(r"D:/proj\archive\sub\v.mp4"),
             "sub/v.mp4",
         )
 
@@ -73,7 +74,7 @@ class TestToArchiveMediaPathMirror(unittest.TestCase):
 
     def test_fe_canonical_matches_db_key(self) -> None:
         samples = [
-            r"D:\LLM\proj\archive\video.mp4",
+            r"D:\proj\archive\video.mp4",
             "archive/video.mp4",
             "video.mp4",
             "/data/archive/nested/a.mp4",

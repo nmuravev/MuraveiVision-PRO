@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `9735176` CSP blob + SessionTrace ids + archive paths
+- **Commit:** (pending push) zero-hardcode rule + docs RESOLVED
 - **Unit tests:** 179
 - **E2E specs:** 6+
-- **Status:** CSP connect-src blob for 3D splat; SessionTrace remount-safe; MediaPool archive/ paths
-- **Last updated by:** fix: CSP blob for splat; SessionTrace ids; archive media paths
+- **Status:** Fixed CSP blob for 3D splat, SessionTrace remount duplicates, canonicalized archive media paths, enforced zero-hardcode policy.
+- **Last updated by:** docs: zero-hardcode scan rule; resolve path/SessionTrace issues
 
 ---
 

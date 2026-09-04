@@ -4,12 +4,14 @@
 
 ## Session Trace (observability)
 
+- **RESOLVED (2026-09-04): duplicate React keys on remount** — page-lifetime singleton; `sessionStorage` UUID (`muravei_session_trace_uuid`); event ids `${sessionUuid}-${seq}`; Strict Mode remount does not reset `seq`. KEEP until user says «удали session trace».
 - **По умолчанию ON** (bug-hunt). Пауза записи — TopBar «Трассировка» / dock; код **остаётся в репо** до явного приказа пользователя: «удали session trace».
 - Умные фильтры: нет base64/кадров WS; FE буфер 500; store ≤1/500 ms; WS msg summary ≤1/5 с.
 - Файлы: `logs/trace.log`, `logs/runtime.log`. Env `MURAVEI_SESSION_TRACE=0` — пауза BE без удаления middleware.
 
 ## Детекции / галерея
 
+- **RESOLVED (2026-09-04): MediaPool absolute paths** — `/api/media` tree/`file` return `archive/...`; FE `toArchiveMediaPath` / `archiveMediaPath` rewrite Windows/Unix abs under archive. Viewer `sourcePath` is canonical; DB key still via `normalize_media_path` (no `archive/` prefix).
 - **Полнота скана** пропорциональна плотности (`fps_sample`, по умолчанию ~2). Треки (in→out) **группируют** существующие кадры, но **не создают** детекции между редкими сэмплами.
 - SAHI включается для кадров ≥1080p (не только 4K).
 
@@ -40,7 +42,7 @@
 
 ## 3D Reconstruction / gsplat
 
-- **CSP `blob:` in `connect-src` (2026-09-04):** splat load via `URL.createObjectURL` + `@mkkellogg/gaussian-splats-3d` `fetch(blob:)` requires `connect-src … blob:` in `index.html` (img/media/worker already allowed blob). Without it, Flight3D fails with CSP / AbortedPromiseError.
+- **CSP `blob:` in `connect-src` (RESOLVED 2026-09-04):** `index.html` allows `blob:` in `connect-src` so splat ObjectURL fetch works. **Hard-reload** the browser after pull (`Ctrl+Shift+R`) — CSP meta is cached aggressively.
 - **COLMAP sidecar auto-detect (2026-09-03):** если `COLMAP_ROOT` не задан, `recon_scanner._colmap_bin()` ищет `sidecars/colmap` (`COLMAP.bat`, `bin/colmap.exe`). Launchers (`npm run backend`, `start-backend.bat`, `Запустить.bat`, `desktop_launcher.py`) выставляют `COLMAP_ROOT` по умолчанию.
 - **Multi-model COLMAP sparse/N (2026-09-04):** diagnose / train / bootstrap / `recon_scanner` выбирают лучшую `sparse/N` по размеру `points3D.*` (`get_best_sparse_dir`), а не только `sparse/0`. Нормализация для gsplat: копия в `gsplat_data/sparse/0/`.
 - **Job ID / CLI whitespace (2026-09-04):** ID = 12 hex (`uuid4().hex[:12]`). При copy-paste с переносом PowerShell может разрезать аргумент — используйте `$jid = '…'` или положитесь на `sanitize_job_id` / `nargs='+'` join в CLI (`services/job_ids.py`). Генерация ID не менялась.
