@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `51900cb` skip inline optional gsplat in Build3D
+- **Commit:** (pending) chrome overflow TopBar/Viewer/Timeline
 - **Unit tests:** 198
 - **E2E specs:** 6+
-- **Status:** Build3D = sparse only; splat via Balanced; GSPLAT_INLINE=1 opt-in
-- **Last updated by:** fix: skip inline optional gsplat (51900cb)
+- **Status:** TopBar/Viewer/Timeline overflow UX; Detect/Ещё menus visible
+- **Last updated by:** fix: chrome overflow TopBar Viewer Timeline
 
 ---
 

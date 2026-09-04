@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Camera,
+  ChevronDown,
   Crosshair,
   Hand,
   Maximize2,
@@ -261,6 +262,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const setLiveUrl = useViewerStore((s) => s.setLiveUrl);
   const setLiveActive = useViewerStore((s) => s.setLiveActive);
   const setYoloEnabled = useViewerStore((s) => s.setYoloEnabled);
+  const setUseSahi = useViewerStore((s) => s.setUseSahi);
   const setPlaying = useViewerStore((s) => s.setPlaying);
   const setFocusedViewer = useViewerStore((s) => s.setFocusedViewer);
   const focusedViewerId = useViewerStore((s) => s.focusedViewerId);
@@ -294,6 +296,8 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     zones: hudZones,
     archiveEnabled: hudArchiveOn,
     liveEnabled: hudLiveOn,
+    saveManual: saveHudManual,
+    recompute: recomputeHud,
     disableForVideo: disableHudForVideo,
   } = useHudZones(viewer?.sourcePath, isAuthenticated && Boolean(viewer?.sourcePath));
   const startBatchScan = useBatchScanStore((s) => s.startScan);
@@ -407,6 +411,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const [toolbarNarrow, setToolbarNarrow] = useState(false);
   const [toolbarMoreOpen, setToolbarMoreOpen] = useState(false);
+  const [detectMenuOpen, setDetectMenuOpen] = useState(false);
   const [liveDraft, setLiveDraft] = useState('');
   const [liveBusy, setLiveBusy] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
@@ -506,7 +511,8 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width ?? 0;
-      setToolbarNarrow(w < 560);
+      // Typical mosaic Viewer ~900–1100px still cannot fit all controls
+      setToolbarNarrow(w < 980);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -518,6 +524,13 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, [toolbarMoreOpen]);
+
+  useEffect(() => {
+    if (!detectMenuOpen) return;
+    const onDoc = () => setDetectMenuOpen(false);
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [detectMenuOpen]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -598,7 +611,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.18 : 1 / 1.18;
       setZoom((z) => Math.min(8, Math.max(1, Number((z * factor).toFixed(3)))));
-      setViewTool('pan');
+      // Do NOT auto-enable pan — wheel then left-drag previously slid video out of overflow:hidden
     };
     parent.addEventListener('wheel', onWheel, { passive: false });
     return () => parent.removeEventListener('wheel', onWheel);
@@ -1163,6 +1176,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           timeSec: tSec,
           image,
           ...(viewer?.sourcePath ? { sourceVideo: viewer.sourcePath } : {}),
+          ...(viewer?.useSahi != null ? { useSahi: viewer.useSahi } : {}),
         }),
       );
       return true;
@@ -1210,6 +1224,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     editMode,
     seekEpoch,
     viewer?.sourcePath,
+    viewer?.useSahi,
   ]);
 
   useEffect(() => {
@@ -1832,6 +1847,30 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     setPan({ x: 0, y: 0 });
   };
 
+  const clampPan = useCallback(
+    (x: number, y: number, z: number) => {
+      const parent = stageParentRef.current;
+      if (!parent) return { x, y };
+      const pw = parent.clientWidth || 1;
+      const ph = parent.clientHeight || 1;
+      const sw = (stage.w || pw) * z;
+      const sh = (stage.h || ph) * z;
+      // Keep ≥80px of the stage inside the clipped parent (pan off-screen looked like “video gone”)
+      const margin = 80;
+      const maxX = Math.max(0, (sw + pw) / 2 - margin);
+      const maxY = Math.max(0, (sh + ph) / 2 - margin);
+      return {
+        x: Math.min(maxX, Math.max(-maxX, x)),
+        y: Math.min(maxY, Math.max(-maxY, y)),
+      };
+    },
+    [stage.w, stage.h],
+  );
+
+  useEffect(() => {
+    setPan((p) => clampPan(p.x, p.y, zoom));
+  }, [zoom, clampPan]);
+
   const removeActiveBox = () => {
     const obj =
       overlayObjects.find((o) => o.id === activeDetectionId) ||
@@ -2098,7 +2137,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
       <YoloDebugOverlay />
       <div
         ref={toolbarRef}
-        className="flex items-center gap-0 px-1.5 py-1 border-b border-dv-border text-[10px] text-dv-muted flex-nowrap overflow-hidden min-h-[32px]"
+        className="flex items-center gap-0 px-1.5 py-1 border-b border-dv-border text-[10px] text-dv-muted flex-nowrap overflow-visible relative z-20 min-h-[32px] min-w-0 w-full"
       >
         <ToolbarGroup>
           <Button
@@ -2191,15 +2230,46 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           >
             Live
           </Button>
-          <Button
-            size="sm"
-            active={Boolean(viewer?.yoloEnabled)}
-            disabled={!isAuthenticated}
-            onClick={() => setYoloEnabled(viewerId, !viewer?.yoloEnabled)}
-            title="Покадровая YOLO на экране. Выкл — без WS. Не путать со «Сканировать»."
+          <div
+            className="relative shrink-0"
+            onMouseDown={(e) => e.stopPropagation()}
           >
-            {viewer?.yoloEnabled ? 'YOLO вкл' : 'YOLO выкл'}
-          </Button>
+            <Button
+              size="sm"
+              active={Boolean(viewer?.yoloEnabled) || detectMenuOpen}
+              disabled={!isAuthenticated}
+              onClick={() => setDetectMenuOpen((v) => !v)}
+              title="Detect (WS) и SAHI. Seg/SAM — отдельно. Не путать со «Сканировать»."
+            >
+              {viewer?.yoloEnabled ? 'Detect' : 'Detect выкл'}
+              <ChevronDown size={10} />
+            </Button>
+            <Menu open={detectMenuOpen} className="w-52" align="left">
+              <MenuItem
+                onClick={() => {
+                  setYoloEnabled(viewerId, !viewer?.yoloEnabled);
+                }}
+              >
+                {viewer?.yoloEnabled ? 'Detect · вкл' : 'Detect · выкл'}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  const cur = viewer?.useSahi ?? null;
+                  const next = cur === null ? true : cur === true ? false : null;
+                  setUseSahi(viewerId, next);
+                }}
+              >
+                {viewer?.useSahi === true
+                  ? 'SAHI · вкл'
+                  : viewer?.useSahi === false
+                    ? 'SAHI · выкл'
+                    : 'SAHI · системный'}
+              </MenuItem>
+              <MenuItem disabled>
+                Модель · {inferKind !== '—' ? inferKind : mode || '—'}
+              </MenuItem>
+            </Menu>
+          </div>
         </ToolbarGroup>
 
         {!isLive && (viewer?.sourceMode ?? 'archive') === 'archive' && (
@@ -2256,6 +2326,8 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                   })}%`
                 : 'Сканировать'}
             </Button>
+            {!toolbarNarrow && (
+              <>
             <Button
               size="sm"
               active={overlayMode === 'seg'}
@@ -2440,6 +2512,8 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                 ) : null}
               </>
             )}
+              </>
+            )}
           </ToolbarGroup>
         )}
 
@@ -2539,6 +2613,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           </ToolbarGroup>
         )}
 
+        {!toolbarNarrow && (
         <ToolbarGroup>
           <Button
             size="sm"
@@ -2657,7 +2732,9 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
             </>
           )}
         </ToolbarGroup>
+        )}
 
+        {!toolbarNarrow && (
         <ToolbarGroup>
           <span
             className="inline-flex items-center gap-1.5 text-[9px] text-dv-muted max-w-[220px] truncate px-1"
@@ -2680,6 +2757,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
             </span>
           </span>
         </ToolbarGroup>
+        )}
 
         {!toolbarNarrow && (
           <ToolbarGroup>
@@ -2752,7 +2830,239 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
             >
               <MoreHorizontal size={12} />
             </IconButton>
-            <Menu open={toolbarMoreOpen} className="w-48">
+            <Menu open={toolbarMoreOpen} className="w-56">
+              {!isLive && (viewer?.sourceMode ?? 'archive') === 'archive' && (
+                <MenuItem
+                  disabled={!isAuthenticated}
+                  onClick={() => {
+                    setOverlayMode(overlayMode === 'seg' ? 'detect' : 'seg');
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  {overlayMode === 'seg' ? 'Сегментация · вкл' : 'Сегментация'}
+                </MenuItem>
+              )}
+              {!isLive &&
+                (viewer?.sourceMode ?? 'archive') === 'archive' &&
+                overlayMode === 'seg' &&
+                segReady &&
+                !segLoaded && (
+                  <MenuItem
+                    disabled={!isAuthenticated || segBusy}
+                    onClick={() => {
+                      void loadSegModel();
+                      setToolbarMoreOpen(false);
+                    }}
+                  >
+                    {segBusy ? 'загрузка…' : 'Загрузить seg'}
+                  </MenuItem>
+                )}
+              {!isLive && (viewer?.sourceMode ?? 'archive') === 'archive' && overlayMode === 'seg' && (
+                <MenuItem
+                  disabled={
+                    !isAuthenticated ||
+                    !segLoaded ||
+                    !paused ||
+                    segBusy ||
+                    seekInFlight
+                  }
+                  onClick={() => {
+                    void runSegFrame();
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  {segBusy ? 'сег…' : 'Сегментировать кадр'}
+                </MenuItem>
+              )}
+              {!isLive && (viewer?.sourceMode ?? 'archive') === 'archive' && overlayMode === 'seg' && (
+                <MenuItem
+                  disabled={
+                    !isAuthenticated ||
+                    !segLoaded ||
+                    !viewer?.sourcePath ||
+                    segBusy ||
+                    isLive
+                  }
+                  onClick={() => {
+                    setBatchSegOpen(true);
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  Batch сегментация
+                </MenuItem>
+              )}
+              {!isLive &&
+                (viewer?.sourceMode ?? 'archive') === 'archive' &&
+                overlayMode === 'seg' &&
+                samReady &&
+                !samLoaded && (
+                  <MenuItem
+                    disabled={!isAuthenticated || samBusy || segBusy}
+                    onClick={() => {
+                      void onLoadSam3();
+                      setToolbarMoreOpen(false);
+                    }}
+                  >
+                    {samBusy ? 'SAM…' : 'Загрузить SAM3'}
+                  </MenuItem>
+                )}
+              {!isLive &&
+                (viewer?.sourceMode ?? 'archive') === 'archive' &&
+                overlayMode === 'seg' &&
+                samLoaded && (
+                  <MenuItem
+                    disabled={!isAuthenticated || samBusy}
+                    onClick={() => {
+                      setSamTool(samTool === 'point' ? 'none' : 'point');
+                      setToolbarMoreOpen(false);
+                    }}
+                  >
+                    {samTool === 'point' ? 'Точка · вкл' : 'Точка'}
+                  </MenuItem>
+                )}
+              {!isLive &&
+                (viewer?.sourceMode ?? 'archive') === 'archive' &&
+                overlayMode === 'seg' &&
+                samLoaded && (
+                  <MenuItem
+                    disabled={
+                      !isAuthenticated ||
+                      samBusy ||
+                      !paused ||
+                      !activeDetectionId
+                    }
+                    onClick={() => {
+                      void runSamFromDetection();
+                      setToolbarMoreOpen(false);
+                    }}
+                  >
+                    SAM из детекции
+                  </MenuItem>
+                )}
+              {!isLive &&
+                (viewer?.sourceMode ?? 'archive') === 'archive' &&
+                overlayMode === 'seg' &&
+                samLoaded && (
+                  <MenuItem
+                    disabled={
+                      !isAuthenticated ||
+                      samBusy ||
+                      !paused ||
+                      !viewer?.sourcePath ||
+                      !hasSamSeed ||
+                      isLive
+                    }
+                    onClick={() => {
+                      setSamPropOpen(true);
+                      setToolbarMoreOpen(false);
+                    }}
+                  >
+                    Пропагировать
+                  </MenuItem>
+                )}
+              <MenuItem
+                onClick={() => {
+                  setShowMotion(!showMotion);
+                  setToolbarMoreOpen(false);
+                }}
+              >
+                {showMotion ? 'Векторы · вкл' : 'Векторы'}
+              </MenuItem>
+              {viewerId === 'viewer-1' && (
+                <MenuItem
+                  onClick={() => {
+                    const next = !compareMode;
+                    setCompareMode(next);
+                    if (!next) {
+                      setSyncPlayhead(false);
+                      setSyncMode('off');
+                      cdClear();
+                    }
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  {compareMode ? 'Было/Стало · вкл' : 'Было/Стало'}
+                </MenuItem>
+              )}
+              {viewerId === 'viewer-1' && compareMode && (
+                <MenuItem
+                  onClick={() => {
+                    const next = !(syncPlayhead || syncMode === 'follow');
+                    setSyncPlayhead(next);
+                    setSyncMode(next ? 'follow' : 'off');
+                    if (next) {
+                      const pos = useTimelineStore.getState().playheadPosition;
+                      seekTo(pos);
+                    }
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  {syncPlayhead || syncMode === 'follow' ? 'Sync · вкл' : 'Sync'}
+                </MenuItem>
+              )}
+              {viewerId === 'viewer-1' && compareMode && (
+                <MenuItem
+                  disabled={
+                    !isAuthenticated ||
+                    !useViewerStore.getState().viewers['viewer-1']?.sourcePath ||
+                    !useViewerStore.getState().viewers['viewer-2']?.sourcePath
+                  }
+                  onClick={() => {
+                    setSyncModalOpen(true);
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  Синхронизировать
+                </MenuItem>
+              )}
+              {viewerId === 'viewer-1' && compareMode && (
+                <MenuItem
+                  disabled={
+                    cdLoading ||
+                    !isAuthenticated ||
+                    !useViewerStore.getState().viewers['viewer-1']?.sourcePath ||
+                    !useViewerStore.getState().viewers['viewer-2']?.sourcePath
+                  }
+                  onClick={() => {
+                    const v1 = useViewerStore.getState().viewers['viewer-1'];
+                    const v2 = useViewerStore.getState().viewers['viewer-2'];
+                    if (!v1?.sourcePath || !v2?.sourcePath) return;
+                    const syncOn =
+                      useViewerStore.getState().syncPlayhead ||
+                      useTimelineStore.getState().syncMode === 'follow';
+                    void cdRunAnalysis({
+                      videoBefore: v1.sourcePath,
+                      videoAfter: v2.sourcePath,
+                      timeBefore: videoRef.current?.currentTime ?? getViewerPlaybackTime('viewer-1'),
+                      timeAfter: getViewerPlaybackTime('viewer-2'),
+                      timeWindowSec: syncOn ? 0.5 : 2.0,
+                    });
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  {cdLoading ? 'Анализ…' : 'Анализ изменений'}
+                </MenuItem>
+              )}
+              {viewerId === 'viewer-1' && compareMode && (
+                <MenuItem
+                  disabled={
+                    !isAuthenticated ||
+                    !useViewerStore.getState().viewers['viewer-1']?.sourcePath ||
+                    !useViewerStore.getState().viewers['viewer-2']?.sourcePath
+                  }
+                  onClick={() => {
+                    setBatchChangeOpen(true);
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  Пакетный CD
+                </MenuItem>
+              )}
+              <MenuItem disabled>
+                {overlayMode === 'seg'
+                  ? `SEG · ${inferKind} · ${inferN} · ${inferMs}ms`
+                  : `YOLO26 · ${inferKind} · ${inferN} obj · ${inferMs}ms`}
+              </MenuItem>
               <MenuItem
                 disabled={recBusy || (!recOn && !viewer?.sourcePath)}
                 onClick={() => {
@@ -2836,6 +3146,9 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
         className={`flex-1 relative min-h-0 flex items-center justify-center overflow-hidden ${
           viewTool === 'pan' ? 'cursor-grab' : ''
         }`}
+        onDoubleClick={() => {
+          resetView();
+        }}
         onPointerDown={(e) => {
           if (viewTool !== 'pan' && e.button !== 1) return;
           (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -2844,7 +3157,12 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
         onPointerMove={(e) => {
           const drag = panDrag.current;
           if (!drag) return;
-          setPan({ x: drag.x + (e.clientX - drag.px), y: drag.y + (e.clientY - drag.py) });
+          const next = clampPan(
+            drag.x + (e.clientX - drag.px),
+            drag.y + (e.clientY - drag.py),
+            zoom,
+          );
+          setPan(next);
         }}
         onPointerUp={() => {
           panDrag.current = null;
@@ -2944,8 +3262,11 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
             )}
             {hudArchiveOn && !isLive && (
               <HudExclusionOverlay
+                visible
                 zones={hudZones}
-                onDisable={() => void disableHudForVideo()}
+                onApply={(m) => saveHudManual(m)}
+                onAuto={() => recomputeHud()}
+                onReset={() => disableHudForVideo()}
               />
             )}
             {hudLiveOn && isLive && (

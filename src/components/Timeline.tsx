@@ -1,7 +1,7 @@
 import React, { memo, useEffect, useRef, useState } from 'react';
 import { Play, Pause, SkipBack, SkipForward, ZoomIn, ZoomOut, X } from 'lucide-react';
 import { classLabelRu } from '../lib/classLabels';
-import { useTimelineStore } from '../store/timeline-store';
+import { useTimelineStore, ZOOM_PRESETS } from '../store/timeline-store';
 
 function useTimelineScrub() {
   const startScrubbing = useTimelineStore((s) => s.startScrubbing);
@@ -256,89 +256,134 @@ export const Timeline: React.FC<TimelineProps> = ({
   const hasRange = inPoint != null && outPoint != null && outPoint > inPoint;
   const step = tickStep(pixelsPerSecond, duration);
   const tickCount = Math.ceil(duration / step) + 1;
+  const [timelineNarrow, setTimelineNarrow] = useState(false);
+  const chromeRef = useRef<HTMLDivElement>(null);
+  const storeZoomIn = useTimelineStore((s) => s.zoomIn);
+  const storeZoomOut = useTimelineStore((s) => s.zoomOut);
+  const doZoomIn = onZoomIn ?? storeZoomIn;
+  const doZoomOut = onZoomOut ?? storeZoomOut;
+  const atMaxZoom = pixelsPerSecond >= ZOOM_PRESETS.MAX - 0.01;
+  const atMinZoom = pixelsPerSecond <= ZOOM_PRESETS.MIN + 0.01;
+
+  useEffect(() => {
+    const el = chromeRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      setTimelineNarrow(w < 720);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   return (
     <div className="h-full flex flex-col bg-[#1a1a1a] border-t border-gray-800">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-800">
-        <button type="button" onClick={onPlayPause} className="p-1.5 hover:bg-gray-700 rounded text-gray-300" title="Play/Pause (Space)">
-          {isPlaying ? <Pause size={16} /> : <Play size={16} />}
-        </button>
-        <button type="button" onClick={() => onSeek(0)} className="p-1.5 hover:bg-gray-700 rounded text-gray-300" title="В начало">
-          <SkipBack size={16} />
-        </button>
-        <button
-          type="button"
-          onClick={() => onSeek(duration)}
-          className="p-1.5 hover:bg-gray-700 rounded text-gray-300"
-          title="В конец"
-        >
-          <SkipForward size={16} />
-        </button>
-
-        <div className="w-px h-4 bg-gray-700 mx-1" />
-
-        <span className="text-xs font-mono text-gray-300 min-w-[72px]">
-          {formatTime(currentTime)} / {formatTime(duration)}
-        </span>
-        <select
-          aria-label="Скорость воспроизведения"
-          className="bg-[#111] border border-gray-700 px-1 py-0.5 text-[10px] font-mono text-gray-300"
-          value={playbackRate}
-          onChange={(event) => setPlaybackRate(Number(event.target.value))}
-        >
-          {[0.25, 0.5, 1, 1.5, 2, 4].map((rate) => (
-            <option key={rate} value={rate}>
-              {rate}×
-            </option>
-          ))}
-        </select>
-
-        <div className="w-px h-4 bg-gray-700 mx-1" />
-
-        <button
-          type="button"
-          onClick={onSetInPoint}
-          className="px-1.5 py-0.5 hover:bg-blue-800 rounded text-blue-400 font-mono text-xs font-bold"
-          title="Метка In — начало участка анализа (клавиша I)"
-        >
-          I
-        </button>
-        <button
-          type="button"
-          onClick={onSetOutPoint}
-          className="px-1.5 py-0.5 hover:bg-red-800 rounded text-red-400 font-mono text-xs font-bold"
-          title="Метка Out — конец участка анализа (клавиша O)"
-        >
-          O
-        </button>
-        {(inPoint != null || outPoint != null) && (
+      <div
+        ref={chromeRef}
+        className="flex items-center gap-2 px-3 py-2 border-b border-gray-800 min-w-0 w-full"
+      >
+        <div className="flex items-center gap-2 shrink-0">
+          <button type="button" onClick={onPlayPause} className="p-1.5 hover:bg-gray-700 rounded text-gray-300" title="Play/Pause (Space)">
+            {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+          </button>
+          <button type="button" onClick={() => onSeek(0)} className="p-1.5 hover:bg-gray-700 rounded text-gray-300" title="В начало">
+            <SkipBack size={16} />
+          </button>
           <button
             type="button"
-            onClick={onClearInOut}
-            className="p-1 hover:bg-gray-700 rounded text-gray-400"
-            title="Сбросить In/Out"
+            onClick={() => onSeek(duration)}
+            className="p-1.5 hover:bg-gray-700 rounded text-gray-300"
+            title="В конец"
           >
-            <X size={14} />
+            <SkipForward size={16} />
           </button>
-        )}
-        <span className="text-[10px] font-mono text-blue-300 min-w-[88px]">
-          I {inPoint != null ? formatTime(inPoint) : '--:--'}
-        </span>
-        <span className="text-[10px] font-mono text-red-300 min-w-[88px]">
-          O {outPoint != null ? formatTime(outPoint) : '--:--'}
-        </span>
 
-        <div className="flex-1" />
+          <div className="w-px h-4 bg-gray-700 mx-1" />
 
-        <span className="text-[10px] font-mono text-gray-500 min-w-[52px] text-right">
-          {pixelsPerSecond.toFixed(0)} px/s
-        </span>
-        <button type="button" onClick={onZoomOut} className="p-1.5 hover:bg-gray-700 rounded text-gray-300" title="Zoom out">
-          <ZoomOut size={16} />
-        </button>
-        <button type="button" onClick={onZoomIn} className="p-1.5 hover:bg-gray-700 rounded text-gray-300" title="Zoom in">
-          <ZoomIn size={16} />
-        </button>
+          <span className="text-xs font-mono text-gray-300 min-w-[72px]">
+            {formatTime(currentTime)} / {formatTime(duration)}
+          </span>
+          <select
+            aria-label="Скорость воспроизведения"
+            className="bg-[#111] border border-gray-700 px-1 py-0.5 text-[10px] font-mono text-gray-300"
+            value={playbackRate}
+            onChange={(event) => setPlaybackRate(Number(event.target.value))}
+          >
+            {[0.25, 0.5, 1, 1.5, 2, 4].map((rate) => (
+              <option key={rate} value={rate}>
+                {rate}×
+              </option>
+            ))}
+          </select>
+
+          <div className="w-px h-4 bg-gray-700 mx-1" />
+
+          <button
+            type="button"
+            onClick={onSetInPoint}
+            className="px-1.5 py-0.5 hover:bg-blue-800 rounded text-blue-400 font-mono text-xs font-bold"
+            title="Метка In — начало участка анализа (клавиша I)"
+          >
+            I
+          </button>
+          <button
+            type="button"
+            onClick={onSetOutPoint}
+            className="px-1.5 py-0.5 hover:bg-red-800 rounded text-red-400 font-mono text-xs font-bold"
+            title="Метка Out — конец участка анализа (клавиша O)"
+          >
+            O
+          </button>
+          {(inPoint != null || outPoint != null) && (
+            <button
+              type="button"
+              onClick={onClearInOut}
+              className="p-1 hover:bg-gray-700 rounded text-gray-400"
+              title="Сбросить In/Out"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1 overflow-x-auto flex items-center gap-2">
+          {!timelineNarrow && (
+            <>
+              <span className="text-[10px] font-mono text-blue-300 min-w-[88px] shrink-0">
+                I {inPoint != null ? formatTime(inPoint) : '--:--'}
+              </span>
+              <span className="text-[10px] font-mono text-red-300 min-w-[88px] shrink-0">
+                O {outPoint != null ? formatTime(outPoint) : '--:--'}
+              </span>
+            </>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          {!timelineNarrow && (
+            <span className="text-[10px] font-mono text-gray-500 min-w-[52px] text-right">
+              {pixelsPerSecond.toFixed(0)} px/s
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => doZoomOut()}
+            disabled={atMinZoom}
+            className="p-1.5 hover:bg-gray-700 rounded text-gray-300 disabled:opacity-40"
+            title="Zoom out"
+          >
+            <ZoomOut size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => doZoomIn()}
+            disabled={atMaxZoom}
+            className="p-1.5 hover:bg-gray-700 rounded text-gray-300 disabled:opacity-40"
+            title="Zoom in"
+          >
+            <ZoomIn size={16} />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 relative min-h-0">
