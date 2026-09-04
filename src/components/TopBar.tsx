@@ -298,7 +298,7 @@ export const TopBar: React.FC<TopBarProps> = ({
     <>
       <div
         ref={menuRef}
-        className="h-12 bg-dv-header border-b border-dv-border flex items-center px-3 flex-shrink-0 relative z-[100] gap-2 min-w-0 overflow-hidden"
+        className="h-12 bg-dv-header border-b border-dv-border flex items-center px-3 flex-shrink-0 relative z-[100] gap-2 min-w-0 overflow-visible"
       >
         <div className="flex items-center gap-2 mr-3 shrink-0">
           <div className="w-7 h-7 bg-dv-hot rounded-sm flex items-center justify-center text-white font-bold text-xs">
@@ -534,7 +534,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 <MoreHorizontal size={13} />
                 Ещё
               </Button>
-              <Menu open={moreOpen} className="w-56 max-h-[70vh] overflow-auto">
+              <Menu open={moreOpen} className="w-56 max-h-[min(70vh,28rem)] overflow-auto z-[110]" align="right">
                 {isAuthenticated && (
                   <>
                     <MenuItem
