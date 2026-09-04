@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** (pending) fix train presets 404 modal + zombie uvicorn
+- **Commit:** `9f678fe` silence recon train 404 modal; kill stale uvicorn note
 - **Unit tests:** 183
 - **E2E specs:** 6+
 - **Status:** Train API live after hard kill of zombie uvicorn; silent 404 for presets/status; inline presetsError
-- **Last updated by:** fix: recon train 404 modal + restart stale backend
+- **Last updated by:** fix: silence recon train 404 modal (`9f678fe`)
 
 ---
 
