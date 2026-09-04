@@ -13,6 +13,7 @@
 - Embeddable **Python 3.12.10** в `muravei_env\` (+ CUDA torch cu128)
 - YOLO detect weights (`yolo26n-ft.pt` при наличии)
 - **Ollama** Windows amd64 в `ollama\` + модель **qwen2.5vl:7b**
+- **3D sidecars:** `sidecars\colmap`, `sidecars\gsplat_examples` (если были на машине сборки)
 - Опционально `mobileclip2_b.ts` (find-similar)
 
 ## Требования
@@ -24,10 +25,11 @@
 
 ## Режимы
 
-| Комплект | Ollama в ZIP | Назначение |
-|----------|--------------|------------|
-| **Lite** | нет | Детекция YOLO, отчёты, гео; AI — если Ollama уже в системе |
-| **Full** | да | Детекция + VLM-анализ + autolabel-путь без интернета |
+| Комплект | Ollama / 3D | Назначение |
+|----------|-------------|------------|
+| **Mini** (`-NoDetectWeights`) | нет | UI/geo/отчёты без YOLO-весов |
+| **Lite** | нет | Детекция YOLO, отчёты, гео; VLM — если Ollama уже в системе |
+| **Full** | да + COLMAP/gsplat sidecars | Детекция + VLM + 3D recon без интернета |
 
 ## Сеть (опционально)
 

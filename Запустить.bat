@@ -16,7 +16,7 @@ if exist "%~dp0ollama\ollama.exe" (
     start "Ollama" /B "%~dp0ollama\ollama.exe" serve
     timeout /t 3 /nobreak >nul
 ) else (
-    echo Ollama not in kit ^(Lite^). AI analysis needs a system Ollama if available.
+    echo Ollama not in kit ^(Lite/Mini^). AI analysis needs a system Ollama if available.
 )
 
 set "PYTHON="
@@ -28,7 +28,8 @@ if not defined PYTHON (
     echo [ERROR] Python not found.
     echo Expected muravei_env\Scripts\python.exe ^(embed 3.12.10^).
     echo Build kit: scripts\build_portable.ps1 -FetchEmbeddablePython
-    echo Full Kit: scripts\build_portable.ps1 -FetchEmbeddablePython -FullKit
+    echo Mini:      scripts\build_portable.ps1 -FetchEmbeddablePython -NoDetectWeights
+    echo Full Kit:  scripts\build_portable.ps1 -FetchEmbeddablePython -FullKit
     pause
     exit /b 1
 )
@@ -38,11 +39,22 @@ if not exist "%~dp0dist\index.html" (
 )
 
 echo Python: !PYTHON!
-set "COLMAP_ROOT=%~dp0sidecars\colmap"
-echo COLMAP_ROOT=!COLMAP_ROOT!
 set "MURAVEI_SESSION_TRACE=1"
+set "COLMAP_ROOT="
+if exist "%~dp0sidecars\colmap\COLMAP.bat" set "COLMAP_ROOT=%~dp0sidecars\colmap"
+if not defined COLMAP_ROOT if exist "%~dp0sidecars\colmap\colmap.exe" set "COLMAP_ROOT=%~dp0sidecars\colmap"
+if not defined COLMAP_ROOT if exist "%~dp0sidecars\colmap\bin\colmap.exe" set "COLMAP_ROOT=%~dp0sidecars\colmap"
+if defined COLMAP_ROOT (
+    echo COLMAP_ROOT=!COLMAP_ROOT!
+) else (
+    echo COLMAP sidecar not in kit - 3D recon needs sidecars\colmap ^(FullKit^).
+)
 echo Starting backend on http://127.0.0.1:8000 ...
-start "MuraveiVision Backend" cmd /c "set COLMAP_ROOT=%~dp0sidecars\colmap&& set MURAVEI_SESSION_TRACE=1&& \"!PYTHON!\" -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000"
+if defined COLMAP_ROOT (
+    start "MuraveiVision Backend" cmd /c "set COLMAP_ROOT=!COLMAP_ROOT!&& set MURAVEI_SESSION_TRACE=1&& \"!PYTHON!\" -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000"
+) else (
+    start "MuraveiVision Backend" cmd /c "set MURAVEI_SESSION_TRACE=1&& \"!PYTHON!\" -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000"
+)
 
 echo Waiting for backend...
 timeout /t 4 /nobreak >nul
