@@ -59,7 +59,7 @@
 
 - **COLMAP** — poses + intrinsics (PINHOLE/SIMPLE_PINHOLE/SIMPLE_RADIAL/RADIAL/OPENCV).
 - **gsplat** — train hook, dual load Points / DropInViewer.
-- **Flight3D** — ручной scale/horizon. Пока COLMAP/`reconRunning` — статус фазы, не «Загрузка 3D-сцены»; сцена не грузится до `colmap_done`/`done`. После `colmap_done` — strip профилей обучения (Bootstrap / Balanced / High); HQ disabled при VRAM &lt; 12 ГБ. Один train за раз; взаимная блокировка с COLMAP.
+- **Flight3D** — ручной scale/horizon. Пока COLMAP/`reconRunning` — **модалка шагов на canvas** (не только статус-бар); сцена не грузится до `colmap_done`/`done`. После sparse — idle-карточка «не фотореализм → Balanced». Strip Bootstrap / Balanced / High; HQ disabled при VRAM &lt; 12 ГБ. Один train за раз; взаимная блокировка с COLMAP. Train-успех держит chip до загрузки splat.
 - **2D→3D raycast** — intrinsics + splat pick, miss→toast (не THREE.Raycaster).
 
 ## Отчёты / обучение

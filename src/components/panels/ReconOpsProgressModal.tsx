@@ -93,7 +93,9 @@ export function ReconOpsProgressModal(props: Props) {
       >
         <div className="flex items-start justify-between gap-2 px-3 py-2 border-b border-[var(--dv-border)]">
           <div>
-            <div className="font-semibold text-[var(--dv-text)]">{finishing ? 'Готово' : title}</div>
+            <div className="font-semibold text-[var(--dv-text)]">
+              {finishing ? (title.startsWith('Готово') ? title : 'Готово') : title}
+            </div>
             <div className="font-mono text-[var(--dv-text-muted)] mt-0.5">
               {jobId ? `job ${jobId}` : 'job —'} · {elapsedSec}с · {progressPct}%
             </div>

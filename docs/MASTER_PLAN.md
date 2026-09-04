@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `374a04d` HUD zones 404 spam fix
+- **Commit:** *(pending — sparse UX + ops modal idle card)*
 - **Unit tests:** 198
 - **E2E specs:** 6+
-- **Status:** HUD zones 404 modal spam fixed (silent + smart poll)
-- **Last updated by:** fix: HUD zones 404 spam (`374a04d`)
+- **Status:** Flight3D idle pipeline card + clearer ops modal train steps; softer sparse points
+- **Last updated by:** feat: sparse canvas legend + ops modal clarity
 
 ---
 

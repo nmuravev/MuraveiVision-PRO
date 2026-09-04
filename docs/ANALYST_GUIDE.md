@@ -82,6 +82,10 @@
 9. **Тепловая карта (P3.15.4):** если анализ шёл через ORB/diff (`image_diff.heatmap_b64`), на viewer-1 появляется **«Теплокарта»**. Вкл/выкл — полупрозрачный JET-overlay под цветными bbox на обоих Viewer (координаты «было»). GPS-only без image-пути — кнопки нет.
 10. **Пакетный CD (P3.15.5):** кнопка **«Пакетный CD»** → stride / max_pairs / opt-in ORB → Start. После done — список пар; клик → seek обоих Viewer + Inspector. **Экспорт HTML** — сводка уникальных ID по всем парам.
 
+## Гео 3D (кратко)
+
+После «Построить 3D» на canvas — **sparse COLMAP** (облако точек), не фотореализм. Во время COLMAP/обучения — модалка шагов; в idle — карточка «→ Balanced». Фотореализм = Gaussian splat после Balanced/High (`model.ply`). Тестировать UI через Vite `:3000`, не stale `dist`. Подробнее: [OPERATOR_GUIDE.md](OPERATOR_GUIDE.md).
+
 ## Достоверность (важно)
 
 - Response Validator отбрасывает аномальные детекции (bbox/conf/area/class_id) — см. `logs/validator_rejections.jsonl`. Если аналитик видит систематические отбросы — сообщить инженеру.

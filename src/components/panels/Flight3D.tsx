@@ -335,6 +335,7 @@ export const Flight3D: React.FC = () => {
     train,
     sceneLoading,
     sceneError,
+    sceneKind,
     onRetryRecon: () => runBuild3d(),
     onRetryTrain: (preset) => {
       if (!preset) return;
@@ -344,6 +345,13 @@ export const Flight3D: React.FC = () => {
       });
     },
   });
+
+  const runBalanced = () => {
+    void startTrain('balanced', () => {
+      framedKeyRef.current = '';
+      loadManifestRef.current();
+    });
+  };
 
   useEffect(() => {
     if (!pendingRaycast || !sourcePath) return;
@@ -1185,10 +1193,49 @@ export const Flight3D: React.FC = () => {
           sceneKind === 'points' &&
           !sparseWeak &&
           !reconRunning &&
-          !training && (
+          !training &&
+          !ops.visible && (
+            <div className="absolute inset-x-0 bottom-3 z-20 flex justify-center pointer-events-none px-2">
+              <div className="pointer-events-auto w-[min(440px,94%)] rounded-sm border border-amber-700/50 bg-black/85 px-3 py-2 text-[11px] text-amber-50 shadow-lg">
+                <div className="font-semibold text-amber-200">
+                  Готово: sparse COLMAP
+                  {sparsePoints ? ` (${Math.floor(sparsePoints.length / 3)} точек)` : ''} — облако
+                  точек, не фотограмметрия
+                </div>
+                <div className="mt-1 text-[var(--dv-text-muted)] text-[10px] leading-snug">
+                  Сейчас на canvas: рендер Points (круги). Фотореализм = Gaussian splat после
+                  обучения. Дальше: Balanced (~5–10 мин) → model.ply.
+                </div>
+                <button
+                  type="button"
+                  className="mt-2 w-full px-2 py-1 rounded-sm bg-[var(--dv-accent)] text-black font-medium disabled:opacity-40"
+                  disabled={
+                    opsBlocking ||
+                    colmapBusy ||
+                    !isReconReady(manifest) ||
+                    trainPresets.some((p) => p.id === 'balanced' && p.disabled)
+                  }
+                  onClick={() => runBalanced()}
+                  title={
+                    trainPresets.find((p) => p.id === 'balanced')?.disabled_reason ||
+                    'Запустить Balanced gsplat'
+                  }
+                >
+                  Balanced → фотореализм
+                </button>
+              </div>
+            </div>
+          )}
+        {viewMode === 'scene' &&
+          sceneKind === 'points' &&
+          !sparseWeak &&
+          !reconRunning &&
+          !training &&
+          ops.visible && (
             <div className="absolute bottom-2 left-2 right-2 pointer-events-none z-10">
               <div className="px-2 py-1 rounded-sm bg-black/70 text-[10px] text-[var(--dv-text-muted)] border border-[var(--dv-border)] text-center">
-                Sparse COLMAP (точки) — не фотореализм. Нажмите Balanced выше для gsplat.
+                Sparse COLMAP (точки) — не фотореализм. Дождитесь окончания операции или нажмите
+                Balanced.
               </div>
             </div>
           )}

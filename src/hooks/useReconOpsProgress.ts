@@ -16,6 +16,7 @@ export type OpsStep = {
 
 export const OPS_LOG_CAP = 20;
 const AUTO_DISMISS_MS = 1800;
+const TRAIN_HOLD_DISMISS_MS = 8000;
 
 function reconActiveIndex(phase: string | null, running: boolean, loading: boolean): number {
   if (loading && !running) return 3;
@@ -33,10 +34,20 @@ export function useReconOpsProgress(opts: {
   train: TrainStatus;
   sceneLoading: boolean;
   sceneError: string | null;
+  /** After train: hold success chip until splat appears (or timeout). */
+  sceneKind?: 'empty' | 'points' | 'splat' | null;
   onRetryRecon?: () => void;
   onRetryTrain?: (preset?: string) => void;
 }) {
-  const { training, train, sceneLoading, sceneError, onRetryRecon, onRetryTrain } = opts;
+  const {
+    training,
+    train,
+    sceneLoading,
+    sceneError,
+    sceneKind = null,
+    onRetryRecon,
+    onRetryTrain,
+  } = opts;
   const reconRunning = useReconStore((s) => s.reconRunning);
   const reconPhase = useReconStore((s) => s.reconPhase);
   const reconProgress = useReconStore((s) => s.reconProgress);
@@ -115,14 +126,46 @@ export function useReconOpsProgress(opts: {
     setPhaseUi('success');
     wasBusyRef.current = false;
     if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+
+    const isTrainOp = opKindRef.current === 'train';
+    // Hold train success until splat loads (or timeout) so operator sees pipeline end
+    if (isTrainOp && sceneKind !== 'splat' && sceneLoading) {
+      return;
+    }
+    const delay =
+      isTrainOp && sceneKind !== 'splat' ? TRAIN_HOLD_DISMISS_MS : AUTO_DISMISS_MS;
     dismissTimerRef.current = setTimeout(() => {
       setOpen(false);
       setMinimized(false);
       setPhaseUi('work');
       startedAtRef.current = null;
       addEvent('modal', 'recon-ops auto-dismiss');
+    }, delay);
+  }, [
+    busy,
+    open,
+    train.status,
+    train.error,
+    reconPhase,
+    sceneError,
+    lastReconMessage,
+    sceneKind,
+    sceneLoading,
+  ]);
+
+  // When splat appears after train success, dismiss shortly
+  useEffect(() => {
+    if (!open || phaseUi !== 'success' || opKindRef.current !== 'train') return;
+    if (sceneKind !== 'splat') return;
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = setTimeout(() => {
+      setOpen(false);
+      setMinimized(false);
+      setPhaseUi('work');
+      startedAtRef.current = null;
+      addEvent('modal', 'recon-ops auto-dismiss splat');
     }, AUTO_DISMISS_MS);
-  }, [busy, open, train.status, train.error, reconPhase, sceneError, lastReconMessage]);
+  }, [sceneKind, open, phaseUi]);
 
   useEffect(
     () => () => {
@@ -155,47 +198,64 @@ export function useReconOpsProgress(opts: {
     if (isTrain) {
       const err = train.status === 'error' || phaseUi === 'error';
       const doneAll = phaseUi === 'success';
+      const trainingNow = training || train.status === 'training';
       const rows: OpsStep[] = [
         {
-          id: 'train_start',
-          label: 'Запуск обучения',
-          status: err || training || doneAll || train.status === 'done' || train.status === 'training' ? 'done' : 'pending',
+          id: 'train_prep',
+          label: 'Подготовка (MSVC / данные)',
+          status:
+            err || trainingNow || doneAll || train.status === 'done' ? 'done' : 'pending',
         },
         {
           id: 'training',
-          label: 'Обучение (gsplat / bootstrap)',
+          label: 'Обучение gsplat (JIT / шаги)',
           status: err
             ? 'error'
             : doneAll || (train.status === 'done' && !sceneLoading)
               ? 'done'
-              : training || train.status === 'training'
+              : trainingNow
                 ? 'running'
                 : 'pending',
           detail: err
             ? train.error || train.message || 'ошибка'
-            : training || train.status === 'training'
+            : trainingNow
               ? `${train.steps ?? 0}/${train.max_steps ?? 0} · loss ${train.loss != null ? train.loss.toFixed(4) : '—'} · PSNR ${train.psnr != null ? train.psnr.toFixed(1) : '—'} · VRAM ${(train.vram_used_gb ?? 0).toFixed(1)}/${(train.vram_total_gb ?? 0).toFixed(1)} GB`
               : undefined,
         },
         {
-          id: 'load_scene',
-          label: 'Загрузка сцены',
+          id: 'write_ply',
+          label: 'Запись model.ply',
+          status: err
+            ? 'pending'
+            : doneAll || train.status === 'done'
+              ? 'done'
+              : trainingNow && (train.steps ?? 0) > 0 && train.max_steps
+                ? (train.steps ?? 0) >= (train.max_steps ?? 1) * 0.95
+                  ? 'running'
+                  : 'pending'
+                : 'pending',
+        },
+        {
+          id: 'load_splat',
+          label: 'Загрузка splat на сцену',
           status: err
             ? 'pending'
             : sceneLoading
               ? 'running'
-              : doneAll || train.status === 'done'
+              : doneAll || sceneKind === 'splat'
                 ? 'done'
-                : 'pending',
+                : train.status === 'done'
+                  ? 'running'
+                  : 'pending',
         },
       ];
       return rows.map((r) => ({ ...r, durationMs: markDur(r.id, r.status) }));
     }
 
     const defs = [
-      { id: 'extracting', label: 'Извлечение кадров' },
-      { id: 'colmap', label: 'COLMAP feature extract + mapper' },
-      { id: 'export_poses', label: 'Экспорт poses + sparse' },
+      { id: 'extracting', label: 'Кадры из видео' },
+      { id: 'colmap', label: 'COLMAP (SfM)' },
+      { id: 'export_poses', label: 'Позы / sparse' },
       { id: 'load_scene', label: 'Загрузка сцены' },
     ];
     const idx = reconActiveIndex(reconPhase, reconRunning, sceneLoading);
@@ -236,17 +296,18 @@ export function useReconOpsProgress(opts: {
     lastReconMessage,
     sceneError,
     phaseUi,
+    sceneKind,
   ]);
 
   const progressPct = useMemo(() => {
-    if (phaseUi === 'success') return 100;
+    if (phaseUi === 'success' && (!training || sceneKind === 'splat')) return 100;
     if (training && train.max_steps) {
-      return Math.min(100, Math.round(((train.steps ?? 0) / Math.max(1, train.max_steps)) * 100));
+      return Math.min(99, Math.round(((train.steps ?? 0) / Math.max(1, train.max_steps)) * 100));
     }
     if (reconRunning) return Math.min(100, Math.round((reconProgress || 0) * 100));
     const done = steps.filter((s) => s.status === 'done').length;
     return steps.length ? Math.round((done / steps.length) * 100) : 0;
-  }, [phaseUi, training, train, reconRunning, reconProgress, steps]);
+  }, [phaseUi, training, train, reconRunning, reconProgress, steps, sceneKind]);
 
   const elapsedSec = startedAtRef.current
     ? Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000))
@@ -256,7 +317,9 @@ export function useReconOpsProgress(opts: {
 
   const title =
     opKindRef.current === 'train'
-      ? `Обучение 3D${lastPresetRef.current ? ` · ${lastPresetRef.current}` : ''}`
+      ? phaseUi === 'success' && sceneKind !== 'splat'
+        ? `Готово · model.ply — загрузка splat…`
+        : `Обучение 3D${lastPresetRef.current ? ` · ${lastPresetRef.current}` : ''}`
       : opKindRef.current === 'load'
         ? 'Загрузка 3D-сцены'
         : 'Построение 3D (COLMAP)';

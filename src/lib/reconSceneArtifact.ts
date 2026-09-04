@@ -113,20 +113,25 @@ export function pointDiscTexture(): THREE.CanvasTexture {
   return _discMap;
 }
 
-function sparsePointSize(maxDim: number): number {
-  return Math.max(0.01, Math.min(0.08, maxDim * 0.01));
+function sparsePointSize(maxDim: number, pointCount = 0): number {
+  // Dense clouds look like voxels if points are too large
+  const base = Math.max(0.006, Math.min(0.045, maxDim * 0.0045));
+  if (pointCount > 20_000) return base * 0.55;
+  if (pointCount > 5_000) return base * 0.75;
+  return base;
 }
 
 /** Build Points from Float32Array xyz in COLMAP/source coordinates. */
 export function pointsFromSparse(sparse: Float32Array): THREE.Points {
   const { maxDim } = sparseClusterMetrics(sparse);
+  const n = Math.floor(sparse.length / 3);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(sparse, 3));
   return new THREE.Points(
     geo,
     new THREE.PointsMaterial({
       color: 0x7ab8e8,
-      size: sparsePointSize(maxDim),
+      size: sparsePointSize(maxDim, n),
       sizeAttenuation: true,
       map: pointDiscTexture(),
       transparent: true,
@@ -162,18 +167,14 @@ export async function loadPlyAsPoints(url: string): Promise<THREE.Points> {
   const { maxDim } = sparseClusterMetrics(xyz);
   const hasColor = Boolean(geo.getAttribute('color'));
   const mat = new THREE.PointsMaterial({
-    size: sparsePointSize(maxDim),
+    size: sparsePointSize(maxDim, pos.count),
     sizeAttenuation: true,
     vertexColors: hasColor,
     color: hasColor ? 0xffffff : 0x7ab8e8,
-    ...(hasColor
-      ? {}
-      : {
-          map: pointDiscTexture(),
-          transparent: true,
-          depthWrite: false,
-          alphaTest: 0.05,
-        }),
+    map: pointDiscTexture(),
+    transparent: true,
+    depthWrite: false,
+    alphaTest: 0.05,
   });
   return new THREE.Points(geo, mat);
 }
