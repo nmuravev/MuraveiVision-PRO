@@ -119,13 +119,16 @@ def init_db() -> None:
                     ON detections(source_video, time_sec);
                 CREATE INDEX IF NOT EXISTS idx_det_class ON detections(class_name);
                 CREATE INDEX IF NOT EXISTS idx_det_notes ON detections(user_notes);
+                CREATE INDEX IF NOT EXISTS idx_det_created ON detections(created_at DESC);
                 CREATE TABLE IF NOT EXISTS network_config (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     mode TEXT NOT NULL DEFAULT 'off',
                     server_ip TEXT NOT NULL DEFAULT '127.0.0.1',
                     port INTEGER NOT NULL DEFAULT 8000,
                     base_name TEXT NOT NULL DEFAULT 'База-1',
-                    updated_at REAL NOT NULL
+                    updated_at REAL NOT NULL,
+                    hub_pin TEXT,
+                    base_id TEXT
                 );
                 CREATE TABLE IF NOT EXISTS network_bases (
                     id TEXT PRIMARY KEY,
@@ -146,7 +149,8 @@ def init_db() -> None:
                     source_base TEXT,
                     source_video TEXT,
                     notes TEXT,
-                    expires_at REAL
+                    expires_at REAL,
+                    synced_at REAL
                 );
                 CREATE TABLE IF NOT EXISTS network_messages (
                     id TEXT PRIMARY KEY,
@@ -191,6 +195,31 @@ def init_db() -> None:
                 );
                 CREATE INDEX IF NOT EXISTS idx_active_learning_status
                     ON active_learning_samples(status, created_at DESC);
+                CREATE TABLE IF NOT EXISTS detection_embeddings (
+                    detection_id TEXT PRIMARY KEY,
+                    method TEXT NOT NULL,
+                    crop_mtime REAL NOT NULL,
+                    dim INTEGER NOT NULL,
+                    embedding BLOB NOT NULL,
+                    computed_at REAL NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS seg_masks (
+                    id TEXT PRIMARY KEY,
+                    created_at REAL NOT NULL,
+                    source_video TEXT NOT NULL,
+                    time_sec REAL NOT NULL,
+                    frame_idx INTEGER NOT NULL DEFAULT 0,
+                    class_name TEXT NOT NULL DEFAULT 'object',
+                    confidence REAL NOT NULL DEFAULT 1.0,
+                    polygon_json TEXT NOT NULL,
+                    origin TEXT NOT NULL DEFAULT 'sam3',
+                    track_id TEXT,
+                    is_deleted INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_seg_masks_source_time
+                    ON seg_masks(source_video, time_sec);
+                CREATE INDEX IF NOT EXISTS idx_seg_masks_track
+                    ON seg_masks(track_id);
                 """
             )
             cols = {r[1] for r in conn.execute("PRAGMA table_info(detections)").fetchall()}
@@ -204,6 +233,18 @@ def init_db() -> None:
             }
             if "source_video" not in network_target_cols:
                 conn.execute("ALTER TABLE network_targets ADD COLUMN source_video TEXT")
+            if "synced_at" not in network_target_cols:
+                conn.execute("ALTER TABLE network_targets ADD COLUMN synced_at REAL")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_net_targets_synced ON network_targets(synced_at)"
+            )
+            network_config_cols = {
+                r[1] for r in conn.execute("PRAGMA table_info(network_config)").fetchall()
+            }
+            if "hub_pin" not in network_config_cols:
+                conn.execute("ALTER TABLE network_config ADD COLUMN hub_pin TEXT")
+            if "base_id" not in network_config_cols:
+                conn.execute("ALTER TABLE network_config ADD COLUMN base_id TEXT")
             override_cols = {
                 r[1] for r in conn.execute("PRAGMA table_info(class_overrides)").fetchall()
             }
@@ -211,6 +252,9 @@ def init_db() -> None:
                 conn.execute(
                     "ALTER TABLE class_overrides ADD COLUMN confidence_threshold REAL"
                 )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_det_created ON detections(created_at DESC)"
+            )
             conn.execute(
                 """
                 UPDATE detections
@@ -487,7 +531,8 @@ def save_crop_jpeg(detection_id: str, jpeg_bytes: bytes, bbox: dict[str, float])
     crop = img.crop((x1, y1, x2, y2))
     dest = CROPS_DIR / f"{detection_id}.jpg"
     crop.save(dest, format="JPEG", quality=85)
-    return str(dest)
+    # Store archive-relative key (not absolute) so media resolve is CWD-safe
+    return f"crops/{detection_id}.jpg"
 
 
 def insert_detection(payload: dict[str, Any]) -> dict[str, Any]:
@@ -597,6 +642,25 @@ def list_detections(
         conn.close()
 
 
+def list_recent_detections(since: float, limit: int = 100) -> list[dict[str, Any]]:
+    """Non-deleted detections with created_at >= since, newest first."""
+    init_db()
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT * FROM detections
+            WHERE is_deleted = 0 AND created_at >= ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (float(since), max(1, min(int(limit), 500))),
+        ).fetchall()
+        return [_row_to_detection(r) for r in rows]
+    finally:
+        conn.close()
+
+
 def update_detection(det_id: str, fields: dict[str, Any]) -> dict[str, Any] | None:
     init_db()
     allowed = {
@@ -651,6 +715,128 @@ def soft_delete_detection(det_id: str, edited_by: str | None) -> dict[str, Any] 
             "edited_at": time.time(),
         },
     )
+
+
+def insert_seg_masks_batch(rows: list[dict[str, Any]]) -> int:
+    """Insert SAM/seg polygons. Never touches detections/train."""
+    if not rows:
+        return 0
+    init_db()
+    now = time.time()
+    conn = _connect()
+    n = 0
+    try:
+        for row in rows:
+            poly = row.get("polygon_norm") or []
+            if not isinstance(poly, list) or len(poly) < 3:
+                continue
+            mid = str(row.get("id") or uuid.uuid4())
+            source = normalize_media_path(str(row.get("source_video") or ""))
+            conn.execute(
+                """
+                INSERT INTO seg_masks (
+                    id, created_at, source_video, time_sec, frame_idx,
+                    class_name, confidence, polygon_json, origin, track_id, is_deleted
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                """,
+                (
+                    mid,
+                    now,
+                    source,
+                    float(row.get("time_sec") or 0.0),
+                    int(row.get("frame_idx") or 0),
+                    str(row.get("class_name") or "object"),
+                    float(
+                        row.get("confidence")
+                        if row.get("confidence") is not None
+                        else 1.0
+                    ),
+                    json.dumps(poly, ensure_ascii=False),
+                    str(row.get("origin") or "sam3"),
+                    row.get("track_id"),
+                ),
+            )
+            n += 1
+        conn.commit()
+        return n
+    finally:
+        conn.close()
+
+
+def list_seg_masks(
+    source_video: str,
+    *,
+    time_from: float | None = None,
+    time_to: float | None = None,
+    track_id: str | None = None,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    init_db()
+    key = normalize_media_path(source_video)
+    clauses = ["source_video = ?", "is_deleted = 0"]
+    args: list[Any] = [key]
+    if time_from is not None:
+        clauses.append("time_sec >= ?")
+        args.append(float(time_from))
+    if time_to is not None:
+        clauses.append("time_sec <= ?")
+        args.append(float(time_to))
+    if track_id:
+        clauses.append("track_id = ?")
+        args.append(str(track_id))
+    args.append(max(1, min(5000, int(limit))))
+    where = " AND ".join(clauses)
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            f"""
+            SELECT * FROM seg_masks
+            WHERE {where}
+            ORDER BY time_sec ASC, created_at ASC
+            LIMIT ?
+            """,
+            args,
+        )
+        out: list[dict[str, Any]] = []
+        for row in cur.fetchall():
+            try:
+                poly = json.loads(row["polygon_json"] or "[]")
+            except json.JSONDecodeError:
+                poly = []
+            out.append(
+                {
+                    "id": row["id"],
+                    "created_at": row["created_at"],
+                    "source_video": row["source_video"],
+                    "time_sec": row["time_sec"],
+                    "frame_idx": row["frame_idx"],
+                    "class_name": row["class_name"],
+                    "confidence": row["confidence"],
+                    "polygon_norm": poly,
+                    "origin": row["origin"],
+                    "track_id": row["track_id"],
+                }
+            )
+        return out
+    finally:
+        conn.close()
+
+
+def soft_delete_seg_masks_by_track(track_id: str) -> int:
+    init_db()
+    tid = (track_id or "").strip()
+    if not tid:
+        return 0
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "UPDATE seg_masks SET is_deleted = 1 WHERE track_id = ? AND is_deleted = 0",
+            (tid,),
+        )
+        conn.commit()
+        return int(cur.rowcount or 0)
+    finally:
+        conn.close()
 
 
 def archive_media_exists(source_video: str) -> bool:
@@ -1041,5 +1227,83 @@ def get_flight_track(video_path: str) -> dict[str, Any] | None:
             "created_at": row["created_at"],
             "point_count": len(points),
         }
+    finally:
+        conn.close()
+
+
+def get_embedding(detection_id: str) -> dict[str, Any] | None:
+    init_db()
+    det_id = str(detection_id or "")
+    if not det_id:
+        return None
+    conn = _connect()
+    try:
+        row = conn.execute(
+            """
+            SELECT detection_id, method, crop_mtime, dim, embedding, computed_at
+            FROM detection_embeddings WHERE detection_id = ?
+            """,
+            (det_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "detection_id": row["detection_id"],
+            "method": row["method"],
+            "crop_mtime": float(row["crop_mtime"] or 0),
+            "dim": int(row["dim"] or 0),
+            "embedding": bytes(row["embedding"] or b""),
+            "computed_at": float(row["computed_at"] or 0),
+        }
+    finally:
+        conn.close()
+
+
+def upsert_embedding(
+    detection_id: str,
+    method: str,
+    crop_mtime: float,
+    embedding: bytes,
+    dim: int,
+) -> None:
+    init_db()
+    det_id = str(detection_id or "")
+    if not det_id:
+        raise ValueError("detection_id пуст")
+    blob = bytes(embedding or b"")
+    now = time.time()
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO detection_embeddings
+                (detection_id, method, crop_mtime, dim, embedding, computed_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(detection_id) DO UPDATE SET
+                method = excluded.method,
+                crop_mtime = excluded.crop_mtime,
+                dim = excluded.dim,
+                embedding = excluded.embedding,
+                computed_at = excluded.computed_at
+            """,
+            (det_id, str(method), float(crop_mtime), int(dim), blob, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_embedding(detection_id: str) -> bool:
+    init_db()
+    det_id = str(detection_id or "")
+    if not det_id:
+        return False
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "DELETE FROM detection_embeddings WHERE detection_id = ?", (det_id,)
+        )
+        conn.commit()
+        return cur.rowcount > 0
     finally:
         conn.close()

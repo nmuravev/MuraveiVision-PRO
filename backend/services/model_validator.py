@@ -108,6 +108,116 @@ def _stage_b(path: Path) -> int:
     return nc
 
 
+def _nc_from_ckpt(ckpt: Any) -> int:
+    """Read class count from an Ultralytics checkpoint dict without GPU."""
+    if ckpt is None:
+        return 0
+    if not isinstance(ckpt, dict):
+        try:
+            return int(getattr(ckpt, "nc", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+    raw_nc = ckpt.get("nc")
+    if raw_nc is not None:
+        try:
+            n = int(raw_nc)
+            if n > 0:
+                return n
+        except (TypeError, ValueError):
+            pass
+    names = ckpt.get("names")
+    if isinstance(names, dict) and names:
+        return len(names)
+    if isinstance(names, (list, tuple)) and names:
+        return len(names)
+    model = ckpt.get("model") or ckpt.get("ema")
+    if model is None:
+        return 0
+    try:
+        n = int(getattr(model, "nc", 0) or 0)
+        if n > 0:
+            return n
+    except (TypeError, ValueError):
+        pass
+    yaml = getattr(model, "yaml", None)
+    if isinstance(yaml, dict) and yaml.get("nc") is not None:
+        try:
+            return int(yaml["nc"])
+        except (TypeError, ValueError):
+            return 0
+    mnames = getattr(model, "names", None)
+    if isinstance(mnames, dict) and mnames:
+        return len(mnames)
+    if isinstance(mnames, (list, tuple)) and mnames:
+        return len(mnames)
+    return 0
+
+
+def validate_pt_file(path: str | Path) -> dict[str, Any]:
+    """Lightweight .pt check: size + nc ∈ {12, 238} (or yoloe with nc>0). No GPU."""
+    p = Path(path)
+    if not p.is_file():
+        return {"valid": False, "nc": None, "error": "file not found"}
+    if p.suffix.lower() != ".pt":
+        return {"valid": False, "nc": None, "error": "not a .pt file"}
+    name = p.name.lower()
+    if "seg" in name and "yoloe" not in name:
+        return {"valid": False, "nc": None, "error": "segment-only weights are not supported"}
+    size_mb = p.stat().st_size / (1024 * 1024)
+    if size_mb > MAX_MB:
+        return {"valid": False, "nc": None, "error": f"file too large ({size_mb:.1f} MB > {MAX_MB} MB)"}
+    if size_mb < 0.001:
+        return {"valid": False, "nc": None, "error": "file too small / corrupt"}
+    try:
+        import torch
+
+        try:
+            ckpt = torch.load(str(p), map_location="cpu", weights_only=False)
+        except TypeError:
+            ckpt = torch.load(str(p), map_location="cpu")
+    except Exception as exc:  # noqa: BLE001
+        return {"valid": False, "nc": None, "error": f"torch.load failed: {exc}"}
+    nc = _nc_from_ckpt(ckpt)
+    if "yoloe" in name:
+        if nc < 1:
+            return {"valid": False, "nc": nc or None, "error": "yoloe checkpoint missing nc"}
+        return {"valid": True, "nc": nc, "error": None}
+    if nc not in ALLOWED_NC:
+        return {"valid": False, "nc": nc or None, "error": f"nc={nc} not in {sorted(ALLOWED_NC)}"}
+    return {"valid": True, "nc": nc, "error": None}
+
+
+def validate_yaml_classes(path: str | Path) -> dict[str, Any]:
+    """Accept Ultralytics/Muravei YAML: ``names:`` dict or a list of class strings."""
+    p = Path(path)
+    if not p.is_file():
+        return {"valid": False, "count": 0, "error": "file not found"}
+    try:
+        import yaml
+
+        data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return {"valid": False, "count": 0, "error": f"yaml parse failed: {exc}"}
+    if data is None:
+        return {"valid": False, "count": 0, "error": "empty yaml"}
+    names = data.get("names", data) if isinstance(data, dict) else data
+    if isinstance(data, dict) and "names" not in data:
+        try:
+            for k in data:
+                int(k)
+        except (TypeError, ValueError):
+            return {"valid": False, "count": 0, "error": "expected names dict or list of class strings"}
+    if isinstance(names, dict) and names:
+        values = list(names.values())
+    elif isinstance(names, list) and names:
+        values = names
+    else:
+        return {"valid": False, "count": 0, "error": "expected names dict or list of class strings"}
+    if not all(isinstance(v, (str, int, float)) for v in values):
+        return {"valid": False, "count": len(values), "error": "class names must be scalars"}
+    return {"valid": True, "count": len(values), "error": None}
+
+
 def _stage_c(path: Path) -> None:
     _emit({"stage": "C", "message": "Smoke predict…"})
     import numpy as np

@@ -66,8 +66,12 @@ def _float_setting(key: str, default: float) -> float:
 class ResponseValidator:
     """Validates detection dicts before they reach the response envelope."""
 
+    CACHE_TTL_SEC = 300.0
+
     def __init__(self) -> None:
         self._enabled_ids: set[int] | None = None
+        self._cache_timestamp: float = 0.0
+        self._cache_ttl: float = self.CACHE_TTL_SEC
 
     # --- config resolution (SQLite override, fallback to const) ---
     def _enabled(self) -> bool:
@@ -82,26 +86,48 @@ class ResponseValidator:
     def _min_conf(self) -> float:
         return _float_setting("validator_min_confidence", MIN_CONFIDENCE_DEFAULT)
 
+    def _cache_expired(self) -> bool:
+        """True if the enabled-ID set must be rebuilt.
+
+        ``_cache_timestamp == 0`` with a populated set is a manual test seed
+        (or a cache that was never stamped) — TTL does not evict it.
+        """
+        if self._enabled_ids is None:
+            return True
+        if self._cache_timestamp <= 0:
+            return False
+        return (time.time() - self._cache_timestamp) > self._cache_ttl
+
+    def _reload_catalog_ids(self) -> set[int]:
+        return {
+            int(item["id"])
+            for item in get_class_catalog()
+            if item.get("enabled", True)
+        }
+
     # --- catalog cache ---
     def _known_ids(self) -> set[int]:
-        """Enabled catalog IDs. On catalog failure → empty set (caller degrades)."""
-        if self._enabled_ids is not None:
+        """Enabled catalog IDs. On catalog failure keep old cache, else empty set."""
+        if not self._cache_expired():
+            assert self._enabled_ids is not None
             return self._enabled_ids
         try:
-            ids = {
-                int(item["id"])
-                for item in get_class_catalog()
-                if item.get("enabled", True)
-            }
+            ids = self._reload_catalog_ids()
         except Exception as exc:  # noqa: BLE001
-            print(f"[VALIDATOR] catalog load failed: {exc} — known_ids empty")
-            ids = set()
+            print(f"[VALIDATOR] catalog load failed: {exc} — keeping previous known_ids")
+            self._cache_timestamp = time.time()
+            if self._enabled_ids is not None:
+                return self._enabled_ids
+            self._enabled_ids = set()
+            return self._enabled_ids
         self._enabled_ids = ids
+        self._cache_timestamp = time.time()
         return ids
 
     def refresh_catalog(self) -> None:
-        """Invalidate the cached enabled-ID set (call after catalog edits)."""
+        """Invalidate the cached enabled-ID set (call after catalog edits). Immediate."""
         self._enabled_ids = None
+        self._cache_timestamp = 0.0
 
     # --- core checks ---
     def validate_detection(self, detection: dict) -> ValidationResult:

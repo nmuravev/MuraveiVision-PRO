@@ -12,7 +12,7 @@ import {
 import { useViewerStore } from '../../store/useViewerStore';
 import { useMuraveiStore } from '../../store/useMuraveiStore';
 import { usePanelLayoutStore } from '../../store/usePanelLayoutStore';
-import { formatMediaTime, mediaPathsMatch } from '../../lib/mediaPaths';
+import { formatMediaTime, mediaPathsMatch, toArchiveMediaPath } from '../../lib/mediaPaths';
 import { Button } from '../ui';
 
 interface FileNode {
@@ -160,7 +160,7 @@ export const MediaPool: React.FC = () => {
   };
 
   const openInViewer = (path: string) => {
-    setSource(focusedViewerId, path, null);
+    setSource(focusedViewerId, toArchiveMediaPath(path), null);
   };
 
   const moveToTrash = async () => {

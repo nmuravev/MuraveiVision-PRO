@@ -8,12 +8,48 @@
 
 **Python:** только embeddable / `muravei_env` **3.12.10**. Host `C:\Python314` и bare `python` запрещены.
 
-## Сборка Lite (машина разработчика)
+## Hardening (v3.1)
+
+- **Unique staging:** каждый запуск пишет в `portable/stage_<Kit>_<yyyyMMdd_HHmmss>/`; в начале чистятся старые `stage_*`, `*.locked_*` и legacy fixed-name dirs. ZIP-имена стабильны (`MuraveiVision_PRO_Mini.zip` и т.д.).
+- **Host-pip bake:** зависимости ставятся через host `muravei_env\Scripts\python.exe -m pip --python <staged_python>` — **не** через staged `python -m pip` (ломается AV / пропадает `cacert.pem`).
+- **Offline wheels:** предпочтительно `portable/cache/wheels` (`--no-index --find-links`). Один раз на машине сборки:
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts\cache_portable_wheels.ps1
+  # FullKit + cu128 torch:
+  powershell -ExecutionPolicy Bypass -File scripts\cache_portable_wheels.ps1 -WithTorchCu128
+  ```
+- **CA bundle:** стабильный `portable/cache/cacert.pem` (вне stage site-packages); env `SSL_CERT_FILE` / `PIP_CERT` / …
+- **Robocopy fallback:** только если host-pip bake упал, или `MURAVEI_PORTABLE_MIRROR=1`.
+- **Перед сборкой:** остановите host `uvicorn` / portable stage (DLL locks). Если AV держит файлы — перезагрузка ПК, затем повтор.
+
+Все пути в скриптах — относительно корня репо / env (`OLLAMA_MODELS`, `%USERPROFILE%\.ollama`, `-OllamaModelsRoot`). Без абсолютных `D:\…` machine paths.
+
+## Матрица комплектов
+
+| Режим | npm / флаг | Содержимое | ZIP |
+|-------|------------|------------|-----|
+| **Lite** | `npm run portable` | UI + backend + embed Python + **detect YOLO `.pt`** (без seg/SAM/yoloe) | `MuraveiVision_PRO_Portable.zip` |
+| **Mini** | `npm run portable:mini` (`-NoDetectWeights`) | как Lite **без** detect `.pt` / mobileclip (YOLO → 503 до USB-import) | `MuraveiVision_PRO_Mini.zip` |
+| **Full** | `npm run portable:full` (`-FullKit`) | Lite + Ollama `qwen2.5vl:7b` + torch **cu128** + **`sidecars/colmap`** + **`sidecars/gsplat_examples`** | `MuraveiVision_PRO_FullKit.zip` |
+
+**Не путать:** «Mini без AI» ≠ Lite. Lite уже с YOLO detect. Настоящий лёгкий кит — **Mini** (`-NoDetectWeights`).
+
+**Не входит ни в один ZIP по умолчанию:** `assets/map_tiles` (gitignored offline maps), SAM/seg веса, host `muravei_env` с Python 3.14. Карты при необходимости кладите рядом отдельно.
+
+## Сборка Lite
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\build_portable.ps1 -FetchEmbeddablePython
 # или
 npm run portable
+```
+
+## Сборка Mini (без detect-весов)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_portable.ps1 -FetchEmbeddablePython -NoDetectWeights
+# или
+npm run portable:mini
 ```
 
 ## Сборка Full Field Kit
@@ -30,16 +66,12 @@ powershell -ExecutionPolicy Bypass -File scripts\build_portable.ps1 -FetchEmbedd
 npm run portable:full
 ```
 
-Опционально: `-OllamaZipPath path\to\ollama-windows-amd64.zip`, `-OllamaVersion v0.11.4`, `-OllamaModelsRoot D:\LLM\ollama` (папка с `blobs\` + `manifests\`; по умолчанию ищутся `OLLAMA_MODELS`, `D:\LLM\ollama`, `%USERPROFILE%\.ollama`), `-SkipNpmBuild`, `-SkipZip`.
+Опционально: `-OllamaZipPath`, `-OllamaVersion v0.11.4`, `-OllamaModelsRoot` (папка с `blobs\` + `manifests\`; build-time candidates: `OLLAMA_MODELS`, `%USERPROFILE%\.ollama` / `.ollama\models` — **не** runtime-пути в ZIP), `-SkipNpmBuild`, `-SkipZip`.
 
-В FullKit копируется **только** `qwen2.5vl:7b` (~6 GB blobs), не весь локальный store Ollama.
+В FullKit копируется **только** `qwen2.5vl:7b` (~6 GB blobs), не весь локальный store Ollama.  
+3D: `sidecars/colmap` + `sidecars/gsplat_examples` (если есть в репо; иначе WARNING).
 
-Артефакты:
-
-| Режим | Stage | ZIP |
-|-------|-------|-----|
-| Lite | `portable/MuraveiVision_PRO_Portable/` | `MuraveiVision_PRO_Portable.zip` |
-| Full | `portable/MuraveiVision_PRO_FullKit/` | `MuraveiVision_PRO_FullKit.zip` (Zip64) |
+Ожидаемый размер Full ZIP порядка **12–18 GB**.
 
 ## Что кладётся (Lite)
 
@@ -50,35 +82,31 @@ npm run portable:full
 - опционально `mobileclip2_b.ts`
 - пустые `archive/`, `cache/`, `logs/`, `reports/`
 
-**Не копируется** host `muravei_env` с Python 3.14.
+Полевое обновление модели без интернета: Система → **Импорт с USB**. См. [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md#импорт-модели-с-usb).
 
 ## Что добавляет Full Kit
 
-- `ollama/ollama.exe` (+ DLL из `ollama-windows-amd64.zip`)
-- `ollama/models/` — копия `%USERPROFILE%\.ollama\models` (должна содержать `qwen2.5vl`)
-- `torch`+`torchvision` **cu128** в staged `muravei_env`
+- `ollama/ollama.exe` (+ DLL)
+- `ollama/models/` — только `qwen2.5vl:7b`
+- `torch`+`torchvision` **cu128**
+- `sidecars/colmap`, `sidecars/gsplat_examples`
 - `PORTABLE_README.md`
-- `Запустить.bat` поднимает `ollama serve` с `OLLAMA_MODELS=%~dp0ollama\models`
-
-Ожидаемый размер ZIP порядка **12–18 GB**.
+- `Запустить.bat` поднимает `ollama serve` и `COLMAP_ROOT` если sidecar есть
 
 ## Железо
 
-- Windows 10/11 **amd64** (Intel CPU и AMD — оба OK)
+- Windows 10/11 **amd64**
 - Рекомендуется **NVIDIA** для realtime
-- Без GPU: YOLO/Ollama на CPU (медленно для VLM); Intel Arc/XPU — вне скоупа
+- Без GPU: YOLO/Ollama на CPU; Intel Arc/XPU — вне скоупа
 
 ## Лаунчер `Запустить.bat`
 
-Файл **ASCII + CRLF** (без кириллицы): так `cmd.exe` не ломает строки (`HOST` / `ON` / обрывки UTF-8).
-
-Если уже распакован старый FullKit ZIP — **достаточно заменить только** `Запустить.bat` из репозитория или из `portable/MuraveiVision_PRO_FullKit/` (пересобирать ~10 GB ZIP не нужно).
+ASCII + CRLF. `COLMAP_ROOT=%~dp0sidecars\colmap` выставляется **только если** sidecar присутствует. `MURAVEI_SESSION_TRACE=1` по умолчанию.
 
 ## Проверка комплекта
 
 1. Распаковать на чистую машину / другую папку.  
 2. `Запустить.bat`.  
-3. Логин оператора, архивное видео, YOLO ready.  
-4. Full: диспетчер задач → `ollama.exe`; `GET /api/ai/models` → `qwen2.5vl`.  
-5. Smoke layout (после stage):  
+3. Lite: YOLO ready; Mini: detect 503 до USB-import; Full: ollama + COLMAP_ROOT.  
+4. Smoke layout:  
    `.\muravei_env\Scripts\python.exe backend\scripts\smoke_fullkit_layout.py`

@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "backend": "muravei_env\\Scripts\\python.exe -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload",
+    "backend": "set COLMAP_ROOT=sidecars\\colmap&& set MURAVEI_SESSION_TRACE=1&& muravei_env\\Scripts\\python.exe -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000",
+    "backend:watch": "set COLMAP_ROOT=sidecars\\colmap&& set MURAVEI_SESSION_TRACE=1&& muravei_env\\Scripts\\python.exe -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload",
     "backend:install": "muravei_env\\Scripts\\pip.exe install --no-cache-dir -r backend\\requirements.txt",
     "desktop": "muravei_env\\Scripts\\python.exe backend\\desktop_launcher.py",
     "smoke:phase3": "muravei_env\\Scripts\\python.exe backend\\scripts\\smoke_phase3.py",
@@ -19,9 +20,11 @@
     "smoke:fullkit": "muravei_env\\Scripts\\python.exe backend\\scripts\\smoke_fullkit_layout.py",
     "test:yolo-scrub-gate": "playwright test yolo-scrub-gate.test.ts",
     "portable": "powershell -ExecutionPolicy Bypass -File scripts/build_portable.ps1 -FetchEmbeddablePython",
+    "portable:mini": "powershell -ExecutionPolicy Bypass -File scripts/build_portable.ps1 -FetchEmbeddablePython -NoDetectWeights",
     "portable:full": "powershell -ExecutionPolicy Bypass -File scripts/build_portable.ps1 -FetchEmbeddablePython -FullKit",
     "test:yolo-scrub": "playwright test yolo-scrub-gate.test.ts",
-    "test:field": "playwright test yolo-scrub-gate.test.ts field-regression.test.ts recon-raycast.test.ts test_ui_toggles.test.ts test_hotkeys.test.ts",
+    "test:field": "playwright test yolo-scrub-gate.test.ts field-regression.test.ts recon-raycast.test.ts test_ui_toggles.test.ts test_hotkeys.test.ts test_event_timeline.test.ts",
+    "test": "npm run test:all",
     "test:all": "muravei_env\\Scripts\\python.exe scripts\\test_orchestrator.py"
   },
   "dependencies": {

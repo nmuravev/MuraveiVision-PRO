@@ -54,6 +54,7 @@
 - Включён по умолчанию.
 - Площадь bbox: `[0.0001, 0.9]`. Confidence: `[0.01, 1.0]`. bbox в `[0,1]` + `x1<x2`, `y1<y2`.
 - Лог отбросов: `logs/validator_rejections.jsonl` (JSONL, safe append).
+- Кэш enabled class IDs: TTL 300 с; `refresh_catalog()` сбрасывает сразу. При ошибке `get_class_catalog` после expiry сохраняется предыдущий set (backoff 300 с, чтобы не читать YAML каждый кадр).
 - Graceful degradation: при ошибке валидатора/каталога все детекции проходят.
 
 ## Сеть (таблица `network_config`, не `settings`)
@@ -64,9 +65,11 @@
 | `server_ip` | `127.0.0.1` | |
 | `port` | `8000` | |
 | `base_name` | `База-1` | |
+| `base_id` | UUID v4 | генерируется один раз, в GET `/config` |
+| `hub_pin` | — | write-only; клиент логинится им на хаб. GET не отдаёт |
 | TTL цели | 24ч | `expires_at` в `network_targets` |
 
-API: `GET/POST /api/network/config`.
+API: `GET/POST /api/network/config`, `GET /api/network/status`. Worker: [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md#сеть-баз).
 
 ## Классы
 

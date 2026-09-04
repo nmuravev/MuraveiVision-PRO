@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Bell, Trash2, Volume2 } from 'lucide-react';
+import { Bell, Trash2 } from 'lucide-react';
 import { useMuraveiStore } from '../../store/useMuraveiStore';
-import { useRulesStore, playRuleAlertTone, type RuleSoundType } from '../../store/useRulesStore';
+import { useRulesStore } from '../../store/useRulesStore';
 
 export const RulesPanel: React.FC = () => {
   const catalog = useMuraveiStore((state) => state.classCatalog);
@@ -10,12 +10,9 @@ export const RulesPanel: React.FC = () => {
   const addRule = useRulesStore((state) => state.addRule);
   const removeRule = useRulesStore((state) => state.removeRule);
   const toggleRule = useRulesStore((state) => state.toggleRule);
-  const updateRule = useRulesStore((state) => state.updateRule);
   const clearAlerts = useRulesStore((state) => state.clearAlerts);
   const [className, setClassName] = useState('*');
   const [confidence, setConfidence] = useState(0.6);
-  const [defaultSoundType, setDefaultSoundType] = useState<RuleSoundType>('beep');
-  const [defaultVolume, setDefaultVolume] = useState(70);
 
   return (
     <section className="border border-[var(--dv-border)] bg-[var(--dv-bg-deep)] p-3 space-y-2">
@@ -57,43 +54,11 @@ export const RulesPanel: React.FC = () => {
               className,
               minConfidence: confidence,
               enabled: true,
-              sound: defaultSoundType !== 'none',
-              soundType: defaultSoundType,
-              soundVolume: defaultVolume,
+              sound: true,
             })
           }
         >
           Добавить
-        </button>
-      </div>
-      <div className="flex items-center gap-2 text-[10px] text-[var(--dv-text-muted)]">
-        <span>Звук:</span>
-        <select
-          aria-label="Тип звука по умолчанию"
-          className="bg-[#1a1a1a] border border-[var(--dv-border)] px-1 py-0.5"
-          value={defaultSoundType}
-          onChange={(e) => setDefaultSoundType(e.target.value as RuleSoundType)}
-        >
-          <option value="beep">beep</option>
-          <option value="alarm">alarm</option>
-          <option value="none">none</option>
-        </select>
-        <input
-          aria-label="Громкость по умолчанию"
-          type="range"
-          min={0}
-          max={100}
-          className="flex-1"
-          value={defaultVolume}
-          onChange={(e) => setDefaultVolume(Number(e.target.value))}
-        />
-        <button
-          type="button"
-          className="px-1 py-0.5 bg-[#333] rounded-sm inline-flex items-center gap-1"
-          title="Проверить звук"
-          onClick={() => playRuleAlertTone(defaultSoundType, defaultVolume)}
-        >
-          <Volume2 size={12} /> Тест
         </button>
       </div>
       {rules.length === 0 ? (
@@ -102,10 +67,7 @@ export const RulesPanel: React.FC = () => {
         </p>
       ) : (
         <div className="space-y-1">
-          {rules.map((rule) => {
-            const soundType: RuleSoundType = rule.soundType ?? (rule.sound ? 'beep' : 'none');
-            const volume = rule.soundVolume ?? 70;
-            return (
+          {rules.map((rule) => (
             <div key={rule.id} className="flex items-center gap-2 text-[10px]">
               <input
                 type="checkbox"
@@ -116,38 +78,6 @@ export const RulesPanel: React.FC = () => {
                 {rule.className === '*' ? 'любой класс' : rule.className} ≥{' '}
                 {rule.minConfidence.toFixed(2)}
               </span>
-              <select
-                aria-label="Тип звука правила"
-                className="bg-[#1a1a1a] border border-[var(--dv-border)] px-1 py-0.5"
-                value={soundType}
-                onChange={(e) =>
-                  updateRule(rule.id, {
-                    soundType: e.target.value as RuleSoundType,
-                    sound: e.target.value !== 'none',
-                  })
-                }
-              >
-                <option value="beep">beep</option>
-                <option value="alarm">alarm</option>
-                <option value="none">none</option>
-              </select>
-              <input
-                aria-label="Громкость правила"
-                type="range"
-                min={0}
-                max={100}
-                className="w-16"
-                value={volume}
-                onChange={(e) => updateRule(rule.id, { soundVolume: Number(e.target.value) })}
-              />
-              <button
-                type="button"
-                aria-label="Проверить звук правила"
-                title="Проверить"
-                onClick={() => playRuleAlertTone(soundType, volume)}
-              >
-                <Volume2 size={12} />
-              </button>
               <button
                 type="button"
                 aria-label="Удалить правило"
@@ -156,8 +86,7 @@ export const RulesPanel: React.FC = () => {
                 <Trash2 size={12} />
               </button>
             </div>
-            );
-          })}
+          ))}
         </div>
       )}
       <div className="flex items-center justify-between text-[10px] text-[var(--dv-text-muted)]">

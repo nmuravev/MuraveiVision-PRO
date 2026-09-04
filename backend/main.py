@@ -5,10 +5,12 @@ import site
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # 1. Air-Gapped: block user site-packages
 site.USER_SITE = None
@@ -97,8 +99,12 @@ async def lifespan(app: FastAPI):
     print(f"[SYSTEM] YOLO mode={engine.mode} model={engine.model_name}")
     print(f"[SYSTEM] Static dist: {DIST_DIR} exists={DIST_DIR.is_dir()}")
     print("[SYSTEM] MuraveiVision PRO Backend starting...")
+    from services.network_sync import start_network_worker, stop_network_worker
+
+    start_network_worker()
     yield
     print("[SYSTEM] Backend stopping...")
+    await stop_network_worker()
 
 
 app = FastAPI(
@@ -106,6 +112,41 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def catalog_http_exception_handler(
+    _request: Request, exc: StarletteHTTPException
+) -> JSONResponse:
+    from services.error_catalog import build_error_payload
+
+    payload = build_error_payload(exc.status_code, exc.detail)
+    return JSONResponse(status_code=exc.status_code, content=payload)
+
+
+@app.exception_handler(RequestValidationError)
+async def catalog_validation_exception_handler(
+    _request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    from services.error_catalog import build_error_payload
+
+    payload = build_error_payload(422, exc.errors())
+    return JSONResponse(status_code=422, content=payload)
+
+
+@app.exception_handler(Exception)
+async def catalog_unhandled_exception_handler(
+    _request: Request, exc: Exception
+) -> JSONResponse:
+    import logging
+
+    from services.error_catalog import build_error_payload
+
+    logging.getLogger("uvicorn.error").error("Unhandled error: %s", exc, exc_info=True)
+    payload = build_error_payload(500, str(exc) or "Internal server error")
+    # Prefer stable catalog title for operators; keep exception text in message via detail.
+    return JSONResponse(status_code=500, content=payload)
+
 
 # Local-only CORS (dev Vite + same-origin production)
 app.add_middleware(
@@ -122,6 +163,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# KEEP: session trace — do not remove without explicit user order
+from services.trace_middleware import SessionTraceMiddleware  # noqa: E402
+
+app.add_middleware(SessionTraceMiddleware)
 
 
 @app.get("/api/health")
@@ -169,8 +215,13 @@ def _register_routers() -> None:
     from api.live import router as live_router
     from api.classes_api import router as classes_router
     from api.recon import router as recon_router
+    from api.hud import router as hud_router
     from api.debug import router as debug_router
     from api.active_learning import router as active_learning_router
+    from api.events import router as events_router
+    from api.seg import router as seg_router
+    from api.change_detection import router as change_detection_router
+    from api.map import router as map_router
 
     app.include_router(media_router)
     app.include_router(detect_router)
@@ -191,8 +242,13 @@ def _register_routers() -> None:
     app.include_router(live_router)
     app.include_router(classes_router)
     app.include_router(recon_router)
+    app.include_router(hud_router)
     app.include_router(debug_router)
     app.include_router(active_learning_router)
+    app.include_router(events_router)
+    app.include_router(seg_router)
+    app.include_router(change_detection_router)
+    app.include_router(map_router)
 
 
 _register_routers()

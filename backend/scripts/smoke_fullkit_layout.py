@@ -74,19 +74,36 @@ def main() -> int:
         assert "OLLAMA_MODELS" in bat_txt
         assert "ollama.exe" in bat_txt
         readme = FULL_STAGE / "PORTABLE_README.md"
+        colmap = FULL_STAGE / "sidecars" / "colmap"
+        gsplat = FULL_STAGE / "sidecars" / "gsplat_examples" / "simple_trainer.py"
         payload["full_stage"] = {
             "path": str(FULL_STAGE),
             "ollama_exe": str(ollama_exe),
             "qwen_hits": len(qwen_hits),
             "has_readme": readme.is_file(),
             "has_muravei_env": True,
+            "has_colmap_sidecar": colmap.is_dir(),
+            "has_gsplat_examples": gsplat.is_file(),
         }
+        if colmap.is_dir():
+            assert (
+                (colmap / "COLMAP.bat").is_file()
+                or (colmap / "colmap.exe").is_file()
+                or (colmap / "bin" / "colmap.exe").is_file()
+            ), "sidecars/colmap present but no COLMAP binary/bat"
     else:
         payload["full_stage"] = {
             "path": str(FULL_STAGE),
             "present": False,
             "hint": "Run: npm run portable:full  (requires ollama pull qwen2.5vl:7b)",
         }
+
+    mini = ROOT / "portable" / "MuraveiVision_PRO_Mini"
+    payload["mini_stage_exists"] = mini.is_dir()
+    if mini.is_dir():
+        pts = list((mini / "assets" / "models").glob("*.pt")) if (mini / "assets" / "models").is_dir() else []
+        payload["mini_pt_count"] = len(pts)
+        assert len(pts) == 0, f"Mini kit must not ship detect .pt, found {[p.name for p in pts]}"
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")

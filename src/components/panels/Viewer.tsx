@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Camera,
+  ChevronDown,
   Crosshair,
   Hand,
   Maximize2,
@@ -25,11 +26,26 @@ import {
 import type { BoundingBox, DetectedObject, PersistedDetection } from '../../types/muravei';
 import { Button, IconButton, Menu, MenuItem, ToolbarGroup } from '../ui';
 import { logger } from '../../services/logger';
-import { formatMediaTime, mediaPathsMatch } from '../../lib/mediaPaths';
-import { useAutoBatchScan } from '../../hooks/useAutoBatchScan';
+import { formatMediaTime, mediaPathsMatch, toArchiveMediaPath } from '../../lib/mediaPaths';
+import { useBatchScanHydrate } from '../../hooks/useBatchScanHydrate';
+import { useHudZones } from '../../hooks/useHudZones';
+import { batchScanProgressPct, useBatchScanStore } from '../../store/useBatchScanStore';
 import { yoloDebug } from '../../debug/yoloDebug';
+import { traceWs } from '../../debug/sessionTrace';
 import { YoloDebugOverlay } from '../debug/YoloDebugOverlay';
+import { HudExclusionOverlay } from '../viewer/HudExclusionOverlay';
 import { playRuleAlertTone, useRulesStore } from '../../store/useRulesStore';
+import {
+  useChangeDetectionStore,
+  type ChangeType,
+} from '../../store/useChangeDetectionStore';
+import { CompareSyncModal } from './CompareSyncModal';
+import { HeatmapOverlay } from './HeatmapOverlay';
+import { BatchSegModal } from './BatchSegModal';
+import { BatchChangeModal } from './BatchChangeModal';
+import type { BatchSegMask } from '../../store/useBatchSegStore';
+import { parseSam3TextPrompt, useSam3Store } from '../../store/useSam3Store';
+import { Sam3PropagateModal } from './Sam3PropagateModal';
 
 interface ViewerProps {
   viewerId: string;
@@ -59,11 +75,23 @@ function rememberViewerTime(viewerId: string, path: string | null | undefined, t
   if (!path || !Number.isFinite(t) || t < 0) return;
   viewerTimeCache.set(viewerId, { path, t });
 }
+
+/** Last known playback time per viewer (for cross-panel Compare Sync). */
+export function getViewerPlaybackTime(viewerId: string): number {
+  return viewerTimeCache.get(viewerId)?.t ?? 0;
+}
 const MIN_BOX = 0.012;
 const ACCENT = '#e87d0d';
 
 type HandleKey = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'move' | 'draw';
 type ViewTool = 'select' | 'pan';
+type OverlayMode = 'detect' | 'seg';
+
+type SegMask = {
+  class: string;
+  conf: number;
+  polygon_norm: number[][];
+};
 
 function captureFrame(video: HTMLVideoElement): string | undefined {
   const vw = video.videoWidth;
@@ -233,6 +261,8 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const setSourceMode = useViewerStore((s) => s.setSourceMode);
   const setLiveUrl = useViewerStore((s) => s.setLiveUrl);
   const setLiveActive = useViewerStore((s) => s.setLiveActive);
+  const setYoloEnabled = useViewerStore((s) => s.setYoloEnabled);
+  const setUseSahi = useViewerStore((s) => s.setUseSahi);
   const setPlaying = useViewerStore((s) => s.setPlaying);
   const setFocusedViewer = useViewerStore((s) => s.setFocusedViewer);
   const focusedViewerId = useViewerStore((s) => s.focusedViewerId);
@@ -246,9 +276,36 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const setSyncMode = useTimelineStore((s) => s.setSyncMode);
   const setLastObjects = useViewerStore((s) => s.setLastObjects);
   const lastObjects = useViewerStore((s) => s.lastObjects);
+  const cdResult = useChangeDetectionStore((s) => s.result);
+  const cdLoading = useChangeDetectionStore((s) => s.loading);
+  const cdRunAnalysis = useChangeDetectionStore((s) => s.runAnalysis);
+  const cdClear = useChangeDetectionStore((s) => s.clear);
+  const cdActiveHighlight = useChangeDetectionStore((s) => s.activeHighlight);
+  const cdSeekTargets = useChangeDetectionStore((s) => s.seekTargets);
+  const cdRequestSeek = useChangeDetectionStore((s) => s.requestSeek);
+  const showHeatmap = useChangeDetectionStore((s) => s.showHeatmap);
+  const setShowHeatmap = useChangeDetectionStore((s) => s.setShowHeatmap);
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [batchChangeOpen, setBatchChangeOpen] = useState(false);
+  const [batchSegOpen, setBatchSegOpen] = useState(false);
+  const [samPropOpen, setSamPropOpen] = useState(false);
   const analysisConfig = useMuraveiStore((s) => s.analysisConfig);
   const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
-  useAutoBatchScan(viewer?.sourcePath ?? undefined, isAuthenticated);
+  useBatchScanHydrate(viewer?.sourcePath ?? undefined, isAuthenticated);
+  const {
+    zones: hudZones,
+    archiveEnabled: hudArchiveOn,
+    liveEnabled: hudLiveOn,
+    saveManual: saveHudManual,
+    recompute: recomputeHud,
+    disableForVideo: disableHudForVideo,
+  } = useHudZones(viewer?.sourcePath, isAuthenticated && Boolean(viewer?.sourcePath));
+  const startBatchScan = useBatchScanStore((s) => s.startScan);
+  const stopBatchScan = useBatchScanStore((s) => s.stopScan);
+  const scanStatus = useBatchScanStore((s) => s.status);
+  const scanVideoPath = useBatchScanStore((s) => s.videoPath);
+  const scanProcessed = useBatchScanStore((s) => s.processed);
+  const scanSampleTotal = useBatchScanStore((s) => s.sampleTotal);
   const editMode = useMuraveiStore((s) => s.editMode);
   const setEditMode = useMuraveiStore((s) => s.setEditMode);
   const detections = useMuraveiStore((s) => s.detections);
@@ -308,6 +365,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const wsGenRef = useRef(0);
   const wsReconnectTimerRef = useRef<number | null>(null);
   const wsReconnectAttemptRef = useRef(0);
+  const wsMsgTraceAtRef = useRef(0);
   /** YOLO scrub/seek suspend: cleared only by setTimeout(YOLO_SUSPEND_CLEAR_MS). */
   const yoloSuspendRef = useRef(false);
   const yoloSuspendClearTimerRef = useRef<number | null>(null);
@@ -353,16 +411,50 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const [toolbarNarrow, setToolbarNarrow] = useState(false);
   const [toolbarMoreOpen, setToolbarMoreOpen] = useState(false);
+  const [detectMenuOpen, setDetectMenuOpen] = useState(false);
   const [liveDraft, setLiveDraft] = useState('');
   const [liveBusy, setLiveBusy] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [scrubDragging, setScrubDragging] = useState(false);
   const [localDuration, setLocalDuration] = useState(0);
+  const [overlayMode, setOverlayMode] = useState<OverlayMode>('detect');
+  const [segReady, setSegReady] = useState(false);
+  const [segLoaded, setSegLoaded] = useState(false);
+  const [segHint, setSegHint] = useState<string | null>(null);
+  const [segMasks, setSegMasks] = useState<SegMask[]>([]);
+  const [segBusy, setSegBusy] = useState(false);
+  const segGenRef = useRef(0);
+  const overlayModeRef = useRef<OverlayMode>('detect');
+  const samReady = useSam3Store((s) => s.ready);
+  const samLoaded = useSam3Store((s) => s.loaded);
+  const samBusy = useSam3Store((s) => s.busy);
+  const samTool = useSam3Store((s) => s.tool);
+  const samHint = useSam3Store((s) => s.hint);
+  const samNotice = useSam3Store((s) => s.lastUnloadNotice);
+  const refreshSamStatus = useSam3Store((s) => s.refreshStatus);
+  const loadSam3 = useSam3Store((s) => s.load);
+  const unloadSam3 = useSam3Store((s) => s.unload);
+  const setSamTool = useSam3Store((s) => s.setTool);
+  const setSamHint = useSam3Store((s) => s.setHint);
+  const inferSam3 = useSam3Store((s) => s.infer);
+  const clearSamNotice = useSam3Store((s) => s.clearNotice);
+  const markSamUnloadedByYolo = useSam3Store((s) => s.markUnloadedByYolo);
+  const samLastPrompt = useSam3Store((s) => s.lastPrompt);
+  const samTextPrompt = useSam3Store((s) => s.textPrompt);
+  const setSamTextPrompt = useSam3Store((s) => s.setTextPrompt);
+  const hasSamSeed = Boolean(
+    samLastPrompt?.points?.length ||
+      samLastPrompt?.bboxes?.length ||
+      samLastPrompt?.text?.length,
+  );
 
   const isLive = viewer?.sourceMode === 'live' && Boolean(viewer?.liveActive);
   isLiveRef.current = isLive;
   const yoloAlwaysOn =
-    Boolean(isAuthenticated) && (Boolean(viewer?.sourcePath) || isLive);
+    Boolean(isAuthenticated) &&
+    Boolean(viewer?.yoloEnabled) &&
+    (Boolean(viewer?.sourcePath) || isLive) &&
+    overlayMode === 'detect';
   const sourceVideo = isLive
     ? `live:${viewerId}`
     : viewer?.sourcePath || 'local';
@@ -419,7 +511,8 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width ?? 0;
-      setToolbarNarrow(w < 560);
+      // Typical mosaic Viewer ~900–1100px still cannot fit all controls
+      setToolbarNarrow(w < 980);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -431,6 +524,13 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, [toolbarMoreOpen]);
+
+  useEffect(() => {
+    if (!detectMenuOpen) return;
+    const onDoc = () => setDetectMenuOpen(false);
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [detectMenuOpen]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -511,7 +611,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.18 : 1 / 1.18;
       setZoom((z) => Math.min(8, Math.max(1, Number((z * factor).toFixed(3)))));
-      setViewTool('pan');
+      // Do NOT auto-enable pan — wheel then left-drag previously slid video out of overflow:hidden
     };
     parent.addEventListener('wheel', onWheel, { passive: false });
     return () => parent.removeEventListener('wheel', onWheel);
@@ -738,6 +838,68 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     seekInFlight,
   ]);
 
+  const CHANGE_COLORS: Record<ChangeType, string> = {
+    new: '#22c55e',
+    removed: '#ef4444',
+    moved: '#eab308',
+  };
+
+  const changeOverlays = useMemo(() => {
+    if (!compareMode || overlayMode === 'seg' || !cdResult) return [];
+    const hl = cdActiveHighlight;
+    const out: {
+      id: string;
+      changeType: ChangeType;
+      bbox: BoundingBox;
+      class_name: string;
+      highlighted: boolean;
+    }[] = [];
+
+    if (viewerId === 'viewer-1') {
+      for (const item of cdResult.removed) {
+        out.push({
+          id: item.id,
+          changeType: 'removed',
+          bbox: item.bbox,
+          class_name: item.class_name || '?',
+          highlighted: hl?.kind === 'removed' && hl.id === item.id,
+        });
+      }
+      for (const m of cdResult.matches) {
+        if (m.status !== 'moved') continue;
+        out.push({
+          id: m.before_id,
+          changeType: 'moved',
+          bbox: m.before_bbox,
+          class_name: m.class_name || '?',
+          highlighted: hl?.kind === 'moved' && hl.id === m.before_id,
+        });
+      }
+    }
+    if (viewerId === 'viewer-2') {
+      for (const item of cdResult.new) {
+        out.push({
+          id: item.id,
+          changeType: 'new',
+          bbox: item.bbox,
+          class_name: item.class_name || '?',
+          highlighted: hl?.kind === 'new' && hl.id === item.id,
+        });
+      }
+      for (const m of cdResult.matches) {
+        if (m.status !== 'moved') continue;
+        out.push({
+          id: m.before_id,
+          changeType: 'moved',
+          bbox: m.after_bbox,
+          class_name: m.class_name || '?',
+          highlighted: hl?.kind === 'moved' && hl.id === m.before_id,
+        });
+      }
+    }
+    return out;
+  }, [compareMode, overlayMode, cdResult, cdActiveHighlight, viewerId]);
+
   const commitableLive = useMemo(() => {
     const pool = frozenLive.length ? frozenLive : liveObjects;
     return pool.filter(
@@ -809,6 +971,8 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
         setStatus('connected');
         setYoloHud('ready');
         logger.info('yolo', `${viewerId}: WS connected`);
+        // KEEP: session trace — do not remove without explicit user order
+        traceWs('ws.connect', `${viewerId} detect WS open`);
       };
       ws.onclose = () => {
         if (wsRef.current === ws) wsRef.current = null;
@@ -817,6 +981,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
         setStatus('disconnected');
         setYoloHud('warn');
         logger.warn('yolo', `${viewerId}: WS disconnected`);
+        traceWs('ws.close', `${viewerId} detect WS close`);
         if (wsGenRef.current !== gen) return;
         if (!yoloAlwaysOn) return;
         const attempt = wsReconnectAttemptRef.current;
@@ -838,6 +1003,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
         setStatus('error');
         setYoloHud('error');
         logger.error('yolo', `${viewerId}: WS error`);
+        traceWs('ws.error', `${viewerId} detect WS error`);
       };
       ws.onmessage = (ev) => {
         inFlightRef.current = false;
@@ -863,6 +1029,9 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
             setYoloHud('error');
             if (data.mode) setMode(data.mode);
             logger.error('yolo', `${viewerId}: ${String(data.error)}`);
+            traceWs('ws.error', `${viewerId} detect msg error`, {
+              error: String(data.error).slice(0, 120),
+            });
             return;
           }
           // Drop stale YOLO results while seek is in flight
@@ -874,6 +1043,12 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           const kind = String(data.kind || data.model || '—');
           const n = typeof data.n === 'number' ? data.n : (data.objects ?? []).length;
           const ms = typeof data.ms === 'number' ? data.ms : 0;
+          // KEEP: session trace — summarize only, max 1/5s (never full bbox payload)
+          const nowTrace = Date.now();
+          if (nowTrace - wsMsgTraceAtRef.current >= 5000) {
+            wsMsgTraceAtRef.current = nowTrace;
+            traceWs('ws.msg', `${viewerId} detect frame n=${n} ms=${ms} kind=${kind}`);
+          }
           setInferKind(kind);
           setInferN(n);
           setInferMs(ms);
@@ -1000,6 +1175,8 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           frameIdx: frameRef.current,
           timeSec: tSec,
           image,
+          ...(viewer?.sourcePath ? { sourceVideo: viewer.sourcePath } : {}),
+          ...(viewer?.useSahi != null ? { useSahi: viewer.useSahi } : {}),
         }),
       );
       return true;
@@ -1047,13 +1224,313 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     editMode,
     seekEpoch,
     viewer?.sourcePath,
+    viewer?.useSahi,
   ]);
+
+  useEffect(() => {
+    if (isLive && overlayMode === 'seg') setOverlayMode('detect');
+  }, [isLive, overlayMode]);
+
+  useEffect(() => {
+    const prev = overlayModeRef.current;
+    overlayModeRef.current = overlayMode;
+    if (prev !== 'seg' || overlayMode !== 'detect' || !isAuthenticated) return;
+    void fetch('/api/seg/unload', { method: 'POST', headers: authHeaders() })
+      .then(() => {
+        setSegLoaded(false);
+      })
+      .catch(() => {
+        /* ignore */
+      });
+    void unloadSam3();
+  }, [overlayMode, isAuthenticated, unloadSam3]);
+
+  useEffect(() => {
+    if (overlayMode !== 'seg') {
+      // Live freeze SAM keeps temporary masks on detect overlay until play.
+      if (!isLive) {
+        setSegMasks([]);
+        setInferN(0);
+        setInferKind('—');
+      }
+      setSegBusy(false);
+      setSamTool('none');
+      return;
+    }
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/seg/status', { headers: authHeaders() });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          ready?: boolean;
+          loaded?: boolean;
+          weight?: string | null;
+        };
+        if (cancelled) return;
+        const ready = Boolean(data.ready);
+        const loaded = Boolean(data.loaded);
+        setSegReady(ready);
+        setSegLoaded(loaded);
+        if (!ready) {
+          setSegHint('Нет yolo26n-seg.pt — детекция работает');
+        } else if (!loaded) {
+          setSegHint('загрузите модель (Система)');
+        } else {
+          setSegHint(data.weight || 'yolo26-seg');
+        }
+      } catch {
+        if (!cancelled) {
+          setSegReady(false);
+          setSegLoaded(false);
+          setSegHint('Нет yolo26n-seg.pt — детекция работает');
+        }
+      }
+      if (!cancelled) await refreshSamStatus();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [overlayMode, isAuthenticated, refreshSamStatus, setSamTool, isLive]);
+
+  // Live: keep SAM status fresh without entering archive SEG mode.
+  useEffect(() => {
+    if (!isLive || !isAuthenticated) return;
+    void refreshSamStatus();
+  }, [isLive, isAuthenticated, refreshSamStatus]);
+
+  const runSegFrame = useCallback(async () => {
+    if (overlayMode !== 'seg' || isLive || !segLoaded) return;
+    const video = videoRef.current;
+    if (!video || video.readyState < 2 || video.videoWidth <= 0) return;
+    if (video.seeking || pendingSeekTime.current != null) return;
+    const jpeg = captureFrame(video);
+    if (!jpeg) return;
+    const gen = ++segGenRef.current;
+    setSegBusy(true);
+    try {
+      const res = await fetch('/api/seg/infer', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          image_base64: jpeg,
+          confidence: analysisConfig.confidenceThreshold,
+        }),
+      });
+      if (segGenRef.current !== gen) return;
+      if (res.status === 503) {
+        const body = (await res.json().catch(() => ({}))) as { detail?: string };
+        const detail = typeof body.detail === 'string' ? body.detail : '';
+        if (detail.includes('VRAM') || detail.includes('не в VRAM')) {
+          setSegLoaded(false);
+          setSegHint('загрузите модель (Система)');
+        } else {
+          setSegReady(false);
+          setSegLoaded(false);
+          setSegHint('Нет yolo26n-seg.pt — детекция работает');
+        }
+        setSegMasks([]);
+        return;
+      }
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        masks?: SegMask[];
+        ms?: number;
+        weight?: string;
+      };
+      if (segGenRef.current !== gen) return;
+      const masks = Array.isArray(data.masks) ? data.masks : [];
+      setSegMasks(masks);
+      setInferN(masks.length);
+      setInferMs(typeof data.ms === 'number' ? data.ms : 0);
+      setInferKind(data.weight || 'seg');
+      setYoloHud('ready');
+    } catch {
+      /* network */
+    } finally {
+      if (segGenRef.current === gen) setSegBusy(false);
+    }
+  }, [
+    overlayMode,
+    isLive,
+    segLoaded,
+    analysisConfig.confidenceThreshold,
+  ]);
+
+  const unloadSegModel = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      await fetch('/api/seg/unload', { method: 'POST', headers: authHeaders() });
+    } catch {
+      /* ignore */
+    }
+    setSegLoaded(false);
+    setSegHint(segReady ? 'загрузите модель (Система)' : 'Нет yolo26n-seg.pt — детекция работает');
+  }, [isAuthenticated, segReady]);
+
+  const loadSegModel = useCallback(async () => {
+    if (!isAuthenticated || !segReady) return;
+    setSegBusy(true);
+    try {
+      const res = await fetch('/api/seg/load', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({}),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        loaded?: boolean;
+        weight?: string;
+        detail?: string;
+        sam_unloaded?: boolean;
+      };
+      if (!res.ok) {
+        setSegHint(typeof data.detail === 'string' ? data.detail : 'загрузите модель (Система)');
+        setSegLoaded(false);
+        return;
+      }
+      setSegLoaded(Boolean(data.loaded) || true);
+      setSegHint(data.weight || 'yolo26-seg');
+      markSamUnloadedByYolo();
+    } catch {
+      setSegHint('загрузите модель (Система)');
+    } finally {
+      setSegBusy(false);
+    }
+  }, [isAuthenticated, segReady, markSamUnloadedByYolo]);
+
+  const onLoadSam3 = useCallback(async () => {
+    if (!isAuthenticated || !samReady) return;
+    await loadSam3();
+    if (useSam3Store.getState().loaded) {
+      setSegLoaded(false);
+      setSegHint(segReady ? 'загрузите модель (Система)' : 'Нет yolo26n-seg.pt — детекция работает');
+    }
+  }, [isAuthenticated, samReady, loadSam3, segReady]);
+
+  const runSamPoint = useCallback(
+    async (e: React.PointerEvent) => {
+      if (!samLoaded || samBusy) return;
+      const svg = svgRef.current;
+      if (!svg) return;
+      const video = videoRef.current;
+      const effectivelyPaused = video ? video.paused : paused;
+      if (!effectivelyPaused) {
+        setSamHint('Для точки SAM3 поставьте видео на паузу');
+        return;
+      }
+      if (!paused) setPaused(true);
+      const r = svg.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      const p = {
+        x: clamp01((e.clientX - r.left) / r.width),
+        y: clamp01((e.clientY - r.top) / r.height),
+      };
+      e.stopPropagation();
+      e.preventDefault();
+      let jpeg = video ? captureFrame(video) : undefined;
+      if (!jpeg && video && video.videoWidth > 0 && video.videoHeight > 0) {
+        // Fallback: blank JPEG of declared size (decode not ready yet)
+        const c = document.createElement('canvas');
+        c.width = Math.min(64, video.videoWidth);
+        c.height = Math.min(64, video.videoHeight);
+        c.getContext('2d')?.fillRect(0, 0, c.width, c.height);
+        jpeg = c.toDataURL('image/jpeg', 0.7);
+      }
+      if (!jpeg) {
+        setSamHint('Не удалось захватить кадр');
+        return;
+      }
+      const label = e.shiftKey ? 0 : 1;
+      try {
+        const masks = await inferSam3({
+          imageBase64: jpeg,
+          points: [{ x: p.x, y: p.y, label }],
+        });
+        setSegMasks(masks);
+        setInferN(masks.length);
+        setInferKind('sam3');
+        setSamHint(useSam3Store.getState().weight || 'sam3');
+      } catch (err) {
+        setSamHint(err instanceof Error ? err.message : 'Ошибка сегментации SAM3');
+      }
+    },
+    [samLoaded, samBusy, paused, inferSam3, setSamHint],
+  );
+
+  const runSamFromDetection = useCallback(async () => {
+    if (!samLoaded || samBusy || !paused || !activeDetectionId) return;
+    const obj =
+      overlayObjects.find((o) => o.id === activeDetectionId) ||
+      liveObjects.find((o) => o.id === activeDetectionId);
+    if (!obj?.bbox) return;
+    const video = videoRef.current;
+    const jpeg = video ? captureFrame(video) : undefined;
+    if (!jpeg) return;
+    const { x1, y1, x2, y2 } = obj.bbox;
+    try {
+      const masks = await inferSam3({
+        imageBase64: jpeg,
+        bboxes: [{ x1, y1, x2, y2 }],
+      });
+      setSegMasks(masks);
+      setInferN(masks.length);
+      setInferKind('sam3');
+    } catch {
+      /* ignore */
+    }
+  }, [
+    samLoaded,
+    samBusy,
+    paused,
+    activeDetectionId,
+    overlayObjects,
+    liveObjects,
+    inferSam3,
+  ]);
+
+  const runSamText = useCallback(async () => {
+    if (!samLoaded || samBusy) return;
+    const texts = parseSam3TextPrompt(samTextPrompt);
+    if (!texts.length) return;
+    // Archive: require pause. Live freeze-frame does not require pause.
+    if (!isLive && !paused) return;
+    const video = videoRef.current;
+    const jpeg = video ? captureFrame(video) : undefined;
+    if (!jpeg) return;
+    try {
+      const masks = await inferSam3({ imageBase64: jpeg, text: texts });
+      setSegMasks(masks);
+      setInferN(masks.length);
+      setInferKind('sam3');
+    } catch {
+      /* network / 503 */
+    }
+  }, [samLoaded, samBusy, samTextPrompt, isLive, paused, inferSam3]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     video.playbackRate = playbackRate;
   }, [playbackRate, viewer?.sourcePath]);
+
+  useEffect(() => {
+    if (!cdSeekTargets || !compareMode) return;
+    const target =
+      viewerId === 'viewer-1'
+        ? cdSeekTargets['viewer-1']
+        : viewerId === 'viewer-2'
+          ? cdSeekTargets['viewer-2']
+          : null;
+    if (target == null || !Number.isFinite(target)) return;
+    const video = videoRef.current;
+    applyVideoSeek(target, { force: true, useFastSeek: false });
+    if (video && !video.paused) video.pause();
+    setPlaying(viewerId, false);
+    if (viewerId === 'viewer-1') {
+      setPlayheadPosition(target);
+    }
+  }, [cdSeekTargets?.epoch, compareMode, viewerId]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -1073,6 +1550,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     setLiveObjects([]);
     setFrozenLive([]);
     setLiveStamp(-1);
+    setSegMasks([]);
     freezeTimeRef.current = -1;
     lastPausedAt.current = -1;
     remountGuardUntil.current = performance.now() + REMOUNT_PUBLISH_GUARD_MS;
@@ -1369,6 +1847,30 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     setPan({ x: 0, y: 0 });
   };
 
+  const clampPan = useCallback(
+    (x: number, y: number, z: number) => {
+      const parent = stageParentRef.current;
+      if (!parent) return { x, y };
+      const pw = parent.clientWidth || 1;
+      const ph = parent.clientHeight || 1;
+      const sw = (stage.w || pw) * z;
+      const sh = (stage.h || ph) * z;
+      // Keep ≥80px of the stage inside the clipped parent (pan off-screen looked like “video gone”)
+      const margin = 80;
+      const maxX = Math.max(0, (sw + pw) / 2 - margin);
+      const maxY = Math.max(0, (sh + ph) / 2 - margin);
+      return {
+        x: Math.min(maxX, Math.max(-maxX, x)),
+        y: Math.min(maxY, Math.max(-maxY, y)),
+      };
+    },
+    [stage.w, stage.h],
+  );
+
+  useEffect(() => {
+    setPan((p) => clampPan(p.x, p.y, zoom));
+  }, [zoom, clampPan]);
+
   const removeActiveBox = () => {
     const obj =
       overlayObjects.find((o) => o.id === activeDetectionId) ||
@@ -1391,6 +1893,12 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     setPlaying(viewerId, true);
     if (editMode) setEditMode(false);
     setFrozenLive([]);
+    // Live freeze SAM overlay must not stick on a moving stream.
+    if (isLive || overlayMode === 'seg') {
+      setSegMasks([]);
+      setInferN(0);
+      setInferKind('—');
+    }
     if (canPublishPlayhead) timelinePlay();
   };
 
@@ -1447,7 +1955,12 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
     if (!editMode) {
       if (id) {
         const obj = overlayObjects.find((o) => o.id === id);
-        if (obj) setActiveDetection(obj);
+        if (obj) {
+          setActiveDetection(obj);
+          if (typeof obj.time_sec === 'number' && Number.isFinite(obj.time_sec)) {
+            seekTo(obj.time_sec);
+          }
+        }
       }
       return;
     }
@@ -1618,13 +2131,13 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
       onDrop={(e) => {
         e.preventDefault();
         const path = e.dataTransfer.getData('text/plain');
-        if (path) setSource(viewerId, path, null);
+        if (path) setSource(viewerId, toArchiveMediaPath(path), null);
       }}
     >
       <YoloDebugOverlay />
       <div
         ref={toolbarRef}
-        className="flex items-center gap-0 px-1.5 py-1 border-b border-dv-border text-[10px] text-dv-muted flex-nowrap overflow-hidden min-h-[32px]"
+        className="flex items-center gap-0 px-1.5 py-1 border-b border-dv-border text-[10px] text-dv-muted flex-nowrap overflow-visible relative z-20 min-h-[32px] min-w-0 w-full"
       >
         <ToolbarGroup>
           <Button
@@ -1710,11 +2223,299 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           <Button
             size="sm"
             active={isLive || viewer?.sourceMode === 'live'}
-            onClick={() => setSourceMode(viewerId, 'live')}
+            onClick={() => {
+              setOverlayMode('detect');
+              setSourceMode(viewerId, 'live');
+            }}
           >
             Live
           </Button>
+          <div
+            className="relative shrink-0"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <Button
+              size="sm"
+              active={Boolean(viewer?.yoloEnabled) || detectMenuOpen}
+              disabled={!isAuthenticated}
+              onClick={() => setDetectMenuOpen((v) => !v)}
+              title="Detect (WS) и SAHI. Seg/SAM — отдельно. Не путать со «Сканировать»."
+            >
+              {viewer?.yoloEnabled ? 'Detect' : 'Detect выкл'}
+              <ChevronDown size={10} />
+            </Button>
+            <Menu open={detectMenuOpen} className="w-52" align="left">
+              <MenuItem
+                onClick={() => {
+                  setYoloEnabled(viewerId, !viewer?.yoloEnabled);
+                }}
+              >
+                {viewer?.yoloEnabled ? 'Detect · вкл' : 'Detect · выкл'}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  const cur = viewer?.useSahi ?? null;
+                  const next = cur === null ? true : cur === true ? false : null;
+                  setUseSahi(viewerId, next);
+                }}
+              >
+                {viewer?.useSahi === true
+                  ? 'SAHI · вкл'
+                  : viewer?.useSahi === false
+                    ? 'SAHI · выкл'
+                    : 'SAHI · системный'}
+              </MenuItem>
+              <MenuItem disabled>
+                Модель · {inferKind !== '—' ? inferKind : mode || '—'}
+              </MenuItem>
+            </Menu>
+          </div>
         </ToolbarGroup>
+
+        {!isLive && (viewer?.sourceMode ?? 'archive') === 'archive' && (
+          <ToolbarGroup>
+            <Button
+              size="sm"
+              active={overlayMode === 'detect'}
+              onClick={() => setOverlayMode('detect')}
+              title="Режим overlay: рамки YOLO (не пакетный скан)"
+            >
+              Детекция
+            </Button>
+            <Button
+              size="sm"
+              disabled={
+                !isAuthenticated ||
+                !viewer?.sourcePath ||
+                !/\.(mp4|webm|mov|avi|mkv)$/i.test(viewer.sourcePath)
+              }
+              onClick={() => {
+                if (!viewer?.sourcePath) return;
+                const hasIo =
+                  inPoint != null && outPoint != null && outPoint > inPoint + 0.05;
+                const tStart = hasIo ? inPoint : 0;
+                const tEnd = hasIo
+                  ? outPoint
+                  : mediaDuration > 0
+                    ? mediaDuration
+                    : undefined;
+                if (
+                  scanStatus === 'running' &&
+                  scanVideoPath &&
+                  mediaPathsMatch(scanVideoPath, viewer.sourcePath)
+                ) {
+                  void stopBatchScan();
+                  return;
+                }
+                void startBatchScan(viewer.sourcePath, hydrateDetections, {
+                  tStart,
+                  tEnd,
+                  fpsSample: 2,
+                });
+              }}
+              title="Пакетный YOLO (~2 fps). Сегмент I–O или весь ролик. ≥1080p — SAHI."
+            >
+              {scanStatus === 'running' &&
+              scanVideoPath &&
+              viewer?.sourcePath &&
+              mediaPathsMatch(scanVideoPath, viewer.sourcePath)
+                ? `Стоп ${batchScanProgressPct({
+                    status: scanStatus,
+                    processed: scanProcessed,
+                    sampleTotal: scanSampleTotal,
+                  })}%`
+                : 'Сканировать'}
+            </Button>
+            {!toolbarNarrow && (
+              <>
+            <Button
+              size="sm"
+              active={overlayMode === 'seg'}
+              disabled={!isAuthenticated}
+              onClick={() => setOverlayMode('seg')}
+              title="Сегментация текущего кадра (архив). Не пишет в обучение."
+            >
+              Сегментация
+            </Button>
+            {overlayMode === 'seg' && (
+              <>
+                {segReady && !segLoaded && (
+                  <Button
+                    size="sm"
+                    disabled={!isAuthenticated || segBusy}
+                    onClick={() => void loadSegModel()}
+                    title="Загрузить yolo26n/s-seg в VRAM"
+                  >
+                    {segBusy ? 'загрузка…' : 'Загрузить'}
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  disabled={
+                    !isAuthenticated ||
+                    !segLoaded ||
+                    !paused ||
+                    segBusy ||
+                    seekInFlight
+                  }
+                  onClick={() => void runSegFrame()}
+                  title={
+                    !segReady
+                      ? 'Нет yolo26n-seg.pt — детекция работает'
+                      : !segLoaded
+                        ? 'загрузите модель (Система)'
+                        : paused
+                          ? 'Сегментировать текущий кадр'
+                          : 'Поставьте на паузу'
+                  }
+                >
+                  {segBusy ? 'сег…' : 'Сегментировать кадр'}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={
+                    !isAuthenticated ||
+                    !segLoaded ||
+                    !viewer?.sourcePath ||
+                    segBusy ||
+                    isLive
+                  }
+                  onClick={() => setBatchSegOpen(true)}
+                  title="Пакетная сегментация ролика (шаг кадров)"
+                >
+                  Batch сегментация
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!isAuthenticated || !segLoaded || segBusy}
+                  onClick={() => void unloadSegModel()}
+                  title="Выгрузить seg-модель из VRAM"
+                >
+                  Выгрузить
+                </Button>
+                <span
+                  className={`text-[9px] font-mono max-w-[160px] truncate ${
+                    segLoaded ? 'text-dv-muted' : 'text-dv-danger'
+                  }`}
+                  title={segHint || ''}
+                >
+                  {segHint || (segReady ? 'seg' : 'нет весов')}
+                </span>
+                {samReady && !samLoaded && (
+                  <Button
+                    size="sm"
+                    disabled={!isAuthenticated || samBusy || segBusy}
+                    onClick={() => void onLoadSam3()}
+                    title="Загрузить SAM3 (выгрузит YOLO-seg)"
+                    data-testid="sam3-load"
+                  >
+                    {samBusy ? 'SAM…' : 'Загрузить SAM3'}
+                  </Button>
+                )}
+                {samLoaded && (
+                  <>
+                    <Button
+                      size="sm"
+                      active={samTool === 'point'}
+                      disabled={!isAuthenticated || samBusy}
+                      onClick={() => setSamTool(samTool === 'point' ? 'none' : 'point')}
+                      title="Точка: ЛКМ — объект, Shift+ЛКМ — фон. Пауза."
+                      data-testid="sam3-tool-point"
+                    >
+                      Точка
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={
+                        !isAuthenticated ||
+                        samBusy ||
+                        !paused ||
+                        !activeDetectionId
+                      }
+                      onClick={() => void runSamFromDetection()}
+                      title="Маска SAM3 по bbox активной детекции"
+                      data-testid="sam3-from-detection"
+                    >
+                      SAM из детекции
+                    </Button>
+                    <input
+                      className="bg-dv-deep border border-dv-border px-1 py-0.5 text-[9px] font-mono w-[160px] max-w-[28vw]"
+                      placeholder="trench / окоп; person; vehicle"
+                      value={samTextPrompt}
+                      onChange={(e) => setSamTextPrompt(e.target.value)}
+                      disabled={!isAuthenticated || samBusy}
+                      title="Текстовые промпты через ; (1–3)"
+                      data-testid="sam3-text-input"
+                    />
+                    <Button
+                      size="sm"
+                      disabled={
+                        !isAuthenticated ||
+                        samBusy ||
+                        !parseSam3TextPrompt(samTextPrompt).length ||
+                        (!isLive && !paused)
+                      }
+                      onClick={() => void runSamText()}
+                      title={
+                        isLive
+                          ? 'Freeze-кадр SAM по тексту (detect не останавливается)'
+                          : 'Маска SAM3 по тексту (нужна пауза)'
+                      }
+                      data-testid={isLive ? 'sam3-live-frame' : 'sam3-text-infer'}
+                    >
+                      {isLive ? 'Кадр SAM' : 'По тексту'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={
+                        !isAuthenticated ||
+                        samBusy ||
+                        !paused ||
+                        !viewer?.sourcePath ||
+                        !hasSamSeed ||
+                        isLive
+                      }
+                      onClick={() => setSamPropOpen(true)}
+                      title="Пропагировать маску вперёд ≤30 кадров"
+                      data-testid="sam3-propagate"
+                    >
+                      Пропагировать
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={!isAuthenticated || samBusy}
+                      onClick={() => void unloadSam3()}
+                      title="Выгрузить SAM3 из VRAM"
+                    >
+                      Выгрузить SAM
+                    </Button>
+                  </>
+                )}
+                <span
+                  className={`text-[9px] font-mono max-w-[120px] truncate ${
+                    samLoaded ? 'text-dv-muted' : 'text-dv-danger'
+                  }`}
+                  title={samHint || ''}
+                  data-testid="sam3-hint"
+                >
+                  {samHint || (samReady ? 'sam3' : '')}
+                </span>
+                {samNotice ? (
+                  <span
+                    className="text-[9px] text-dv-accent max-w-[180px] truncate"
+                    title={samNotice}
+                    data-testid="sam3-notice"
+                    onClick={() => clearSamNotice()}
+                  >
+                    {samNotice}
+                  </span>
+                ) : null}
+              </>
+            )}
+              </>
+            )}
+          </ToolbarGroup>
+        )}
 
         {(viewer?.sourceMode === 'live' || isLive) && (
           <ToolbarGroup>
@@ -1742,6 +2543,77 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           </ToolbarGroup>
         )}
 
+        {isLive && isAuthenticated && (samReady || samLoaded) && (
+          <ToolbarGroup>
+            {samReady && !samLoaded && (
+              <Button
+                size="sm"
+                disabled={samBusy}
+                onClick={() => void onLoadSam3()}
+                title="Загрузить SAM3 для freeze-кадра (YOLO-detect не выгружается)"
+                data-testid="sam3-load"
+              >
+                {samBusy ? 'SAM…' : 'Загрузить SAM3'}
+              </Button>
+            )}
+            {samLoaded && (
+              <>
+                <input
+                  className="bg-dv-deep border border-dv-border px-1 py-0.5 text-[9px] font-mono w-[160px] max-w-[28vw]"
+                  placeholder="trench / окоп; person; vehicle"
+                  value={samTextPrompt}
+                  onChange={(e) => setSamTextPrompt(e.target.value)}
+                  disabled={samBusy}
+                  title="Текстовые промпты через ; (1–3)"
+                  data-testid="sam3-text-input"
+                />
+                <Button
+                  size="sm"
+                  disabled={samBusy || !parseSam3TextPrompt(samTextPrompt).length}
+                  onClick={() => void runSamText()}
+                  title="Freeze-кадр SAM по тексту (detect продолжает работать)"
+                  data-testid="sam3-live-frame"
+                >
+                  {samBusy ? 'SAM…' : 'Кадр SAM'}
+                </Button>
+                {segMasks.length > 0 && (
+                  <Button
+                    size="sm"
+                    disabled={samBusy}
+                    onClick={() => {
+                      setSegMasks([]);
+                      setInferN(0);
+                      setInferKind('—');
+                    }}
+                    title="Снять временный SAM overlay"
+                    data-testid="sam3-live-clear"
+                  >
+                    Сброс SAM
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  disabled={samBusy}
+                  onClick={() => void unloadSam3()}
+                  title="Выгрузить SAM3 из VRAM"
+                >
+                  Выгрузить SAM
+                </Button>
+              </>
+            )}
+            <span
+              className={`text-[9px] font-mono max-w-[100px] truncate ${
+                samLoaded ? 'text-dv-muted' : 'text-dv-danger'
+              }`}
+              title={samHint || ''}
+              data-testid="sam3-hint"
+            >
+              {samHint || (samReady ? 'sam3' : '')}
+            </span>
+          </ToolbarGroup>
+        )}
+
+        {!toolbarNarrow && (
         <ToolbarGroup>
           <Button
             size="sm"
@@ -1762,6 +2634,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                   if (!next) {
                     setSyncPlayhead(false);
                     setSyncMode('off');
+                    cdClear();
                   }
                 }}
                 title="Сравнение: окно 1 — «Было», окно 2 — «Стало». Загрузите два ролика."
@@ -1787,10 +2660,81 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                   Sync
                 </Button>
               )}
+              {compareMode && (
+                <Button
+                  size="sm"
+                  disabled={
+                    !isAuthenticated ||
+                    !useViewerStore.getState().viewers['viewer-1']?.sourcePath ||
+                    !useViewerStore.getState().viewers['viewer-2']?.sourcePath
+                  }
+                  onClick={() => setSyncModalOpen(true)}
+                  title="Автосинхронизация времени по GPS-трекам или детекциям"
+                >
+                  Синхронизировать
+                </Button>
+              )}
+              {compareMode && (
+                <Button
+                  size="sm"
+                  disabled={
+                    cdLoading ||
+                    !isAuthenticated ||
+                    !useViewerStore.getState().viewers['viewer-1']?.sourcePath ||
+                    !useViewerStore.getState().viewers['viewer-2']?.sourcePath
+                  }
+                  onClick={() => {
+                    const v1 = useViewerStore.getState().viewers['viewer-1'];
+                    const v2 = useViewerStore.getState().viewers['viewer-2'];
+                    if (!v1?.sourcePath || !v2?.sourcePath) return;
+                    const syncOn =
+                      useViewerStore.getState().syncPlayhead ||
+                      useTimelineStore.getState().syncMode === 'follow';
+                    void cdRunAnalysis({
+                      videoBefore: v1.sourcePath,
+                      videoAfter: v2.sourcePath,
+                      timeBefore: videoRef.current?.currentTime ?? getViewerPlaybackTime('viewer-1'),
+                      timeAfter: getViewerPlaybackTime('viewer-2'),
+                      timeWindowSec: syncOn ? 0.5 : 2.0,
+                    });
+                  }}
+                  title="GPS-сопоставление детекций Было/Стало (+ ORB fallback)"
+                >
+                  {cdLoading ? 'Анализ…' : 'Анализ изменений'}
+                </Button>
+              )}
+              {compareMode && (
+                <Button
+                  size="sm"
+                  disabled={
+                    !isAuthenticated ||
+                    !useViewerStore.getState().viewers['viewer-1']?.sourcePath ||
+                    !useViewerStore.getState().viewers['viewer-2']?.sourcePath
+                  }
+                  onClick={() => setBatchChangeOpen(true)}
+                  title="Пакетный CD: subsample пар auto_sync → analyze_pair"
+                >
+                  Пакетный CD
+                </Button>
+              )}
+              {compareMode &&
+                viewerId === 'viewer-1' &&
+                Boolean(cdResult?.image_diff?.heatmap_b64) && (
+                  <Button
+                    size="sm"
+                    active={showHeatmap}
+                    onClick={() => setShowHeatmap(!showHeatmap)}
+                    title="Тепловая карта изменений (ORB/diff)"
+                  >
+                    Теплокарта
+                  </Button>
+                )}
             </>
           )}
         </ToolbarGroup>
+        )}
 
+        {!toolbarNarrow && (
         <ToolbarGroup>
           <span
             className="inline-flex items-center gap-1.5 text-[9px] text-dv-muted max-w-[220px] truncate px-1"
@@ -1807,10 +2751,13 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
             />
             <Crosshair size={10} className="flex-shrink-0 text-dv-accent" />
             <span className="font-mono truncate">
-              YOLO26 · {inferKind} · {inferN} obj · {inferMs}ms
+              {overlayMode === 'seg'
+                ? `SEG · ${inferKind} · ${inferN} · ${inferMs}ms`
+                : `YOLO26 · ${inferKind} · ${inferN} obj · ${inferMs}ms`}
             </span>
           </span>
         </ToolbarGroup>
+        )}
 
         {!toolbarNarrow && (
           <ToolbarGroup>
@@ -1883,7 +2830,239 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
             >
               <MoreHorizontal size={12} />
             </IconButton>
-            <Menu open={toolbarMoreOpen} className="w-48">
+            <Menu open={toolbarMoreOpen} className="w-56">
+              {!isLive && (viewer?.sourceMode ?? 'archive') === 'archive' && (
+                <MenuItem
+                  disabled={!isAuthenticated}
+                  onClick={() => {
+                    setOverlayMode(overlayMode === 'seg' ? 'detect' : 'seg');
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  {overlayMode === 'seg' ? 'Сегментация · вкл' : 'Сегментация'}
+                </MenuItem>
+              )}
+              {!isLive &&
+                (viewer?.sourceMode ?? 'archive') === 'archive' &&
+                overlayMode === 'seg' &&
+                segReady &&
+                !segLoaded && (
+                  <MenuItem
+                    disabled={!isAuthenticated || segBusy}
+                    onClick={() => {
+                      void loadSegModel();
+                      setToolbarMoreOpen(false);
+                    }}
+                  >
+                    {segBusy ? 'загрузка…' : 'Загрузить seg'}
+                  </MenuItem>
+                )}
+              {!isLive && (viewer?.sourceMode ?? 'archive') === 'archive' && overlayMode === 'seg' && (
+                <MenuItem
+                  disabled={
+                    !isAuthenticated ||
+                    !segLoaded ||
+                    !paused ||
+                    segBusy ||
+                    seekInFlight
+                  }
+                  onClick={() => {
+                    void runSegFrame();
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  {segBusy ? 'сег…' : 'Сегментировать кадр'}
+                </MenuItem>
+              )}
+              {!isLive && (viewer?.sourceMode ?? 'archive') === 'archive' && overlayMode === 'seg' && (
+                <MenuItem
+                  disabled={
+                    !isAuthenticated ||
+                    !segLoaded ||
+                    !viewer?.sourcePath ||
+                    segBusy ||
+                    isLive
+                  }
+                  onClick={() => {
+                    setBatchSegOpen(true);
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  Batch сегментация
+                </MenuItem>
+              )}
+              {!isLive &&
+                (viewer?.sourceMode ?? 'archive') === 'archive' &&
+                overlayMode === 'seg' &&
+                samReady &&
+                !samLoaded && (
+                  <MenuItem
+                    disabled={!isAuthenticated || samBusy || segBusy}
+                    onClick={() => {
+                      void onLoadSam3();
+                      setToolbarMoreOpen(false);
+                    }}
+                  >
+                    {samBusy ? 'SAM…' : 'Загрузить SAM3'}
+                  </MenuItem>
+                )}
+              {!isLive &&
+                (viewer?.sourceMode ?? 'archive') === 'archive' &&
+                overlayMode === 'seg' &&
+                samLoaded && (
+                  <MenuItem
+                    disabled={!isAuthenticated || samBusy}
+                    onClick={() => {
+                      setSamTool(samTool === 'point' ? 'none' : 'point');
+                      setToolbarMoreOpen(false);
+                    }}
+                  >
+                    {samTool === 'point' ? 'Точка · вкл' : 'Точка'}
+                  </MenuItem>
+                )}
+              {!isLive &&
+                (viewer?.sourceMode ?? 'archive') === 'archive' &&
+                overlayMode === 'seg' &&
+                samLoaded && (
+                  <MenuItem
+                    disabled={
+                      !isAuthenticated ||
+                      samBusy ||
+                      !paused ||
+                      !activeDetectionId
+                    }
+                    onClick={() => {
+                      void runSamFromDetection();
+                      setToolbarMoreOpen(false);
+                    }}
+                  >
+                    SAM из детекции
+                  </MenuItem>
+                )}
+              {!isLive &&
+                (viewer?.sourceMode ?? 'archive') === 'archive' &&
+                overlayMode === 'seg' &&
+                samLoaded && (
+                  <MenuItem
+                    disabled={
+                      !isAuthenticated ||
+                      samBusy ||
+                      !paused ||
+                      !viewer?.sourcePath ||
+                      !hasSamSeed ||
+                      isLive
+                    }
+                    onClick={() => {
+                      setSamPropOpen(true);
+                      setToolbarMoreOpen(false);
+                    }}
+                  >
+                    Пропагировать
+                  </MenuItem>
+                )}
+              <MenuItem
+                onClick={() => {
+                  setShowMotion(!showMotion);
+                  setToolbarMoreOpen(false);
+                }}
+              >
+                {showMotion ? 'Векторы · вкл' : 'Векторы'}
+              </MenuItem>
+              {viewerId === 'viewer-1' && (
+                <MenuItem
+                  onClick={() => {
+                    const next = !compareMode;
+                    setCompareMode(next);
+                    if (!next) {
+                      setSyncPlayhead(false);
+                      setSyncMode('off');
+                      cdClear();
+                    }
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  {compareMode ? 'Было/Стало · вкл' : 'Было/Стало'}
+                </MenuItem>
+              )}
+              {viewerId === 'viewer-1' && compareMode && (
+                <MenuItem
+                  onClick={() => {
+                    const next = !(syncPlayhead || syncMode === 'follow');
+                    setSyncPlayhead(next);
+                    setSyncMode(next ? 'follow' : 'off');
+                    if (next) {
+                      const pos = useTimelineStore.getState().playheadPosition;
+                      seekTo(pos);
+                    }
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  {syncPlayhead || syncMode === 'follow' ? 'Sync · вкл' : 'Sync'}
+                </MenuItem>
+              )}
+              {viewerId === 'viewer-1' && compareMode && (
+                <MenuItem
+                  disabled={
+                    !isAuthenticated ||
+                    !useViewerStore.getState().viewers['viewer-1']?.sourcePath ||
+                    !useViewerStore.getState().viewers['viewer-2']?.sourcePath
+                  }
+                  onClick={() => {
+                    setSyncModalOpen(true);
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  Синхронизировать
+                </MenuItem>
+              )}
+              {viewerId === 'viewer-1' && compareMode && (
+                <MenuItem
+                  disabled={
+                    cdLoading ||
+                    !isAuthenticated ||
+                    !useViewerStore.getState().viewers['viewer-1']?.sourcePath ||
+                    !useViewerStore.getState().viewers['viewer-2']?.sourcePath
+                  }
+                  onClick={() => {
+                    const v1 = useViewerStore.getState().viewers['viewer-1'];
+                    const v2 = useViewerStore.getState().viewers['viewer-2'];
+                    if (!v1?.sourcePath || !v2?.sourcePath) return;
+                    const syncOn =
+                      useViewerStore.getState().syncPlayhead ||
+                      useTimelineStore.getState().syncMode === 'follow';
+                    void cdRunAnalysis({
+                      videoBefore: v1.sourcePath,
+                      videoAfter: v2.sourcePath,
+                      timeBefore: videoRef.current?.currentTime ?? getViewerPlaybackTime('viewer-1'),
+                      timeAfter: getViewerPlaybackTime('viewer-2'),
+                      timeWindowSec: syncOn ? 0.5 : 2.0,
+                    });
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  {cdLoading ? 'Анализ…' : 'Анализ изменений'}
+                </MenuItem>
+              )}
+              {viewerId === 'viewer-1' && compareMode && (
+                <MenuItem
+                  disabled={
+                    !isAuthenticated ||
+                    !useViewerStore.getState().viewers['viewer-1']?.sourcePath ||
+                    !useViewerStore.getState().viewers['viewer-2']?.sourcePath
+                  }
+                  onClick={() => {
+                    setBatchChangeOpen(true);
+                    setToolbarMoreOpen(false);
+                  }}
+                >
+                  Пакетный CD
+                </MenuItem>
+              )}
+              <MenuItem disabled>
+                {overlayMode === 'seg'
+                  ? `SEG · ${inferKind} · ${inferN} · ${inferMs}ms`
+                  : `YOLO26 · ${inferKind} · ${inferN} obj · ${inferMs}ms`}
+              </MenuItem>
               <MenuItem
                 disabled={recBusy || (!recOn && !viewer?.sourcePath)}
                 onClick={() => {
@@ -1942,33 +3121,24 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
       </div>
       {compareMode && viewerId === 'viewer-2' && (
         <div className="px-2 py-1 border-b border-dv-border text-[9px] text-dv-muted bg-dv-deep/80 flex flex-wrap gap-x-3 gap-y-0.5">
-          {(() => {
-            const was = lastObjects['viewer-1'] || [];
-            const now = lastObjects['viewer-2'] || liveObjects;
-            const wasClasses = new Map<string, number>();
-            const nowClasses = new Map<string, number>();
-            for (const o of was) wasClasses.set(o.class_en, (wasClasses.get(o.class_en) || 0) + 1);
-            for (const o of now) nowClasses.set(o.class_en, (nowClasses.get(o.class_en) || 0) + 1);
-            const keys = new Set([...wasClasses.keys(), ...nowClasses.keys()]);
-            const lost: string[] = [];
-            const gained: string[] = [];
-            const same: string[] = [];
-            for (const k of keys) {
-              const a = wasClasses.get(k) || 0;
-              const b = nowClasses.get(k) || 0;
-              if (b > a) gained.push(`${k}+${b - a}`);
-              else if (a > b) lost.push(`${k}-${a - b}`);
-              else if (a > 0) same.push(`${k}×${a}`);
-            }
-            return (
-              <>
-                <span className="text-dv-accent font-semibold">Δ было→стало</span>
-                <span title="появилось">+ {gained.join(', ') || '—'}</span>
-                <span title="пропало">− {lost.join(', ') || '—'}</span>
-                <span title="без изменений">= {same.slice(0, 4).join(', ') || '—'}</span>
-              </>
-            );
-          })()}
+          {cdResult ? (
+            <>
+              <span className="text-dv-accent font-semibold">Изменения</span>
+              <span title="новые">+ {cdResult.summary.new}</span>
+              <span title="исчезли">− {cdResult.summary.removed}</span>
+              <span title="перемещены">↔ {cdResult.summary.moved}</span>
+              <span title="метод" className="font-mono opacity-80">
+                {cdResult.method}
+              </span>
+              {cdResult.message ? (
+                <span className="text-amber-400/90">{cdResult.message}</span>
+              ) : null}
+            </>
+          ) : cdLoading ? (
+            <span className="text-dv-accent">Анализ изменений…</span>
+          ) : (
+            <span>Нажмите «Анализ изменений» на viewer-1 (пауза на кадрах)</span>
+          )}
         </div>
       )}
       <div
@@ -1976,6 +3146,9 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
         className={`flex-1 relative min-h-0 flex items-center justify-center overflow-hidden ${
           viewTool === 'pan' ? 'cursor-grab' : ''
         }`}
+        onDoubleClick={() => {
+          resetView();
+        }}
         onPointerDown={(e) => {
           if (viewTool !== 'pan' && e.button !== 1) return;
           (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -1984,7 +3157,12 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
         onPointerMove={(e) => {
           const drag = panDrag.current;
           if (!drag) return;
-          setPan({ x: drag.x + (e.clientX - drag.px), y: drag.y + (e.clientY - drag.py) });
+          const next = clampPan(
+            drag.x + (e.clientX - drag.px),
+            drag.y + (e.clientY - drag.py),
+            zoom,
+          );
+          setPan(next);
         }}
         onPointerUp={() => {
           panDrag.current = null;
@@ -2082,18 +3260,49 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
               }}
             />
             )}
+            {hudArchiveOn && !isLive && (
+              <HudExclusionOverlay
+                visible
+                zones={hudZones}
+                onApply={(m) => saveHudManual(m)}
+                onAuto={() => recomputeHud()}
+                onReset={() => disableHudForVideo()}
+              />
+            )}
+            {hudLiveOn && isLive && (
+              <div className="absolute bottom-1 left-1 z-10 rounded-sm bg-black/70 px-1.5 py-0.5 text-[10px] text-amber-200">
+                HUD live ON
+              </div>
+            )}
+            {compareMode && showHeatmap && cdResult?.image_diff?.heatmap_b64 ? (
+              <HeatmapOverlay
+                heatmapB64={cdResult.image_diff.heatmap_b64}
+                opacity={0.5}
+                visible
+              />
+            ) : null}
             <svg
               ref={svgRef}
               className={`absolute inset-0 w-full h-full ${
-                viewTool === 'pan'
-                  ? 'pointer-events-none'
-                  : editMode
+                overlayMode === 'seg'
+                  ? samTool === 'point'
                     ? 'cursor-crosshair'
-                    : 'cursor-pointer'
+                    : 'pointer-events-none'
+                  : viewTool === 'pan'
+                    ? 'pointer-events-none'
+                    : editMode
+                      ? 'cursor-crosshair'
+                      : 'cursor-pointer'
               }`}
               viewBox="0 0 1 1"
               preserveAspectRatio="none"
-              onPointerDown={(e) => onOverlayPointerDown(e, null, 'draw')}
+              onPointerDown={(e) => {
+                if (overlayMode === 'seg' && samTool === 'point') {
+                  void runSamPoint(e);
+                  return;
+                }
+                onOverlayPointerDown(e, null, 'draw');
+              }}
               onPointerMove={onOverlayPointerMove}
               onPointerUp={(e) => void onOverlayPointerUp(e)}
               onPointerCancel={(e) => void onOverlayPointerUp(e)}
@@ -2111,7 +3320,40 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                   <path d="M 0 0 L 10 5 L 0 10 z" fill={ACCENT} />
                 </marker>
               </defs>
-              {overlayObjects.map((obj) => {
+              {overlayMode === 'seg'
+                ? segMasks.map((mask, idx) => {
+                    const pts = mask.polygon_norm
+                      .filter((p) => Array.isArray(p) && p.length >= 2)
+                      .map(([x, y]) => `${x},${y}`)
+                      .join(' ');
+                    if (!pts) return null;
+                    const labelX = mask.polygon_norm[0]?.[0] ?? 0.02;
+                    const labelY = mask.polygon_norm[0]?.[1] ?? 0.02;
+                    return (
+                      <g key={`seg-${idx}`}>
+                        <polygon
+                          points={pts}
+                          fill="rgba(232,125,13,0.28)"
+                          stroke={ACCENT}
+                          strokeWidth={1.25}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                        <text
+                          x={Math.min(0.92, Math.max(0.01, labelX + 0.006))}
+                          y={Math.min(0.98, Math.max(0.018, labelY - 0.008))}
+                          fill={ACCENT}
+                          fontSize={0.012}
+                          fontFamily="ui-sans-serif, system-ui, sans-serif"
+                          style={{ pointerEvents: 'none' }}
+                        >
+                          {mask.class} {(mask.conf * 100).toFixed(0)}%
+                        </text>
+                      </g>
+                    );
+                  })
+                : (
+                  <>
+                    {overlayObjects.map((obj) => {
                 const { x1, y1, x2, y2 } = obj.bbox;
                 const selected = obj.id === activeDetectionId;
                 const color = obj.color || ACCENT;
@@ -2189,7 +3431,72 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                   </g>
                 );
               })}
-              {draft && (
+                    {segMasks.map((mask, idx) => {
+                      const pts = mask.polygon_norm
+                        .filter((p) => Array.isArray(p) && p.length >= 2)
+                        .map(([x, y]) => `${x},${y}`)
+                        .join(' ');
+                      if (!pts) return null;
+                      const labelX = mask.polygon_norm[0]?.[0] ?? 0.02;
+                      const labelY = mask.polygon_norm[0]?.[1] ?? 0.02;
+                      return (
+                        <g key={`sam-freeze-${idx}`} style={{ pointerEvents: 'none' }}>
+                          <polygon
+                            points={pts}
+                            fill="rgba(232,125,13,0.28)"
+                            stroke={ACCENT}
+                            strokeWidth={1.25}
+                            vectorEffect="non-scaling-stroke"
+                          />
+                          <text
+                            x={Math.min(0.92, Math.max(0.01, labelX + 0.006))}
+                            y={Math.min(0.98, Math.max(0.018, labelY - 0.008))}
+                            fill={ACCENT}
+                            fontSize={0.012}
+                            fontFamily="ui-sans-serif, system-ui, sans-serif"
+                          >
+                            {mask.class} {(mask.conf * 100).toFixed(0)}%
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </>
+                )}
+              {compareMode &&
+                changeOverlays.map((co) => {
+                  const { x1, y1, x2, y2 } = co.bbox;
+                  const color = CHANGE_COLORS[co.changeType];
+                  return (
+                    <g key={`chg-${co.id}-${co.changeType}`} style={{ pointerEvents: 'none' }}>
+                      <rect
+                        x={x1}
+                        y={y1}
+                        width={x2 - x1}
+                        height={y2 - y1}
+                        fill={
+                          co.highlighted
+                            ? `${color}33`
+                            : co.changeType === 'moved'
+                              ? 'rgba(234,179,8,0.12)'
+                              : 'rgba(0,0,0,0)'
+                        }
+                        stroke={color}
+                        strokeWidth={co.highlighted ? 3 : 2}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                      <text
+                        x={x1 + 0.006}
+                        y={Math.max(0.018, y1 - 0.012)}
+                        fill={color}
+                        fontSize={0.012}
+                        fontFamily="ui-sans-serif, system-ui, sans-serif"
+                      >
+                        {co.class_name}
+                      </text>
+                    </g>
+                  );
+                })}
+              {overlayMode !== 'seg' && draft && (
                 <rect
                   x={draft.x1}
                   y={draft.y1}
@@ -2271,6 +3578,65 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
           </div>
         )}
       </div>
+      {viewerId === 'viewer-1' && compareMode && syncModalOpen ? (
+        <CompareSyncModal
+          isOpen={syncModalOpen}
+          onClose={() => setSyncModalOpen(false)}
+          videoBefore={useViewerStore.getState().viewers['viewer-1']?.sourcePath || ''}
+          videoAfter={useViewerStore.getState().viewers['viewer-2']?.sourcePath || ''}
+          onSyncComplete={({ timeBefore, timeAfter }) => {
+            cdRequestSeek(timeBefore, timeAfter);
+          }}
+        />
+      ) : null}
+      {viewerId === 'viewer-1' && compareMode && batchChangeOpen ? (
+        <BatchChangeModal
+          open={batchChangeOpen}
+          videoBefore={useViewerStore.getState().viewers['viewer-1']?.sourcePath || ''}
+          videoAfter={useViewerStore.getState().viewers['viewer-2']?.sourcePath || ''}
+          onClose={() => setBatchChangeOpen(false)}
+        />
+      ) : null}
+      {overlayMode === 'seg' && batchSegOpen ? (
+        <BatchSegModal
+          open={batchSegOpen}
+          videoPath={viewer?.sourcePath || ''}
+          onClose={() => setBatchSegOpen(false)}
+          onPickFrame={(timeSec, masks) => {
+            setPaused(true);
+            seekTo(timeSec);
+            applyVideoSeek(timeSec, { force: true });
+            const mapped: SegMask[] = (masks as BatchSegMask[]).map((m) => ({
+              class: m.class,
+              conf: m.conf,
+              polygon_norm: m.polygon_norm,
+            }));
+            setSegMasks(mapped);
+            setOverlayMode('seg');
+          }}
+        />
+      ) : null}
+      {overlayMode === 'seg' && samPropOpen ? (
+        <Sam3PropagateModal
+          open={samPropOpen}
+          videoPath={viewer?.sourcePath || ''}
+          timeSec={overlayTimeSec}
+          onClose={() => setSamPropOpen(false)}
+          onPickFrame={(timeSec, masks) => {
+            setPaused(true);
+            seekTo(timeSec);
+            applyVideoSeek(timeSec, { force: true });
+            setSegMasks(
+              masks.map((m) => ({
+                class: m.class,
+                conf: m.conf,
+                polygon_norm: m.polygon_norm,
+              })),
+            );
+            setOverlayMode('seg');
+          }}
+        />
+      ) : null}
     </div>
   );
 };

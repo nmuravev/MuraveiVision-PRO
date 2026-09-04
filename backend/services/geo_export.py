@@ -12,13 +12,12 @@ the frontend Timeline palette so exports are stable across runs.
 from __future__ import annotations
 
 import hashlib
-import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
 from services import telemetry
-from services.db import get_flight_track, list_detections
+from services.db import list_detections
 
 # Seed palette (mirrors src/components/Timeline.tsx class colors).
 _SEED_PALETTE = [
@@ -59,15 +58,7 @@ def collect_geotagged_detections(video_path: str) -> list[dict[str, Any]]:
         all_rows = list_detections(include_deleted=False)
         rows = [r for r in all_rows if Path(str(r.get("source_video") or "")).name == base]
 
-    track_row = get_flight_track(video_path)
-    track: list[dict[str, Any]] = []
-    if track_row:
-        try:
-            track = json.loads(track_row.get("track_data") or "[]")
-        except (ValueError, TypeError):
-            track = []
-        if not track:
-            track = []
+    track = telemetry.load_track_points(video_path)
 
     out: list[dict[str, Any]] = []
     for r in rows:
@@ -195,3 +186,105 @@ def build_geojson(video_path: str, detections: list[dict[str, Any]] | None = Non
         "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::4326"}},
         "features": features,
     }
+
+
+_CHANGE_COLORS = {
+    "new": "#22c55e",
+    "removed": "#ef4444",
+    "moved": "#eab308",
+}
+
+
+def _gps_ok(lat: Any, lon: Any) -> bool:
+    if lat is None or lon is None:
+        return False
+    try:
+        float(lat)
+        float(lon)
+        return not (float(lat) == 0.0 and float(lon) == 0.0)
+    except (TypeError, ValueError):
+        return False
+
+
+def build_change_kml(result: dict[str, Any], meta: dict[str, Any] | None = None) -> str:
+    """KML for change-detection report: folders New / Removed / Moved.
+
+    Items without GPS are skipped. Empty report still returns valid Document.
+    """
+    meta = meta or {}
+    stamp = str(meta.get("generated_at") or "")
+    title = f"Change Detection Report - {stamp}" if stamp else "Change Detection Report"
+
+    kml = ET.Element("kml", xmlns="http://www.opengis.net/kml/2.2")
+    doc = ET.SubElement(kml, "Document")
+    ET.SubElement(doc, "name").text = title
+    summary = result.get("summary") or {}
+    ET.SubElement(doc, "description").text = (
+        f"before={meta.get('video_before')} after={meta.get('video_after')} "
+        f"new={summary.get('new', 0)} removed={summary.get('removed', 0)} "
+        f"moved={summary.get('moved', 0)}"
+    )
+
+    for kind, hex_color in _CHANGE_COLORS.items():
+        style = ET.SubElement(doc, "Style", id=f"chg_{kind}")
+        icon = ET.SubElement(style, "IconStyle")
+        color = ET.SubElement(icon, "color")
+        color.text = _hex_to_kml_abgr(hex_color)
+        scale = ET.SubElement(icon, "scale")
+        scale.text = "1.1"
+
+    def add_folder(name: str, style_kind: str, items: list[dict[str, Any]]) -> int:
+        folder = ET.SubElement(doc, "Folder")
+        ET.SubElement(folder, "name").text = name
+        count = 0
+        for it in items:
+            lat = it.get("gps_lat")
+            lon = it.get("gps_lon")
+            if not _gps_ok(lat, lon):
+                continue
+            cls = str(it.get("class_name") or style_kind)
+            alt = float(it.get("gps_alt") or 0)
+            pm = ET.SubElement(folder, "Placemark")
+            ET.SubElement(pm, "name").text = cls
+            desc_parts = [f"change={style_kind}", f"class={cls}"]
+            if it.get("confidence") is not None:
+                desc_parts.append(f"confidence={it.get('confidence')}")
+            if it.get("distance_m") is not None:
+                desc_parts.append(f"distance_m={it.get('distance_m')}")
+            ET.SubElement(pm, "description").text = "\n".join(desc_parts)
+            ET.SubElement(pm, "styleUrl").text = f"#chg_{style_kind}"
+            point = ET.SubElement(pm, "Point")
+            coords = ET.SubElement(point, "coordinates")
+            coords.text = f"{float(lon)},{float(lat)},{alt}"
+            count += 1
+        return count
+
+    new_items = list(result.get("new") or [])
+    removed_items = list(result.get("removed") or [])
+    moved_items: list[dict[str, Any]] = []
+    for m in result.get("matches") or []:
+        if m.get("status") != "moved":
+            continue
+        # Prefer after GPS if present on match; matches usually only have bboxes
+        item = {
+            "class_name": m.get("class_name"),
+            "distance_m": m.get("distance_m"),
+            "gps_lat": m.get("gps_lat") or m.get("after_gps_lat"),
+            "gps_lon": m.get("gps_lon") or m.get("after_gps_lon"),
+            "gps_alt": m.get("gps_alt") or m.get("after_gps_alt"),
+        }
+        # Enrich from paired new/removed lists is not available; skip if no GPS
+        moved_items.append(item)
+
+    n_new = add_folder("New", "new", new_items)
+    n_rem = add_folder("Removed", "removed", removed_items)
+    n_mov = add_folder("Moved", "moved", moved_items)
+
+    # Update description with placemark counts
+    desc_el = doc.find("description")
+    if desc_el is not None:
+        desc_el.text = (
+            f"{desc_el.text}; placemarks new={n_new} removed={n_rem} moved={n_mov}"
+        )
+
+    return ET.tostring(kml, encoding="utf-8", xml_declaration=True).decode("utf-8")

@@ -265,7 +265,7 @@ export const usePanelLayoutStore = create<PanelLayoutState>()(
 
       applyPreset: (name) => {
         const tree = layoutPresets[name] ?? initialLayout;
-        const mode = (['mediaView', 'editDefault', 'aiAnalysis', 'training', 'system'].includes(
+        const mode = (['mediaView', 'editDefault', 'aiAnalysis', 'training', 'system', 'liveQuad'].includes(
           name,
         )
           ? name

@@ -44,6 +44,102 @@
 определяется backend-настройкой. Ответ SAHI-пути идентичен быстрому пути + поле
 `"sahi": true`. Выходной формат объектов не меняется.
 
+## Seg — `/api/seg` (архив)
+
+Отдельный пайплайн от детекции. Веса только `assets/models/yolo26n-seg.pt` или `yolo26s-seg.pt` (не YOLOE-seg). Маски в SQLite / train не пишутся. JWT: operator / engineer / master.
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/status` | `{ready, loaded, weight, available[], imgsz}` — файл на диске vs модель в VRAM |
+| POST | `/load` | `{weight?}` — whitelist имён; без имени — nano, затем small. 400 если не whitelist, 503 если файла нет |
+| POST | `/unload` | выгрузить из VRAM (`empty_cache`) |
+| POST | `/infer` | кадр JPEG (base64) + `confidence` → `{masks: [{class, conf, polygon_norm}], ms, weight}` |
+| POST | `/batch` | batch по ролику: `{video_path, frame_step=30, confidence=0.5, weight?}` → `{task_id, status, progress…}` (один job; 409 если уже running) |
+| GET | `/batch/{task_id}` | прогресс; при `done`/`aborted`/`error` — `results: [{time_sec, masks[]}]` |
+| POST | `/batch/{task_id}/abort` | прервать job |
+| GET | `/sam3/status` | `{ready, loaded, weight, available[]}` — файл `sam3.pt` vs модель в VRAM |
+| POST | `/sam3/load` | `{weight?}` — только `sam3.pt`; выгружает YOLO-seg (`yolo_seg_unloaded`) |
+| POST | `/sam3/unload` | выгрузить SAM3 |
+| POST | `/sam3/infer` | JPEG + (`points`/`bboxes` **XOR** `text` 1–3) → `{masks, ms, weight}` |
+| POST | `/sam3/propagate` | `{video_path, time_sec, max_frames≤30, points?/bboxes? **XOR** text?, persist?=false}` → job |
+| GET | `/sam3/propagate/{task_id}` | прогресс; terminal → `results`, `persisted` |
+| POST | `/sam3/propagate/{task_id}/abort` | прервать |
+
+**SAM3 (P3.13.3a/b):** interactive refine + short forward propagate (≤30 frames, `SAM3VideoPredictor` temp clip). Mutual VRAM с YOLO-seg. Не Live, не train. Opt-in SQLite `seg_masks`. Импорт: `from ultralytics import SAM`; video: `from ultralytics.models.sam import SAM3VideoPredictor`.
+
+`ready` = файл есть; `loaded` = модель в памяти. **Infer/propagate требуют `loaded`** (иначе 503). Batch: если модель уже в VRAM — оставляет; если batch сам загрузил — выгружает в `finally`. Старт batch выгружает SAM3 (`sam_unloaded`) — UI toast, без auto-reload. Нет файла → 503, детекция не меняется. `imgsz=640`. Маски batch **не** пишутся в SQLite. Propagate `persist=true` пишет только в `seg_masks` (не `detections`).
+
+## Change Detection — `/api/change-detection` (Compare Sync)
+
+Сравнение двух архивных роликов (Было/Стало) по сохранённым детекциям. JWT: operator / engineer / master.
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| POST | `/analyze` | GPS-matching детекций ± `time_window_sec` + ORB/diff fallback |
+| POST | `/sync` | Auto time sync: GPS tracks → detections fallback → сегменты |
+| GET | `/export` | HTML или KML отчёт (re-run `analyze_pair` по query params) |
+| POST | `/batch` | P3.15.5 пакетный CD: `auto_sync` → subsample пар → `analyze_pair` |
+| GET | `/batch/{task_id}` | прогресс; при terminal — `results[]` + `aggregate` |
+| POST | `/batch/{task_id}/abort` | прервать |
+| GET | `/batch/{task_id}/export` | HTML отчёт агрегата (только `status=done`) |
+
+`GET /export` query: `format=html|kml`, `video_before`, `video_after`, `time_before`, `time_after`, опционально `tolerance_m`, `moved_m`, `time_window_sec`. Ответ — attachment (`text/html` или `application/vnd.google-earth.kml+xml`).
+
+Тело `/sync`:
+
+```json
+{
+  "video_before": "clip_a.mp4",
+  "video_after": "clip_b.mp4",
+  "source": "auto",
+  "tolerance_m": 15.0
+}
+```
+
+`source`: `auto` | `tracks` | `detections`. Ответ: `{ method_used, pairs[:50], segments[], message, pair_count_total }`.
+
+Тело `/analyze`:
+
+```json
+{
+  "video_before": "clip_a.mp4",
+  "video_after": "clip_b.mp4",
+  "time_before": 12.5,
+  "time_after": 8.0,
+  "tolerance_m": 10.0,
+  "moved_m": 3.0,
+  "time_window_sec": 0.5,
+  "use_gps": true,
+  "use_image_fallback": true
+}
+```
+
+Ответ `/analyze`: `{ method, aligned, message, summary, matches[], new[], removed[], image_diff? }`.
+
+- `method`: `gps` | `image` | `hybrid` | `none`
+- `summary`: `{ total_before, total_after, matched, stable, moved, new, removed }`
+- `matches[]`: `{ before_id, after_id, class_name, distance_m, status, before_bbox, after_bbox }`
+- `image_diff` (только image/ORB path): `{ inlier_ratio, regions[], heatmap_b64? }` — `heatmap_b64` это PNG (JET colormap) в base64 без `data:`-префикса (P3.15.4)
+- Классификация: stable (<3 m), moved (3–10 m), new/removed (нет GPS-пары)
+- Frontend при Sync передаёт `time_window_sec=0.5`, без Sync — `2.0`
+
+### Batch CD (P3.15.5)
+
+Тело `POST /batch`:
+
+```json
+{
+  "video_before": "clip_a.mp4",
+  "video_after": "clip_b.mp4",
+  "source": "auto",
+  "pair_stride": 1,
+  "max_pairs": 50,
+  "use_image_fallback": false
+}
+```
+
+Один in-memory job (409 если уже `running`). По умолчанию ORB off. `aggregate`: `unique_new/removed/moved` + суммы по парам. `heatmap_b64` из результатов стрипается. UI: кнопка «Пакетный CD» в Compare Sync.
+
 ### Response Validator (defense-in-depth)
 
 Валидатор фильтрует детекции перед попаданием в response-конверт (общий хвост
@@ -72,7 +168,7 @@ Graceful degradation: при любой ошибке валидатора (ил�
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| GET | `/hardware` | CPU/GPU/VRAM (engineer+) |
+| GET | `/hardware` | CPU/GPU/VRAM (`vram_*_mb` / `vram_*_gb`, `gpu_name`, operator+) |
 | POST | `/selftest` | cuda/model/ollama/disks |
 | GET | `/simulate-failure` | активная симуляция |
 | POST | `/simulate-failure` | `{type: gpu_oom\|model_missing\|ollama_offline\|clear}` |
@@ -101,7 +197,7 @@ Graceful degradation: при любой ошибке валидатора (ил�
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| POST | `/api/geo/import` | `{ video_path }` → парсинг sidecar, upsert `flight_tracks` |
+| POST | `/api/geo/import` | `{ video_path }` → парсинг sidecar, upsert `flight_tracks`, backfill `gps_*` (`backfilled`). Нет SRT/CSV → **200** `{ sidecar_missing: true, point_count: 0, points: [] }` (не 404) |
 | GET | `/api/geo/track?video_path=` | точки траектории (предпочтительно для Windows-путей) |
 | GET | `/api/geo/track/{video_path}` | то же через path |
 | GET | `/api/geo/detections?video_path=` | детекции + GPS |
@@ -114,13 +210,20 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 
 ## Detections — `/api/detections`
 
-`GET` требует `source_video` (без него возвращает пустой список; `all_videos=true` только для служебных инструментов). CRUD + `POST /commit` (пакет кадра + crops), `GET /{id}/crop`, `GET /{id}/similar`. Массовый soft-delete: `DELETE ?source_video=...&all=true`.
+`GET` требует `source_video` (без него возвращает пустой список; `all_videos=true` только для служебных инструментов). CRUD + `POST /commit` (пакет кадра + crops), `GET /{id}/crop`. Массовый soft-delete: `DELETE ?source_video=...&all=true`.
+
+`GET /export?source_video=` — CSV всех неудалённых детекций ролика (operator+). Первая строка-комментарий: `# Coordinates normalized [0-1]…`. Колонки: `time_sec,class_name,confidence,x1,y1,x2,y2,gps_lat,gps_lon` (bbox из `bbox_x/y/w/h` → xyxy в [0–1]). Кнопка «Экспорт CSV» в Inspector.
+
+`POST /find-similar` — `{ detection_id, top_k?, same_class? }`. Ищет похожие кропы по CLIP `encode_image` (если пакет `clip` и локальный кэш `ViT-B-32.pt` уже есть) иначе `hist+class`. Ответ: `{ query_id, method, same_class, results[] }` где `method` = `clip` | `hist+class`. Векторы кэшируются в `detection_embeddings`. `mobileclip2_b.ts` — текстовый энкодер YOLOE, кропы им не кодируются.
+
+`POST /` и `POST /commit` при наличии sidecar/трека пишут `gps_lat` / `gps_lon` / `gps_alt` (интерполяция по `time_sec`). Ошибка гео не блокирует фиксацию.
 
 ## Train / Export
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| POST | `/api/train/start` | `{ epochs }` |
+| POST | `/api/train/start` | `{ epochs?, resume_from?, imgsz?, batch? }` |
+| GET | `/api/train/checkpoints` | last/best/epoch*.pt, `can_resume`, `vram_mb` |
 | POST | `/api/train/stop` | остановка |
 | GET | `/api/train/status` | состояние |
 | GET | `/api/train/stream` | SSE прогресс |
@@ -149,13 +252,16 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 
 `POST /start`, `POST /stop`, `GET /status`, `GET /list` → `archive/recordings/`.
 
-## Reports / Models / System
+## Reports / Models / System / Debug
 
 - `GET /api/report/html` — автономный HTML-отчёт  
 - `GET /api/report/pdf` — технический PDF (схема lon/lat + таблица; карта в KML)  
 - `GET /api/models/status`, `POST /api/models/import`, `GET /api/models/import/stream`  
+- `GET /api/models/usb-scan` — съёмные диски, `.pt`/`.yaml` с валидацией (engineer+)  
+- `POST /api/models/usb-import` — `{source_path, target_type: model|classes, confirm}`. `confirm=false` — dry-run; `confirm=true` — copy + `.backup` + `force_load` / `refresh_catalog`  
 - `GET /api/system/hardware`, `POST /api/system/selftest`, `POST /api/system/simulate-failure`  
 - `GET /api/health` — liveness + YOLO/DB
+- **Session Trace (KEEP):** `GET /api/debug/stream`, `GET /api/debug/recent`, `GET /api/debug/trace/file?tail=50`, `POST /api/debug/trace/toggle` `{enabled}`, `GET /api/debug/trace/status`. Header `X-Muravei-Trace-Id`. Env `MURAVEI_SESSION_TRACE`.
 
 ## Classes — `/api/classes`
 
@@ -175,9 +281,47 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 
 `POST /start`, `POST /stop`, `GET /status`, `GET /stream`, `GET /manifest`, `PATCH /manifest/{job_id}`, `GET /poses`, `GET /asset/{job_id}/{name}`. `poses` отдаёт ближайшую COLMAP-позу и intrinsics для 2D→3D луча; UI использует Gaussian splat pick с fallback на sparse cloud.
 
+`GET /status` и SSE (`/stream`) несут live поля: `job_id`, `phase` (`starting`/`extracting`/`colmap`/`export_poses`/…), **`stage`** (`plan` / `feature_extractor` / `sequential_matcher`|`exhaustive_matcher` / `mapper` / `model_converter` / `export_poses` / …), `progress`, `message`. На длинном `mapper` backend поллит `archive/recon/{job}/colmap/sparse/N` и обновляет message (`models=…`, last write); stream шлёт status-heartbeat ~2 с. UI ops-модалка берёт `job_id` из этих полей, не из устаревшего manifest.
+
+Train (один job за раз; блокирует `POST /start` COLMAP пока идёт train):
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/train/presets` | профили из `config/train_presets.json` + VRAM gate (`disabled` для HQ) |
+| GET | `/train/status` | текущий train state |
+| POST | `/train/start` | `{ job_id, preset }` — 409 если уже train/COLMAP |
+| POST | `/train/stop` | остановить subprocess |
+| GET | `/train/stream` | SSE progress (steps/loss/psnr/vram) |
+
 ## Network — `/api/network`
 
-config, bases, heartbeat, targets (в т.ч. GPS и `source_video`), messages.
+Репликация целей между машинами. Инстанс `mode=server` — хаб (принимает JWT-запросы). `mode=client` — фоновый worker (`backend/services/network_sync.py`, тик 30 с): heartbeat, push локальных `direction=out` с `synced_at IS NULL`, pull `GET /targets?since=`, upsert как `direction=in`. Worker стартует вместе с backend всегда; тик no-op, если режим не `client`. Хаб недоступен — UI живой, в статусе `hub_reachable=false`.
+
+Клиент логинится на хаб `POST /api/auth/login` с сохранённым `hub_pin` (PIN роли на хабе, обычно operator).
+
+| Метод | Путь | Роль | Описание |
+|-------|------|------|----------|
+| GET | `/config` | operator+ | `mode`, `server_ip`, `port`, `base_name`, `base_id`, `has_hub_pin`. Значение PIN **не** возвращается |
+| POST | `/config` | engineer+ | Тело: `mode`, `server_ip`, `port`, `base_name`; опционально `hub_pin` (write-only: пустая строка / отсутствие поля **не** затирает сохранённый PIN) |
+| GET | `/status` | operator+ | `mode`, `base_id`, `last_sync_ts`, `last_error`, `hub_reachable`, `worker_alive` |
+| GET | `/bases` | operator+ | реестр heartbeat |
+| POST | `/heartbeat` | operator+ | `{base_id, base_name, ip}` |
+| GET | `/targets` | operator+ | активные цели (перед выдачей TTL-purge 24 ч). Query `?since=<epoch>` — только строки с `created_at > since` |
+| POST | `/targets` | operator+ | одна строка `direction=out`. Локального зеркала `in` **нет**. Опциональный `id` (UUID) сохраняется. Входящие цели создаёт только worker через upsert (newer-wins по `created_at`) |
+| GET | `/messages` | operator+ | чат |
+| POST | `/messages` | operator+ | одна строка `direction=out` (без локального зеркала `in`) |
+
+Цели несут GPS и `source_video`. `crop_path` — путь к файлу, байты кропа по сети не гоняются (на другой машине файл может отсутствовать). Upsert: `ON CONFLICT(id)` обновляет только если входящий `created_at` строго больше.
+
+## Events — `/api/events`
+
+Единая лента для операторского экрана 4×Live: локальные детекции + входящие сетевые цели (`network_targets.direction='in'`). Сортировка по `created_at` (wall-clock), не по видео-`time_sec`. Окно и лимит режутся на бэкенде (window 10–86400 с, limit 1–200).
+
+| Метод | Путь | Роль | Описание |
+|-------|------|------|----------|
+| GET | `/timeline` | operator+ | Query: `window` (сек, default 300), `limit` (default 100). Ответ `{ events: [...] }`. Каждый элемент: `id`, `type` (`local_detection` \| `network_target`), `time_sec` (видеовремя; `null` у сети), `class_name`, `confidence`, `source_video`, `source_base` (`null` у локальных), `created_at`, плюс `gps_lat`/`gps_lon`/`notes` |
+
+Исходящие цели (`direction=out`) и soft-deleted детекции не попадают в ленту. Индексы: `idx_det_created`, `idx_net_targets_created`.
 
 ## Support
 

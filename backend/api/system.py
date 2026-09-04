@@ -17,7 +17,7 @@ _sim: dict[str, Any] = {"active": None}
 
 
 @router.get("/hardware")
-async def hardware(_user: dict[str, Any] = Depends(require_role("engineer"))) -> dict[str, Any]:
+async def hardware(_user: dict[str, Any] = Depends(require_role("operator"))) -> dict[str, Any]:
     spec = hardware_spec()
     # enrich with optional pynvml
     try:
@@ -27,16 +27,62 @@ async def hardware(_user: dict[str, Any] = Depends(require_role("engineer"))) ->
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)
         mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
         temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+        name = pynvml.nvmlDeviceGetName(handle)
+        if isinstance(name, bytes):
+            name = name.decode("utf-8", errors="replace")
+        spec["gpu_name"] = str(name)
         spec["vram_total_mb"] = int(mem.total / (1024 * 1024))
         spec["vram_used_mb"] = int(mem.used / (1024 * 1024))
+        spec["vram_free_mb"] = int(mem.free / (1024 * 1024))
         spec["gpu_temp_c"] = int(temp)
         pynvml.nvmlShutdown()
     except Exception as exc:  # noqa: BLE001
         spec["pynvml"] = str(exc)
+
+    # torch.cuda fallback when NVML missing / incomplete
+    if "vram_total_mb" not in spec or not spec.get("vram_total_mb"):
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                free_b, total_b = torch.cuda.mem_get_info()
+                used_b = int(total_b) - int(free_b)
+                spec["gpu_name"] = spec.get("gpu_name") or torch.cuda.get_device_name(0)
+                spec["vram_total_mb"] = int(total_b / (1024 * 1024))
+                spec["vram_used_mb"] = int(used_b / (1024 * 1024))
+                spec["vram_free_mb"] = int(free_b / (1024 * 1024))
+            else:
+                spec.setdefault("gpu_name", "CPU")
+                spec.setdefault("vram_total_mb", 0)
+                spec.setdefault("vram_used_mb", 0)
+                spec.setdefault("vram_free_mb", 0)
+        except Exception as exc:  # noqa: BLE001
+            spec["torch_cuda"] = str(exc)
+            spec.setdefault("gpu_name", "Unknown")
+            spec.setdefault("vram_total_mb", 0)
+            spec.setdefault("vram_used_mb", 0)
+            spec.setdefault("vram_free_mb", 0)
+
+    total_mb = int(spec.get("vram_total_mb") or 0)
+    used_mb = int(spec.get("vram_used_mb") or 0)
+    free_mb = spec.get("vram_free_mb")
+    if free_mb is None:
+        free_mb = max(0, total_mb - used_mb)
+        spec["vram_free_mb"] = int(free_mb)
+    else:
+        free_mb = int(free_mb)
+
+    spec["vram_total_gb"] = round(total_mb / 1024, 2)
+    spec["vram_used_gb"] = round(used_mb / 1024, 2)
+    spec["vram_free_gb"] = round(free_mb / 1024, 2)
+    spec.setdefault("gpu_name", "CPU" if total_mb <= 0 else spec.get("gpu") or "GPU")
+
     if _sim["active"] == "gpu_oom":
         spec["simulated"] = "gpu_oom"
         spec["vram_used_mb"] = spec.get("vram_total_mb", 8192)
         spec["vram_free_mb"] = 0
+        spec["vram_used_gb"] = round(int(spec["vram_used_mb"]) / 1024, 2)
+        spec["vram_free_gb"] = 0.0
     return spec
 
 
@@ -141,6 +187,9 @@ class DetectConfigBody(BaseModel):
     validator_min_bbox_area: float = Field(default=0.0001, ge=0.0, le=0.9)
     validator_max_bbox_area: float = Field(default=0.9, ge=0.0, le=1.0)
     validator_min_confidence: float = Field(default=0.01, ge=0.0, le=1.0)
+    # HUD exclusion
+    hud_exclude_archive: bool = True
+    hud_exclude_live: bool = False
 
 
 def _read_detect_config() -> dict[str, Any]:
@@ -153,6 +202,8 @@ def _read_detect_config() -> dict[str, Any]:
         "validator_min_bbox_area": float(get_setting("validator_min_bbox_area") or "0.0001"),
         "validator_max_bbox_area": float(get_setting("validator_max_bbox_area") or "0.9"),
         "validator_min_confidence": float(get_setting("validator_min_confidence") or "0.01"),
+        "hud_exclude_archive": (get_setting("hud_exclude_archive") or "1") == "1",
+        "hud_exclude_live": (get_setting("hud_exclude_live") or "0") == "1",
     }
 
 
@@ -176,4 +227,6 @@ async def put_detect_config(
     set_setting("validator_min_bbox_area", str(body.validator_min_bbox_area))
     set_setting("validator_max_bbox_area", str(body.validator_max_bbox_area))
     set_setting("validator_min_confidence", str(body.validator_min_confidence))
+    set_setting("hud_exclude_archive", "1" if body.hud_exclude_archive else "0")
+    set_setting("hud_exclude_live", "1" if body.hud_exclude_live else "0")
     return _read_detect_config()

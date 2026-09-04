@@ -1,0 +1,93 @@
+# Ретроспектива Фазы 4 (P3.13 + P3.15)
+
+Зафиксировано после закрытия archive segmentation и Compare Sync change detection (сессия сентябрь 2026).
+
+## Закрытые задачи
+
+| ID | Задача | Коммит | Тесты |
+|----|--------|--------|-------|
+| P3.13 v1.1 | Seg-маски: explicit VRAM load/unload, manual frame | `ea881fc` | `test_segmentation.py` (10) |
+| P3.15 v1 | Change Detection: GPS-matching + ORB fallback в Compare Sync | `a798b15` | `test_change_detection.py` (8) |
+
+**Backend после Фазы 4:** 91 unit-тест OK. TypeScript `tsc --noEmit` OK.
+
+## Что получилось хорошо
+
+1. **Разделение пайплайнов** — detect / seg / change detection без правок `yolo_engine.py`, `trainer.py`, `api/detect.py`, `api/train.py`.
+2. **Compare Sync integration (Variant A)** — без новой вкладки TopBar; кнопка «Анализ изменений» на viewer-1; Inspector «Изменения (Compare)».
+3. **Отдельный слой `changeOverlays`** — не мутирует YOLO `overlayObjects`; drag/edit детекций сохранён.
+4. **Sync-aware time window** — `time_window_sec=0.5` при Sync (drift 500 ms), `2.0` без Sync.
+5. **Graceful degradation** — GPS coverage <30% → ORB/diff fallback; partial GPS result при слабом ORB.
+6. **Отдельные коммиты** P3.13 → P3.15 — проще откат при проблемах в поле.
+
+## Уроки и риски
+
+| Тема | Деталь |
+|------|--------|
+| Circular import | `change_detection.py` — lazy-import `_resolve_video` / `list_detections` (цепочка `batch_scanner` → `yolo_engine` → `main`) |
+| ORB fallback | Чувствителен к освещению и углу камеры; `inlier_ratio < 0.25` → `aligned: false` — см. [KNOWN_ISSUES.md](KNOWN_ISSUES.md) |
+| GPS точность | Matching только для детекций с `gps_lat/lon`; качество sidecar SRT/CSV критично |
+| E2E пробел | Seg и change detection пока только unit + ручной тест; Playwright — в v2 backlog |
+| VRAM seg | Модель остаётся loaded до explicit unload или SEG→Детекция в Viewer |
+
+## Метрики сессии
+
+- **2 major features** shipped
+- **+18 unit-тестов** (10 seg + 8 change detection)
+- **2 commits pushed** на `feature/network-replication-3.1`
+- **~95% roadmap P0–P3 v1** закрыто (см. [ROADMAP.md](ROADMAP.md))
+
+## Следующий спринт — черновик P3.15 v2
+
+Приоритет после ретроспективы: **auto time sync + HTML/KML export** (критично для аналитиков).
+
+```mermaid
+flowchart LR
+  subgraph v2 [P3.15 v2]
+    Sync[auto_time_sync]
+    Export[html_kml_export]
+    Heat[diff_heatmap_optional]
+  end
+  Tel[telemetry.py GPS track]
+  CD[change_detection.py]
+  Tel --> Sync
+  Sync --> CD
+  CD --> Export
+  CD --> Heat
+```
+
+### P3.15.2 — Auto time sync (P0) — DONE
+
+- `time_sync.py`: GPS tracks (haversine + smoothing) → detections (bbox center) → segments.
+- UI: CompareSyncModal, кнопка «Синхронизировать» в Compare Sync toolbar.
+- API: `POST /api/change-detection/sync`.
+
+### P3.15.3 — HTML/KML export (P0) — DONE
+
+- `GET /api/change-detection/export`; HTML (`change_export.py`) + KML (`geo_export.build_change_kml`).
+- Inspector кнопки «Экспорт HTML / KML» через `downloadAuthorized`.
+
+### P3.15.4 — Diff heatmap (P1) — DONE
+
+- `compute_diff_mask` → `regions` + `heatmap_b64` (JET PNG); Viewer «Теплокарта» под SVG bbox.
+
+**P3.15 v2 closed** (sync + export + heatmap + E2E). Дальше: batch seg / SAM2 / финальная ретро — см. [TODO.md](TODO.md).
+
+## Sprint 2: P3.15 v2 Completion
+
+Closed Auto Sync (`8279f8f`), Export (`8f93bb1`), E2E (`4aa75af`), Heatmap (P3.15.4).
+Full sync → analyze → export → heatmap workflow operational.
+Architecture kept clean (separate `time_sync.py`, reuse of `geo_export.py` / `change_export.py`).
+
+**Next:** см. [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md) — Phase 3 полностью закрыт (включая batch + SAM3 3a/3b); дальше Future / Backlog.
+
+## Финальная ретроспектива
+
+**Готово:** [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md) (метрики, уроки, решение по мастер-плану).
+
+## Связанные документы
+
+- [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md) — финальная ретро Phase 3 / P3
+- [ROADMAP.md](ROADMAP.md) — P3 DONE; Future / Backlog = P3.13.3c / Perf
+- [TODO.md](TODO.md) — чеклисты backlog
+- [ARCHITECTURE.md](ARCHITECTURE.md) — инварианты seg / SAM3 / change detection (часть B)

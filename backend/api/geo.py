@@ -57,23 +57,32 @@ async def geo_import(
         points = telemetry.ensure_track_for_video(body.video_path)
     except HTTPException:
         raise
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FileNotFoundError:
+        points = []
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    sidecar = telemetry.find_sidecar(body.video_path)
-    if not points and sidecar is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Sidecar .SRT/.CSV не найден рядом с видео",
-        )
+    try:
+        sidecar = telemetry.find_sidecar(body.video_path)
+    except (FileNotFoundError, ValueError):
+        sidecar = None
+    backfilled = telemetry.backfill_detection_gps(body.video_path) if points else 0
+    # KEEP: session trace — do not remove without explicit user order
+    from services.trace_middleware import pipeline_trace
+
+    pipeline_trace(
+        "geo",
+        f"import video={body.video_path} points={len(points)} "
+        f"sidecar_missing={sidecar is None and not points} backfilled={backfilled}",
+    )
     return {
         "video_path": body.video_path,
         "source_file": str(sidecar) if sidecar else None,
         "point_count": len(points),
+        "backfilled": backfilled,
         "points": points,
+        "sidecar_missing": sidecar is None and not points,
     }
 
 

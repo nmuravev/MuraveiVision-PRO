@@ -34,11 +34,25 @@ MEDIA_EXTENSIONS = {
 VIDEO_SUFFIXES = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 
 
+def _client_archive_path(path: Path) -> str:
+    """Expose paths as archive/... (posix) for FE; never absolute host paths."""
+    root = archive_root().resolve()
+    try:
+        rel = path.resolve().relative_to(root)
+    except ValueError:
+        # Should not happen after assert_in_archive; fall back to name only
+        return f"archive/{path.name}"
+    rel_s = rel.as_posix()
+    if rel_s in ("", "."):
+        return "archive"
+    return f"archive/{rel_s}"
+
+
 def _node_for(path: Path) -> dict[str, Any]:
     is_dir = path.is_dir()
     node: dict[str, Any] = {
         "name": path.name or str(path),
-        "path": str(path),
+        "path": _client_archive_path(path),
         "type": "folder" if is_dir else "file",
     }
     try:
@@ -153,7 +167,7 @@ async def media_file_info(
         raise HTTPException(status_code=404, detail="File not found")
     return {
         "name": target.name,
-        "path": str(target),
+        "path": _client_archive_path(target),
         "size": target.stat().st_size,
         "ext": target.suffix.lower(),
     }

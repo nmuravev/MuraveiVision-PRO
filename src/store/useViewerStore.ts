@@ -10,6 +10,8 @@ export interface ViewerState {
   liveUrl: string | null;
   liveActive: boolean;
   yoloEnabled: boolean;
+  /** null = inherit System use_sahi_default; boolean overrides WS payload */
+  useSahi: boolean | null;
   isPlaying: boolean;
 }
 
@@ -31,6 +33,7 @@ interface ViewerStore {
   setLiveUrl: (viewerId: string, url: string | null) => void;
   setLiveActive: (viewerId: string, active: boolean) => void;
   setYoloEnabled: (viewerId: string, enabled: boolean) => void;
+  setUseSahi: (viewerId: string, useSahi: boolean | null) => void;
   setPlaying: (viewerId: string, playing: boolean) => void;
   setShowMotion: (on: boolean) => void;
   setCompareMode: (on: boolean) => void;
@@ -45,6 +48,7 @@ const defaultViewer = (): ViewerState => ({
   liveUrl: null,
   liveActive: false,
   yoloEnabled: true,
+  useSahi: null,
   isPlaying: false,
 });
 
@@ -113,6 +117,16 @@ export const useViewerStore = create<ViewerStore>((set) => ({
         [viewerId]: {
           ...(s.viewers[viewerId] ?? defaultViewer()),
           yoloEnabled: enabled,
+        },
+      },
+    })),
+  setUseSahi: (viewerId, useSahi) =>
+    set((s) => ({
+      viewers: {
+        ...s.viewers,
+        [viewerId]: {
+          ...(s.viewers[viewerId] ?? defaultViewer()),
+          useSahi,
         },
       },
     })),

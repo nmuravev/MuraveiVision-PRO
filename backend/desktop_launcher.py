@@ -13,6 +13,12 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parent
 ROOT = BACKEND.parent
 
+_COLMAP_SIDECAR = ROOT / "sidecars" / "colmap"
+if _COLMAP_SIDECAR.is_dir():
+    os.environ.setdefault("COLMAP_ROOT", str(_COLMAP_SIDECAR))
+# KEEP: session trace — do not remove without explicit user order
+os.environ.setdefault("MURAVEI_SESSION_TRACE", "1")
+
 
 def _start_backend() -> None:
     import uvicorn

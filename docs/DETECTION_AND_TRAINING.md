@@ -6,6 +6,7 @@
 |------|------------|
 | `assets/models/yolo26n-ft.pt` | активный finetune (приоритет загрузки) |
 | `assets/models/yolo26n.pt` / `best.pt` | nano / alias |
+| `assets/models/yolo26n-seg.pt` / `yolo26s-seg.pt` | archive-only сегментация (не train, не `/ws/detect`) |
 | `runs/.../yoloe-26s-seg.pt` | open-vocab YOLOE (нужен CLIP) |
 
 Правила: только detect для train; `nc` 12 или 238 при импорте.
@@ -31,7 +32,9 @@ UI словарь: панель SYSTEM → ClassDictionary. Soft floors / scene 
 
 UpdatePanel → кропы из SQLite → Ultralytics detect train → promote `yolo26n-ft.pt`.
 
-Параметры (ориентир): SGD, imgsz 640–1024, copy_paste/mosaic, device auto CUDA.
+Параметры по умолчанию (8 ГБ VRAM / RTX 5060): **imgsz=640**, **batch=4** (слайдеры до 1024 / 8 с предупреждением OOM). Только detect: `yolo26n.pt` / `yolo26n-ft.pt`, не YOLOE-seg.
+
+**Resume:** `GET /api/train/checkpoints` показывает `last.pt` / `best.pt` / `epoch*.pt`. Кнопка «Продолжить обучение» шлёт `resume_from=last.pt` (`model.train(resume=True)`). Перед стартом — `torch.cuda.empty_cache()`. Нет чекпоинта → 404, обучение не стартует.
 
 ## Offline / backup finetune
 

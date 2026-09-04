@@ -1,0 +1,81 @@
+# Cursor Rules for MuraveiVision PRO
+
+## Documentation Auto-Sync (MANDATORY)
+
+After completing ANY code change (feature, fix, refactor), you MUST:
+
+1. **Run all tests** (unit + E2E when UI changed + `tsc --noEmit`)
+2. **Update documentation** if the change affects:
+   - API endpoints → `docs/API.md`
+   - Features → `docs/FEATURES.md`
+   - Architecture/invariants → `docs/ARCHITECTURE.md`
+   - Known issues → `docs/KNOWN_ISSUES.md`
+   - Roadmap status → `docs/ROADMAP.md`, `docs/TODO.md`
+   - UI workflow → `docs/ANALYST_GUIDE.md`
+   - Deployment → `docs/ENGINEER_GUIDE.md`
+   - Error codes → `docs/ERROR_REFERENCE.md`
+3. **Update `docs/MASTER_PLAN.md` Meta section**:
+   - Date
+   - Latest commit hash (after commit, or planned hash note then amend Meta in docs commit)
+   - Test count (if changed)
+   - Status summary
+   - «Last updated by» line
+4. **Commit docs** with the feature or as a follow-up:
+   ```bash
+   git add docs/
+   git commit -m "docs: sync after [feature/fix name]"
+   ```
+
+See also: `docs/DOCS_SYNC_CHECKLIST.md`, `docs/MASTER_PLAN.md` §9.
+
+## Python environment (MANDATORY)
+
+- Only `muravei_env\Scripts\python.exe` (3.12.10)
+- Only `muravei_env\Scripts\pip.exe` for installs
+- Never bare `python` / `py` / system 3.14
+
+## Invariants (NEVER violate)
+
+- Detect ≠ YOLO-seg ≠ SAM3 ≠ Change Detection (separate pipelines)
+- Archive vs Live (Seg/SAM/Batch CD primarily archive; Live SAM freeze-frame only)
+- Ephemeral vs Persistent (batch ops in-memory by default)
+- JWT + `downloadAuthorized` for exports
+- Reuse before invent (use existing helpers)
+
+## Air-Gap Policy
+
+- No runtime downloads (no CDN, no HF auto-download)
+- Whitelisted weights only (`assets/models/`)
+- Graceful degradation (503 + error catalog if missing)
+
+## Zero-hardcode scan (MANDATORY before commit)
+
+See [`.cursor/rules/zero-hardcode-scan.mdc`](.cursor/rules/zero-hardcode-scan.mdc). Before committing production changes, grep touched files for machine paths (`D:\LLM`, `C:\Users`, host usernames), chat job IDs, and fixed session UUIDs. Report: `Hardcode scan passed: 0 absolute paths or specific job IDs found in logic.`
+
+## Test Requirements
+
+Before committing:
+
+```powershell
+# from repo root
+$env:PYTHONPATH = "backend"
+.\muravei_env\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
+npx tsc --noEmit
+# if UI changed:
+npx playwright test
+```
+
+## Commit Message Format
+
+```
+type: short description
+
+- bullet points for major changes
+- reference plan ID if applicable (e.g., P3.15.5)
+```
+
+Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`
+
+## Docs source of truth
+
+Agent reading order: `AGENTS.md` → `docs/PROJECT_CONTEXT.md` → `docs/ARCHITECTURE.md` → `docs/DEVELOPMENT.md` → `docs/MASTER_PLAN.md`.

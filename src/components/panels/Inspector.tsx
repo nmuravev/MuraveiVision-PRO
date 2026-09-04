@@ -10,6 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import {
+  archiveMediaPath,
   authHeaders,
   detectionCropSrc,
   toDetectedObject,
@@ -20,17 +21,37 @@ import { useReconStore } from '../../store/useReconStore';
 import { bboxCenterPixels } from '../../lib/reconRaycast';
 import { useTimelineStore } from '../../store/timeline-store';
 import { useViewerStore } from '../../store/useViewerStore';
+import {
+  useChangeDetectionStore,
+  type ChangeItem,
+  type ChangeMatch,
+} from '../../store/useChangeDetectionStore';
 import { usePanelLayoutStore } from '../../store/usePanelLayoutStore';
 import { classDisplayLine, classLabelRu } from '../../lib/classLabels';
 import { fetchDetectionCropBase64 } from '../../lib/aiVision';
 import { computeReconSegment, useReconBuild } from '../../hooks/useReconBuild';
 import { mediaPathsMatch } from '../../lib/mediaPaths';
+import {
+  buildDetectionTracks,
+  formatTrackRange,
+} from '../../lib/detectionTracks';
+import { downloadAuthorized } from '../../lib/download';
 import type { ClassCatalogItem, PersistedDetection } from '../../types/muravei';
 
 const AI_UNAVAILABLE = 'ИИ недоступен. Проверьте запуск Ollama';
 const FOLDS_KEY = 'muravei-inspector-folds';
 
-type FoldKey = 'active' | 'recon' | 'similar' | 'ai' | 'detections';
+type SimilarHit = {
+  id: string;
+  class_name: string;
+  class_id?: number;
+  similarity: number;
+  time_sec: number;
+  source_video: string;
+  crop_path?: string | null;
+};
+
+type FoldKey = 'active' | 'recon' | 'similar' | 'ai' | 'detections' | 'changes';
 
 type FoldState = Record<FoldKey, boolean>;
 
@@ -40,6 +61,7 @@ const DEFAULT_FOLDS: FoldState = {
   similar: false,
   ai: false,
   detections: true,
+  changes: true,
 };
 
 function loadFolds(): FoldState {
@@ -110,6 +132,94 @@ function originLabel(origin?: string | null): string {
     default:
       return origin ? origin.replace(/_/g, ' ') : 'live YOLO';
   }
+}
+
+function ChangeList({
+  title,
+  empty,
+  items,
+  kind,
+  active,
+  onPick,
+}: {
+  title: string;
+  empty: string;
+  items: ChangeItem[];
+  kind: 'new' | 'removed';
+  active: { kind: string; id: string } | null;
+  onPick: (id: string) => void;
+}) {
+  return (
+    <div>
+      <div className="dv-section-label mb-0.5">{title}</div>
+      {items.length === 0 ? (
+        <div className="text-[10px] text-dv-muted">{empty}</div>
+      ) : (
+        <ul className="space-y-0.5">
+          {items.map((item) => {
+            const selected = active?.kind === kind && active.id === item.id;
+            return (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  className={`w-full text-left px-1 py-0.5 rounded-sm text-[10px] truncate ${
+                    selected ? 'bg-dv-accent/20 text-dv-accent' : 'hover:bg-dv-surface'
+                  }`}
+                  onClick={() => onPick(item.id)}
+                >
+                  {item.class_name || '?'}
+                  {typeof item.confidence === 'number'
+                    ? ` · ${(item.confidence * 100).toFixed(0)}%`
+                    : ''}
+                  {item.gps_lat != null && item.gps_lon != null
+                    ? ` · GPS ${item.gps_lat.toFixed(5)},${item.gps_lon.toFixed(5)}`
+                    : ''}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ChangeMovedList({
+  matches,
+  active,
+  onPick,
+}: {
+  matches: ChangeMatch[];
+  active: { kind: string; id: string } | null;
+  onPick: (id: string) => void;
+}) {
+  return (
+    <div>
+      <div className="dv-section-label mb-0.5">Перемещены</div>
+      {matches.length === 0 ? (
+        <div className="text-[10px] text-dv-muted">нет</div>
+      ) : (
+        <ul className="space-y-0.5">
+          {matches.map((m) => {
+            const selected = active?.kind === 'moved' && active.id === m.before_id;
+            return (
+              <li key={m.before_id}>
+                <button
+                  type="button"
+                  className={`w-full text-left px-1 py-0.5 rounded-sm text-[10px] truncate ${
+                    selected ? 'bg-dv-accent/20 text-dv-accent' : 'hover:bg-dv-surface'
+                  }`}
+                  onClick={() => onPick(m.before_id)}
+                >
+                  {m.class_name || '?'} · {m.distance_m.toFixed(1)} m
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function formatTs(sec: number): string {
@@ -233,6 +343,7 @@ export const Inspector: React.FC = () => {
   const classCatalog = useMuraveiStore((s) => s.classCatalog);
   const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
   const setActiveDetection = useMuraveiStore((s) => s.setActiveDetection);
+  const setActiveDetectionId = useMuraveiStore((s) => s.setActiveDetectionId);
   const hydrateDetections = useMuraveiStore((s) => s.hydrateDetections);
   const clearDetections = useMuraveiStore((s) => s.clearDetections);
   const deleteAllForSource = useMuraveiStore((s) => s.deleteAllForSource);
@@ -245,6 +356,8 @@ export const Inspector: React.FC = () => {
   const setSource = useViewerStore((s) => s.setSource);
   const [notes, setNotes] = useState('');
   const [listQuery, setListQuery] = useState('');
+  const [csvBusy, setCsvBusy] = useState(false);
+  const [csvError, setCsvError] = useState<string | null>(null);
   const notesTimer = useRef<number | null>(null);
   const notesTargetIdRef = useRef<string | null>(null);
   const [aiModels, setAiModels] = useState<{ name: string }[]>([]);
@@ -262,9 +375,8 @@ export const Inspector: React.FC = () => {
     reason: string;
   } | null>(null);
   const [similarBusy, setSimilarBusy] = useState(false);
-  const [similar, setSimilar] = useState<
-    { id: string; class_name: string; similarity: number; time_sec: number; source_video: string }[]
-  >([]);
+  const [similar, setSimilar] = useState<SimilarHit[]>([]);
+  const [similarMethod, setSimilarMethod] = useState<string | null>(null);
   const [similarError, setSimilarError] = useState<string | null>(null);
   const [show3dBusy, setShow3dBusy] = useState(false);
   const [folds, setFolds] = useState<FoldState>(() => loadFolds());
@@ -273,6 +385,16 @@ export const Inspector: React.FC = () => {
   const openPanel = usePanelLayoutStore((s) => s.openPanel);
   const isPanelVisible = usePanelLayoutStore((s) => s.isPanelVisible);
   const sourcePath = useViewerStore((s) => s.viewers[focusedViewerId]?.sourcePath);
+  const compareMode = useViewerStore((s) => s.compareMode);
+  const cdResult = useChangeDetectionStore((s) => s.result);
+  const cdError = useChangeDetectionStore((s) => s.error);
+  const cdLoading = useChangeDetectionStore((s) => s.loading);
+  const cdActiveHighlight = useChangeDetectionStore((s) => s.activeHighlight);
+  const setCdHighlight = useChangeDetectionStore((s) => s.setActiveHighlight);
+  const cdLastAnalyze = useChangeDetectionStore((s) => s.lastAnalyze);
+  const cdExportBusy = useChangeDetectionStore((s) => s.exportBusy);
+  const cdExportError = useChangeDetectionStore((s) => s.exportError);
+  const cdExportReport = useChangeDetectionStore((s) => s.exportReport);
   const playheadPosition = useTimelineStore((s) => s.playheadPosition);
   const mediaDuration = useTimelineStore((s) => s.mediaDuration);
   const {
@@ -493,9 +615,11 @@ export const Inspector: React.FC = () => {
       if (!res.ok) {
         setSimilarError(typeof data.detail === 'string' ? data.detail : 'find-similar failed');
         setSimilar([]);
+        setSimilarMethod(null);
         return;
       }
       setSimilar(Array.isArray(data.results) ? data.results : []);
+      setSimilarMethod(typeof data.method === 'string' ? data.method : null);
     } catch {
       setSimilarError('find-similar failed');
     } finally {
@@ -511,13 +635,40 @@ export const Inspector: React.FC = () => {
         row.source_video,
       );
     if (needsSource && row.source_video) {
-      setSource(focusedViewerId, row.source_video, null);
+      setSource(focusedViewerId, archiveMediaPath(row.source_video), null);
     }
     useViewerStore.getState().setFocusedViewer(focusedViewerId);
     useTimelineStore.getState().pause();
     useTimelineStore.getState().setPendingJump(row.time_sec);
     seekTo(row.time_sec);
     setActiveDetection(toDetectedObject(row, classCatalog));
+  };
+
+  const jumpToSimilar = async (row: SimilarHit) => {
+    const stub: PersistedDetection = {
+      id: row.id,
+      created_at: 0,
+      source_video: row.source_video || '',
+      time_sec: row.time_sec,
+      frame_idx: 0,
+      class_id: row.class_id ?? 0,
+      class_name: row.class_name,
+      confidence: 0,
+      bbox_x: 0,
+      bbox_y: 0,
+      bbox_w: 0.1,
+      bbox_h: 0.1,
+      crop_path: row.crop_path,
+      is_edited: false,
+      user_notes: '',
+      is_deleted: false,
+      origin: 'auto',
+    };
+    jumpToDetection(stub);
+    if (row.source_video) {
+      await hydrateDetections(row.source_video);
+      setActiveDetectionId(row.id);
+    }
   };
 
   const runAnalyze = async () => {
@@ -607,10 +758,29 @@ export const Inspector: React.FC = () => {
     });
   }, [detections, listQuery, sourcePath]);
 
+  const tracks = useMemo(() => buildDetectionTracks([...recent].reverse()), [recent]);
+
+  const [showAllFrames, setShowAllFrames] = useState(false);
+
   const clearAllForVideo = () => {
     if (!sourcePath) return;
     if (!window.confirm('Удалить все детекции этого видео?')) return;
     void deleteAllForSource(sourcePath);
+  };
+
+  const exportDetectionsCsv = () => {
+    if (!sourcePath) return;
+    setCsvBusy(true);
+    setCsvError(null);
+    const q = encodeURIComponent(sourcePath);
+    const safe = sourcePath.replace(/[/\\]/g, '_');
+    void downloadAuthorized(`/api/detections/export?source_video=${q}`, {
+      filename: `detections_${safe}.csv`,
+    })
+      .catch((err: unknown) => {
+        setCsvError(err instanceof Error ? err.message : 'Ошибка экспорта CSV');
+      })
+      .finally(() => setCsvBusy(false));
   };
 
   const activeStatus = active
@@ -621,7 +791,14 @@ export const Inspector: React.FC = () => {
     : reconManifest
       ? reconManifest.status
       : 'нет сцены';
-  const similarStatus = similar.length > 0 ? String(similar.length) : undefined;
+  const similarStatus =
+    similar.length > 0
+      ? `${similar.length}${similarMethod === 'clip' ? ' · CLIP' : similarMethod === 'hist+class' ? ' · гист.' : ''}`
+      : similarMethod === 'clip'
+        ? 'CLIP'
+        : similarMethod === 'hist+class'
+          ? 'гист.'
+          : undefined;
   const aiStatus = aiBusy ? '…' : aiText ? 'готово' : undefined;
 
   return (
@@ -875,23 +1052,32 @@ export const Inspector: React.FC = () => {
             <Images size={12} />
             {similarBusy ? 'Поиск…' : 'Найти похожие'}
           </button>
+          {similarMethod ? (
+            <div className="text-[10px] text-dv-muted">
+              Метод: {similarMethod === 'clip' ? 'CLIP (изображение)' : 'гистограмма'}
+            </div>
+          ) : null}
           {similarError && <div className="text-[10px] text-dv-danger">{similarError}</div>}
           {similar.length > 0 && (
-            <div className="max-h-28 overflow-auto space-y-0.5">
+            <div className="max-h-40 overflow-auto space-y-0.5">
               {similar.map((row) => (
                 <button
                   key={row.id}
                   type="button"
-                  className="w-full text-left text-[10px] px-1 py-0.5 hover:bg-dv-surface rounded-sm"
-                  onClick={() => {
-                    const full = detections.find((d) => d.id === row.id);
-                    if (full) jumpToDetection(full);
-                  }}
+                  className="w-full text-left text-[10px] px-1 py-0.5 hover:bg-dv-surface rounded-sm flex items-center gap-1.5"
+                  onClick={() => void jumpToSimilar(row)}
                 >
-                  <span className="font-mono text-dv-muted mr-1">
-                    {(row.similarity * 100).toFixed(0)}%
+                  <img
+                    src={detectionCropSrc(row.id, row.crop_path)}
+                    alt=""
+                    className="w-8 h-8 object-cover bg-dv-deep border border-dv-border shrink-0"
+                  />
+                  <span className="min-w-0 truncate">
+                    <span className="font-mono text-dv-muted mr-1">
+                      {(row.similarity * 100).toFixed(0)}%
+                    </span>
+                    {classLabelRu(undefined, row.class_name, classCatalog)} · {formatTs(row.time_sec)}
                   </span>
-                  {classLabelRu(undefined, row.class_name, classCatalog)} · {formatTs(row.time_sec)}
                 </button>
               ))}
             </div>
@@ -939,14 +1125,96 @@ export const Inspector: React.FC = () => {
             </pre>
           )}
         </FoldSection>
+
+        {compareMode && (cdResult || cdLoading || cdError) ? (
+          <FoldSection
+            open={folds.changes}
+            onToggle={() => toggleFold('changes')}
+            title="Изменения (Compare)"
+            status={
+              cdResult
+                ? `+${cdResult.summary.new} −${cdResult.summary.removed} ↔${cdResult.summary.moved}`
+                : cdLoading
+                  ? '…'
+                  : 'ошибка'
+            }
+          >
+            {cdLoading && !cdResult ? (
+              <div className="text-[10px] text-dv-muted px-1">Анализ…</div>
+            ) : null}
+            {cdError ? <div className="text-[10px] text-dv-danger px-1">{cdError}</div> : null}
+            {cdResult ? (
+              <div className="space-y-2 px-1">
+                <div className="text-[10px] text-dv-muted font-mono">
+                  {cdResult.summary.total_before} → {cdResult.summary.total_after} obj · {cdResult.method}
+                  {cdResult.message ? ` · ${cdResult.message}` : ''}
+                </div>
+                {(() => {
+                  const hasGps =
+                    cdResult.new.some((i) => i.gps_lat != null && i.gps_lon != null) ||
+                    cdResult.removed.some((i) => i.gps_lat != null && i.gps_lon != null);
+                  return (
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        className="px-2 py-0.5 bg-dv-surface hover:bg-dv-hover rounded-sm text-[10px] disabled:opacity-40"
+                        disabled={!cdLastAnalyze || cdExportBusy || cdLoading}
+                        onClick={() => void cdExportReport('html')}
+                      >
+                        {cdExportBusy ? 'Экспорт…' : 'Экспорт HTML'}
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2 py-0.5 bg-dv-surface hover:bg-dv-hover rounded-sm text-[10px] disabled:opacity-40"
+                        disabled={!cdLastAnalyze || cdExportBusy || cdLoading || !hasGps}
+                        title={
+                          hasGps
+                            ? 'KML для Google Earth / QGIS'
+                            : 'Нужны GPS-координаты'
+                        }
+                        onClick={() => void cdExportReport('kml')}
+                      >
+                        Экспорт KML
+                      </button>
+                    </div>
+                  );
+                })()}
+                {cdExportError ? (
+                  <div className="text-[10px] text-dv-danger">{cdExportError}</div>
+                ) : null}
+                <ChangeList
+                  title="Новые"
+                  empty="нет"
+                  items={cdResult.new}
+                  kind="new"
+                  active={cdActiveHighlight}
+                  onPick={(id) => setCdHighlight({ kind: 'new', id })}
+                />
+                <ChangeList
+                  title="Исчезли"
+                  empty="нет"
+                  items={cdResult.removed}
+                  kind="removed"
+                  active={cdActiveHighlight}
+                  onPick={(id) => setCdHighlight({ kind: 'removed', id })}
+                />
+                <ChangeMovedList
+                  matches={cdResult.matches.filter((m) => m.status === 'moved')}
+                  active={cdActiveHighlight}
+                  onPick={(id) => setCdHighlight({ kind: 'moved', id })}
+                />
+              </div>
+            ) : null}
+          </FoldSection>
+        ) : null}
       </div>
 
       <div className="flex-1 min-h-0 flex flex-col">
         <FoldSection
           open={folds.detections}
           onToggle={() => toggleFold('detections')}
-          title={`Детекции (${recent.length}/${detections.length})`}
-          status={`${recent.length}/${detections.length}`}
+          title={`Треки (${tracks.length}) · кадры ${recent.length}`}
+          status={`${tracks.length} тр.`}
           className={`border-b border-dv-border flex flex-col min-h-0 ${folds.detections ? 'flex-1' : 'flex-shrink-0'}`}
           bodyClassName="flex flex-col min-h-0 flex-1"
         >
@@ -961,6 +1229,15 @@ export const Inspector: React.FC = () => {
               />
               <button
                 type="button"
+                className="shrink-0 px-1.5 py-0.5 text-[10px] text-dv-text hover:bg-dv-hover rounded-sm disabled:opacity-40"
+                title="Экспорт детекций в CSV (координаты 0–1)"
+                disabled={!sourcePath || recent.length === 0 || csvBusy}
+                onClick={exportDetectionsCsv}
+              >
+                {csvBusy ? 'CSV…' : 'Экспорт CSV'}
+              </button>
+              <button
+                type="button"
                 className="shrink-0 px-1.5 py-0.5 text-[10px] text-dv-danger hover:bg-dv-hover rounded-sm disabled:opacity-40"
                 title="Очистить все детекции этого видео"
                 disabled={!sourcePath || recent.length === 0}
@@ -969,55 +1246,93 @@ export const Inspector: React.FC = () => {
                 Очистить
               </button>
             </div>
+            {csvError ? <div className="mt-1 text-[10px] text-dv-danger">{csvError}</div> : null}
           </div>
           <div className="flex-1 overflow-auto min-h-0">
-            {recent.length === 0 && (
+            {tracks.length === 0 && (
               <div className="p-3 text-dv-muted text-[11px]">
                 Зафиксируйте кадр на паузе или нарисуйте рамку в режиме «Правка»
               </div>
             )}
-            {recent.map((row) => {
-              const on = row.id === activeDetectionId;
+            <div className="px-2 py-1 text-[10px] text-dv-muted">Треки</div>
+            {tracks.map((t) => {
+              const on = t.members.some((m) => m.id === activeDetectionId);
               return (
                 <button
-                  key={row.id}
+                  key={t.trackId}
                   type="button"
                   className={`w-full text-left px-2 py-1.5 border-b border-dv-soft hover:bg-dv-surface ${
                     on ? 'bg-dv-header shadow-[inset_2px_0_0_var(--dv-accent)]' : ''
                   }`}
-                  onClick={() => jumpToDetection(row)}
+                  onClick={() => {
+                    jumpToDetection(t.primary);
+                    useTimelineStore.getState().markIn(t.tIn);
+                    useTimelineStore.getState().markOut(Math.max(t.tOut, t.tIn + 0.05));
+                  }}
                 >
                   <div className="flex items-center gap-1">
                     <Flag size={10} className="text-dv-accent" />
-                    <span className="font-mono text-[10px]">{formatTs(row.time_sec)}</span>
-                    <span className="truncate text-dv-text flex-1">
-                      {classLabelRu(row.class_id, row.class_name, classCatalog)}
-                      {row.ai_class_name && row.ai_class_name !== row.class_name
-                        ? ` (ИИ: ${classLabelRu(undefined, row.ai_class_name, classCatalog)})`
-                        : ''}
+                    <span className="font-mono text-[10px] shrink-0">
+                      {formatTrackRange(t.tIn, t.tOut)}
                     </span>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="p-0.5 rounded hover:bg-[#4a2222] text-dv-muted hover:text-dv-danger"
-                      title="Удалить метку"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void deleteDetection(row.id);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') void deleteDetection(row.id);
-                      }}
-                    >
-                      <Trash2 size={11} />
+                    <span className="truncate text-dv-text flex-1">
+                      {classLabelRu(t.primary.class_id, t.class_name, classCatalog)}
+                      {t.count > 1 ? ` · ${t.count}к` : ''}
                     </span>
                   </div>
-                  {row.user_notes ? (
-                    <div className="text-[10px] text-dv-muted truncate pl-4">{row.user_notes}</div>
-                  ) : null}
                 </button>
               );
             })}
+            <button
+              type="button"
+              className="w-full text-left px-2 py-1 text-[10px] text-dv-muted hover:bg-dv-surface"
+              onClick={() => setShowAllFrames((v) => !v)}
+            >
+              {showAllFrames ? '▾' : '▸'} Все кадры ({recent.length})
+            </button>
+            {showAllFrames &&
+              recent.map((row) => {
+                const on = row.id === activeDetectionId;
+                return (
+                  <button
+                    key={row.id}
+                    type="button"
+                    className={`w-full text-left px-2 py-1.5 border-b border-dv-soft hover:bg-dv-surface ${
+                      on ? 'bg-dv-header shadow-[inset_2px_0_0_var(--dv-accent)]' : ''
+                    }`}
+                    onClick={() => jumpToDetection(row)}
+                  >
+                    <div className="flex items-center gap-1">
+                      <Flag size={10} className="text-dv-accent" />
+                      <span className="font-mono text-[10px]">{formatTs(row.time_sec)}</span>
+                      <span className="truncate text-dv-text flex-1">
+                        {classLabelRu(row.class_id, row.class_name, classCatalog)}
+                        {row.ai_class_name && row.ai_class_name !== row.class_name
+                          ? ` (ИИ: ${classLabelRu(undefined, row.ai_class_name, classCatalog)})`
+                          : ''}
+                      </span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="p-0.5 rounded hover:bg-[#4a2222] text-dv-muted hover:text-dv-danger"
+                        title="Удалить метку"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void deleteDetection(row.id);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') void deleteDetection(row.id);
+                        }}
+                      >
+                        <Trash2 size={11} />
+                      </span>
+                    </div>
+                    {row.user_notes ? (
+                      <div className="text-[10px] text-dv-muted truncate pl-4">{row.user_notes}</div>
+                    ) : null}
+                  </button>
+                );
+              })}
           </div>
         </FoldSection>
       </div>

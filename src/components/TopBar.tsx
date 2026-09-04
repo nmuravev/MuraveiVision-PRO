@@ -10,7 +10,9 @@ import {
   GraduationCap,
   LayoutGrid,
   Monitor,
+  Radio,
   Settings,
+  Terminal,
   User,
 } from 'lucide-react';
 import {
@@ -24,13 +26,15 @@ import { useMuraveiStore } from '../store/useMuraveiStore';
 import { useViewerStore } from '../store/useViewerStore';
 import { downloadAuthorized } from '../lib/download';
 import { logger } from '../services/logger';
-import { Button, Menu, MenuItem, Modal } from './ui';
+import { Button, Menu, MenuItem, Modal, VramIndicator } from './ui';
 
 interface TopBarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
   isDefaultLayout?: boolean;
   onResetLayout?: () => void;
+  traceDockOpen?: boolean;
+  onToggleTraceDock?: () => void;
 }
 
 function parseDetail(body: unknown): string {
@@ -45,6 +49,7 @@ const TAB_ICONS: Record<string, React.ReactNode> = {
   Монтаж: <Clapperboard size={12} />,
   'AI-анализ': <Brain size={12} />,
   Обучение: <GraduationCap size={12} />,
+  '4×Live': <Radio size={12} />,
   Система: <Settings size={12} />,
 };
 
@@ -52,6 +57,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   activeTab,
   onTabChange,
   onResetLayout,
+  traceDockOpen,
+  onToggleTraceDock,
 }) => {
   const [windowOpen, setWindowOpen] = useState(false);
   const [layoutOpen, setLayoutOpen] = useState(false);
@@ -202,10 +209,14 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   const yoloReady = yoloMode === 'ready' || yoloMode === 'gpu' || yoloMode === 'cpu';
   const roleLabel =
-    userRole === 'master' ? 'Мастер' : userRole === 'engineer' ? 'Инженер' : userRole === 'operator' ? 'Оператор' : null;
-  const focusedSourcePath = useViewerStore(
-    (s) => s.viewers[s.focusedViewerId]?.sourcePath,
-  );
+    userRole === 'master'
+      ? 'Мастер'
+      : userRole === 'engineer'
+        ? 'Инженер'
+        : userRole === 'operator'
+          ? 'Оператор'
+          : null;
+  const focusedSourcePath = useViewerStore((s) => s.viewers[s.focusedViewerId]?.sourcePath);
 
   const runExport = (kind: 'html' | 'pdf' | 'kml' | 'geojson') => {
     setExportOpen(false);
@@ -227,7 +238,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         return;
       }
       const q = encodeURIComponent(focusedSourcePath);
-      url = kind === 'kml' ? `/api/export/kml?source_video=${q}` : `/api/export/geojson?source_video=${q}`;
+      url =
+        kind === 'kml' ? `/api/export/kml?source_video=${q}` : `/api/export/geojson?source_video=${q}`;
       filename = kind === 'kml' ? `muravei-${stamp}.kml` : `muravei-${stamp}.geojson`;
     }
     void downloadAuthorized(url, { filename })
@@ -247,33 +259,76 @@ export const TopBar: React.FC<TopBarProps> = ({
       .finally(() => setReportBusy(false));
   };
 
+  const LAYOUT_PRESETS = [
+    ['singleViewer', '1 вьюер'],
+    ['dualViewer', '2 вьюера'],
+    ['quadViewer', '4 вьюера'],
+    ['liveQuad', '4×Live'],
+    ['editDefault', 'Монтаж по умолчанию'],
+    ['mediaGeo', 'Медиа + Гео 3D'],
+  ] as const;
+
+  const toggleGeo3d = () => {
+    if (isPanelVisible('flight3d')) {
+      closePanel('flight3d');
+    } else {
+      applyPreset('mediaGeo');
+      logger.info('ui', 'Открыта панель Гео 3D');
+    }
+  };
+
+  const toggleDebug = () => {
+    if (isPanelVisible('debug')) closePanel('debug');
+    else {
+      openPanel('debug');
+      logger.info('ui', 'Открыта панель отладки');
+    }
+  };
+
+  const closeStripMenus = () => {
+    setWindowOpen(false);
+    setLayoutOpen(false);
+    setExportOpen(false);
+    setSessionOpen(false);
+  };
+
+  const stripBtn = (active: boolean) =>
+    `h-7 px-2 text-[11px] font-medium rounded-sm transition-all duration-150 inline-flex items-center gap-1 shrink-0 whitespace-nowrap ${
+      active
+        ? 'bg-dv-accent text-black shadow-sm'
+        : 'text-dv-muted hover:text-dv-text hover:bg-dv-hover'
+    }`;
+
+  const stripMenuOpen = exportOpen || layoutOpen || windowOpen;
+
   return (
     <>
       <div
         ref={menuRef}
-        className="h-12 bg-dv-header border-b border-dv-border flex items-center px-3 flex-shrink-0 relative z-[100] gap-2"
+        className="h-12 bg-dv-header border-b border-dv-border flex items-center px-3 flex-shrink-0 relative z-[100] gap-2 min-w-0 overflow-visible"
       >
-        <div className="flex items-center gap-2 mr-3 shrink-0">
+        <div className="flex items-center gap-2 mr-2 shrink-0">
           <div className="w-7 h-7 bg-dv-hot rounded-sm flex items-center justify-center text-white font-bold text-xs">
             M
           </div>
-          <div className="leading-tight">
+          <div className="leading-tight hidden sm:block">
             <div className="text-dv-text font-semibold text-sm tracking-wide">MuraveiVision</div>
             <div className="text-[9px] text-dv-muted tracking-wider uppercase">PRO</div>
           </div>
         </div>
 
-        <div className="flex gap-0.5 p-0.5 bg-dv-deep rounded-sm border border-dv-border/60">
+        <div
+          className={`flex-1 min-w-0 flex items-center gap-0.5 p-0.5 bg-dv-deep rounded-sm border border-dv-border/60 ${
+            stripMenuOpen ? 'overflow-visible' : 'overflow-x-auto'
+          }`}
+        >
           {WORKSPACE_TABS.map((tab) => (
             <button
               key={tab}
               type="button"
+              aria-label={tab}
               onClick={() => onTabChange(tab)}
-              className={`px-2.5 py-1.5 text-[11px] font-medium rounded-sm transition-all duration-150 inline-flex items-center gap-1.5 ${
-                activeTab === tab
-                  ? 'bg-dv-accent text-black shadow-sm'
-                  : 'text-dv-muted hover:text-dv-text hover:bg-dv-hover'
-              }`}
+              className={stripBtn(activeTab === tab)}
             >
               {TAB_ICONS[tab]}
               <span className="hidden md:inline">{tab}</span>
@@ -285,49 +340,15 @@ export const TopBar: React.FC<TopBarProps> = ({
               )}
             </button>
           ))}
-        </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          {/* Status strip */}
-          <div
-            className="hidden lg:flex items-center gap-2 text-[10px] text-dv-muted px-2 py-1 rounded-sm bg-dv-deep border border-dv-border/50 max-w-[280px]"
-            title="Статус системы"
-          >
-            <span className="inline-flex items-center gap-1">
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  yoloReady ? 'bg-dv-success' : yoloMode ? 'bg-amber-400' : 'bg-dv-muted'
-                }`}
-              />
-              YOLO {yoloMode ?? '—'}
-            </span>
-            <span className="text-dv-border">|</span>
-            <span className="inline-flex items-center gap-1">
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  ollamaOk === true
-                    ? 'bg-dv-success'
-                    : ollamaOk === false
-                      ? 'bg-amber-400'
-                      : 'bg-dv-muted'
-                }`}
-              />
-              Ollama {ollamaOk === true ? 'ок' : ollamaOk === false ? 'нет' : '—'}
-            </span>
-            {roleLabel && (
-              <>
-                <span className="text-dv-border">|</span>
-                <span className="text-dv-text truncate">{roleLabel}</span>
-              </>
-            )}
-          </div>
+          <div className="w-px h-4 bg-dv-border/70 mx-0.5 shrink-0 self-center" aria-hidden />
 
           {isAuthenticated && (
-            <div className="relative">
-              <Button
-                size="md"
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                className={stripBtn(exportOpen)}
                 disabled={reportBusy}
-                active={exportOpen}
                 title="Экспорт: HTML / PDF / KML / GeoJSON"
                 onClick={() => {
                   setExportOpen((v) => !v);
@@ -336,10 +357,10 @@ export const TopBar: React.FC<TopBarProps> = ({
                   setSessionOpen(false);
                 }}
               >
-                <FileText size={13} />
-                {reportBusy ? 'Экспорт…' : 'Экспорт'}
-              </Button>
-              <Menu open={exportOpen} className="w-52">
+                <FileText size={12} />
+                <span className="hidden md:inline">{reportBusy ? 'Экспорт…' : 'Экспорт'}</span>
+              </button>
+              <Menu open={exportOpen} className="w-52 z-[110]" align="left">
                 <MenuItem onClick={() => runExport('html')}>HTML-отчёт</MenuItem>
                 <MenuItem onClick={() => runExport('pdf')}>PDF (схема карты)</MenuItem>
                 <MenuItem onClick={() => runExport('kml')}>KML (Google Earth)</MenuItem>
@@ -347,16 +368,12 @@ export const TopBar: React.FC<TopBarProps> = ({
               </Menu>
             </div>
           )}
-          {reportError && (
-            <span className="text-[10px] text-dv-danger max-w-[120px] truncate" title={reportError}>
-              {reportError}
-            </span>
-          )}
 
-          <div className="relative">
-            <Button
-              size="md"
-              active={layoutOpen}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              className={stripBtn(layoutOpen)}
+              title="Раскладка"
               onClick={() => {
                 setLayoutOpen((v) => !v);
                 setWindowOpen(false);
@@ -364,19 +381,11 @@ export const TopBar: React.FC<TopBarProps> = ({
                 setExportOpen(false);
               }}
             >
-              <LayoutGrid size={13} />
-              Раскладка
-            </Button>
-            <Menu open={layoutOpen}>
-              {(
-                [
-                  ['singleViewer', '1 вьюер'],
-                  ['dualViewer', '2 вьюера'],
-                  ['quadViewer', '4 вьюера'],
-                  ['editDefault', 'Монтаж по умолчанию'],
-                  ['mediaGeo', 'Медиа + Гео 3D'],
-                ] as const
-              ).map(([key, label]) => (
+              <LayoutGrid size={12} />
+              <span className="hidden md:inline">Раскладка</span>
+            </button>
+            <Menu open={layoutOpen} className="z-[110]" align="left">
+              {LAYOUT_PRESETS.map(([key, label]) => (
                 <MenuItem
                   key={key}
                   onClick={() => {
@@ -402,10 +411,11 @@ export const TopBar: React.FC<TopBarProps> = ({
             </Menu>
           </div>
 
-          <div className="relative">
-            <Button
-              size="md"
-              active={windowOpen}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              className={stripBtn(windowOpen)}
+              title="Окна"
               onClick={() => {
                 setWindowOpen((v) => !v);
                 setLayoutOpen(false);
@@ -413,10 +423,10 @@ export const TopBar: React.FC<TopBarProps> = ({
                 setExportOpen(false);
               }}
             >
-              <Monitor size={13} />
-              Окна
-            </Button>
-            <Menu open={windowOpen} className="max-h-96 overflow-auto w-56">
+              <Monitor size={12} />
+              <span className="hidden md:inline">Окна</span>
+            </button>
+            <Menu open={windowOpen} className="max-h-96 overflow-auto w-56 z-[110]" align="left">
               {ALL_VIEW_IDS.map((id) => {
                 const on = isPanelVisible(id);
                 return (
@@ -443,42 +453,62 @@ export const TopBar: React.FC<TopBarProps> = ({
             </Menu>
           </div>
 
-          <Button
-            size="md"
+          <button
+            type="button"
+            className={stripBtn(isPanelVisible('flight3d'))}
             title="3D-траектория полёта (SRT/CSV)"
-            active={isPanelVisible('flight3d')}
             onClick={() => {
-              if (isPanelVisible('flight3d')) {
-                closePanel('flight3d');
-              } else {
-                applyPreset('mediaGeo');
-                logger.info('ui', 'Открыта панель Гео 3D');
-              }
+              closeStripMenus();
+              toggleGeo3d();
             }}
           >
-            <Globe2 size={13} />
-            Гео 3D
-          </Button>
+            <Globe2 size={12} />
+            <span className="hidden md:inline">Гео 3D</span>
+          </button>
 
-          <Button
-            size="md"
+          <button
+            type="button"
+            className={stripBtn(Boolean(traceDockOpen))}
+            title="Session Trace dock (FE+BE). Код не удалять без явного приказа."
+            onClick={() => {
+              closeStripMenus();
+              onToggleTraceDock?.();
+            }}
+          >
+            <Bug size={12} />
+            <span className="hidden md:inline">Трассировка</span>
+          </button>
+
+          <button
+            type="button"
+            className={stripBtn(isPanelVisible('debug'))}
             title="Панель отладки"
             onClick={() => {
-              if (isPanelVisible('debug')) closePanel('debug');
-              else {
-                openPanel('debug');
-                logger.info('ui', 'Открыта панель отладки');
-              }
+              closeStripMenus();
+              toggleDebug();
             }}
           >
-            <Bug size={13} />
-            Отладка
-          </Button>
+            <Terminal size={12} />
+            <span className="hidden md:inline">Отладка</span>
+          </button>
+
+          {reportError && (
+            <span
+              className="text-[10px] text-dv-danger max-w-[100px] truncate shrink-0 px-1"
+              title={reportError}
+            >
+              {reportError}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {isAuthenticated && <VramIndicator />}
 
           <div className="relative">
             <button
               type="button"
-              className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors shrink-0 ${
                 isAuthenticated
                   ? 'bg-dv-accent/20 ring-1 ring-dv-accent/40'
                   : 'bg-dv-surface hover:bg-dv-hover'
@@ -488,6 +518,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   setSessionOpen((v) => !v);
                   setLayoutOpen(false);
                   setWindowOpen(false);
+                  setExportOpen(false);
                 } else {
                   setLoginOpen(true);
                 }
@@ -496,10 +527,34 @@ export const TopBar: React.FC<TopBarProps> = ({
             >
               <User size={14} className="text-dv-text" />
             </button>
-            <Menu open={sessionOpen && isAuthenticated} className="w-48 p-0">
-              <div className="px-3 py-2 text-[10px] text-dv-muted border-b border-dv-border">
-                Сессия:{' '}
-                <span className="text-dv-text">{roleLabel ?? userRole}</span>
+            <Menu open={sessionOpen && isAuthenticated} className="w-56 p-0 z-[110]" align="right">
+              <div className="px-3 py-2 text-[10px] text-dv-muted border-b border-dv-border space-y-1.5">
+                <div>
+                  Сессия:{' '}
+                  <span className="text-dv-text">{roleLabel ?? userRole ?? '—'}</span>
+                </div>
+                <div className="flex items-center gap-1.5 font-mono">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      yoloReady ? 'bg-dv-success' : yoloMode ? 'bg-amber-400' : 'bg-dv-muted'
+                    }`}
+                  />
+                  <span className="text-dv-text">YOLO {yoloMode ?? '—'}</span>
+                </div>
+                <div className="flex items-center gap-1.5 font-mono">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      ollamaOk === true
+                        ? 'bg-dv-success'
+                        : ollamaOk === false
+                          ? 'bg-amber-400'
+                          : 'bg-dv-muted'
+                    }`}
+                  />
+                  <span className="text-dv-text">
+                    Ollama {ollamaOk === true ? 'ок' : ollamaOk === false ? 'нет' : '—'}
+                  </span>
+                </div>
               </div>
               <MenuItem
                 onClick={() => {

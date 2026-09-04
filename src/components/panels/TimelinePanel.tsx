@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { Timeline, type DetectionMarker } from '../Timeline';
+import { OpsStatusBar } from '../OpsStatusBar';
 import { useMuraveiStore } from '../../store/useMuraveiStore';
-import { batchScanProgressPct, useBatchScanStore } from '../../store/useBatchScanStore';
 import { useTimelineStore } from '../../store/timeline-store';
 import { useViewerStore } from '../../store/useViewerStore';
 import { classLabelRu } from '../../lib/classLabels';
@@ -35,28 +35,9 @@ export const TimelinePanel: React.FC = () => {
   const focusedViewerId = useViewerStore((s) => s.focusedViewerId);
   const sourcePath = useViewerStore((s) => s.viewers[focusedViewerId]?.sourcePath);
 
-  const scanStatus = useBatchScanStore((s) => s.status);
-  const scanMessage = useBatchScanStore((s) => s.message);
-  const scanProcessed = useBatchScanStore((s) => s.processed);
-  const scanSampleTotal = useBatchScanStore((s) => s.sampleTotal);
-  const scanFound = useBatchScanStore((s) => s.found);
-  const scanVideoPath = useBatchScanStore((s) => s.videoPath);
-
   const fileLabel = sourcePath
     ? sourcePath.replace(/^.*[/\\]/, '')
     : 'нет файла';
-
-  const scanPct = batchScanProgressPct({
-    status: scanStatus,
-    processed: scanProcessed,
-    sampleTotal: scanSampleTotal,
-  });
-
-  const scanActiveForFile =
-    sourcePath != null &&
-    scanVideoPath != null &&
-    mediaPathsMatch(sourcePath, scanVideoPath) &&
-    (scanStatus === 'running' || scanStatus === 'done' || scanStatus === 'error');
 
   useEffect(() => {
     if (!sourcePath || mediaDuration <= 0) return;
@@ -144,19 +125,7 @@ export const TimelinePanel: React.FC = () => {
       <div className="px-2 py-1 text-[10px] text-[var(--dv-text-muted)] border-b border-[var(--dv-border)] flex-shrink-0 truncate">
         Таймлайн: {fileLabel}
         <span className="text-[var(--dv-text-muted)] opacity-70"> · {focusedViewerId.replace('viewer-', 'вьюер ')}</span>
-        {scanActiveForFile && scanStatus === 'running' ? (
-          <span className="text-[#38bdf8]">
-            {' '}
-            · YOLO {scanPct}% · {scanFound} целей
-            {scanMessage ? ` · ${scanMessage}` : ''}
-          </span>
-        ) : null}
-        {scanActiveForFile && scanStatus === 'done' ? (
-          <span className="text-emerald-400"> · анализ завершён · {scanFound} целей</span>
-        ) : null}
-        {scanActiveForFile && scanStatus === 'error' ? (
-          <span className="text-red-400"> · ошибка анализа: {scanMessage}</span>
-        ) : null}
+        <OpsStatusBar sourcePath={sourcePath} />
         {activeGps ? (
           <span className="text-[#38bdf8] font-mono"> · GPS {activeGps}</span>
         ) : null}

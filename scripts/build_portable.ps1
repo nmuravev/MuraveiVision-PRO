@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Сборка MuraveiVision PRO Portable ZIP (Lite или Full Field Kit).
+  Сборка MuraveiVision PRO Portable ZIP (Lite, Mini, или Full Field Kit).
 
 .DESCRIPTION
   Lite (по умолчанию):
@@ -10,18 +10,28 @@
   - backend, dist, detect-веса, YAML, Запустить.bat
   - ZIP: portable\MuraveiVision_PRO_Portable.zip
 
+  Mini (-NoDetectWeights):
+  - то же без detect .pt / mobileclip (UI/geo/отчёты; YOLO → 503 до USB-import)
+  - ZIP: portable\MuraveiVision_PRO_Mini.zip
+
   FullKit (-FullKit):
-  - то же + ollama-windows-amd64 + models (qwen2.5vl:7b из %USERPROFILE%\.ollama\models)
-  - torch+cu128 в staged muravei_env
+  - то же + ollama + qwen2.5vl:7b + torch cu128
+  - sidecars\colmap + sidecars\gsplat_examples (3D)
   - ZIP: portable\MuraveiVision_PRO_FullKit.zip (Zip64)
 
   Только muravei_env / embed 3.12.10 — никогда host Python 3.14.
+  Build-time downloads need network (or offline wheels/); field ZIP is air-gap.
+
+  Staging: unique portable\stage_<Kit>_<timestamp>\ each run; ZIP names stay stable.
+  Deps: host muravei_env pip --python <staged> (prefer portable\cache\wheels offline).
+  Robocopy host site-packages only as fallback (or MURAVEI_PORTABLE_MIRROR=1).
 #>
 param(
   [switch]$SkipNpmBuild,
   [switch]$FetchEmbeddablePython,
   [switch]$SkipZip,
   [switch]$FullKit,
+  [switch]$NoDetectWeights,
   [string]$OllamaZipPath = "",
   [string]$OllamaVersion = "v0.11.4",
   [string]$OllamaModelsRoot = ""
@@ -34,17 +44,26 @@ $CacheDir = Join-Path $OutRoot "cache"
 $PyVer = "3.12.10"
 $HostPy = Join-Path $Repo "muravei_env\Scripts\python.exe"
 $HostPip = Join-Path $Repo "muravei_env\Scripts\pip.exe"
+$Stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 
 if ($FullKit) {
-  $StageName = "MuraveiVision_PRO_FullKit"
+  $KitTag = "FullKit"
   $ZipPath = Join-Path $OutRoot "MuraveiVision_PRO_FullKit.zip"
+  $KitKind = "FULL KIT"
+} elseif ($NoDetectWeights) {
+  $KitTag = "Mini"
+  $ZipPath = Join-Path $OutRoot "MuraveiVision_PRO_Mini.zip"
+  $KitKind = "Mini (no detect weights)"
 } else {
-  $StageName = "MuraveiVision_PRO_Portable"
+  $KitTag = "Lite"
   $ZipPath = Join-Path $OutRoot "MuraveiVision_PRO_Portable.zip"
+  $KitKind = "Lite"
 }
+# Unique stage per run — avoids stale DLL locks on fixed-name dirs
+$StageName = "stage_${KitTag}_$Stamp"
 $Stage = Join-Path $OutRoot $StageName
 
-Write-Host "== MuraveiVision PRO v3.0 portable $(if ($FullKit) { 'FULL KIT' } else { 'Lite' }) ==" -ForegroundColor Cyan
+Write-Host "== MuraveiVision PRO v3.1 portable $KitKind ==" -ForegroundColor Cyan
 Write-Host "Repo:  $Repo"
 Write-Host "Stage: $Stage"
 
@@ -73,11 +92,10 @@ function Write-Zip64([string]$SourceDir, [string]$DestZip) {
 }
 
 function Resolve-OllamaStoreRoot([string]$Explicit) {
+  # Build-machine only (never baked into ZIP). No machine-specific absolute paths.
   $candidates = @()
   if ($Explicit) { $candidates += $Explicit }
   if ($env:OLLAMA_MODELS) { $candidates += $env:OLLAMA_MODELS }
-  # Custom store used on this project machine
-  $candidates += "D:\LLM\ollama"
   $candidates += (Join-Path $env:USERPROFILE ".ollama")
   $candidates += (Join-Path $env:USERPROFILE ".ollama\models")
   foreach ($c in $candidates) {
@@ -90,6 +108,27 @@ function Resolve-OllamaStoreRoot([string]$Explicit) {
     }
   }
   return $null
+}
+
+function Remove-StalePortableStages([string]$Root) {
+  if (-not (Test-Path -LiteralPath $Root)) { return }
+  $patterns = @("stage_*", "*.locked_*", "MuraveiVision_PRO_Portable", "MuraveiVision_PRO_Mini", "MuraveiVision_PRO_FullKit")
+  foreach ($pat in $patterns) {
+    Get-ChildItem -LiteralPath $Root -Directory -Filter $pat -ErrorAction SilentlyContinue | ForEach-Object {
+      Write-Host "Cleaning stale stage: $($_.Name)" -ForegroundColor DarkYellow
+      try {
+        Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+      } catch {
+        $bakName = "$($_.Name).locked_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        Write-Host "  locked — rename to $bakName ($($_.Exception.Message))" -ForegroundColor Yellow
+        try {
+          Rename-Item -LiteralPath $_.FullName -NewName $bakName -ErrorAction Stop
+        } catch {
+          Write-Host "  WARNING: leave in place: $($_.FullName)" -ForegroundColor Yellow
+        }
+      }
+    }
+  }
 }
 
 function Copy-OllamaModelQwen([string]$StoreRoot, [string]$DestModels) {
@@ -156,11 +195,9 @@ if ($distHtml -notmatch "Content-Security-Policy") {
   throw "dist/index.html missing CSP meta — rebuild frontend"
 }
 
-# --- Stage ---
-if (Test-Path -LiteralPath $Stage) {
-  Write-Host "Removing old stage..."
-  Remove-Item -LiteralPath $Stage -Recurse -Force
-}
+# --- Stage (unique timestamped dir; purge stale stages first) ---
+New-Item -ItemType Directory -Force -Path $OutRoot | Out-Null
+Remove-StalePortableStages $OutRoot
 New-Item -ItemType Directory -Path $Stage | Out-Null
 
 Write-Host "Copy backend + dist ..."
@@ -183,55 +220,61 @@ $weightSources = @(
 )
 $destW = Join-Path $Stage "runs\detect\train\weights"
 $destA = Join-Path $Stage "assets\models"
-foreach ($srcDir in $weightSources) {
-  if (-not (Test-Path -LiteralPath $srcDir)) { continue }
-  Get-ChildItem -LiteralPath $srcDir -File -Filter "*.pt" -ErrorAction SilentlyContinue |
-    Where-Object {
-      $n = $_.Name.ToLowerInvariant()
-      ($n -notmatch "seg") -and ($n -notmatch "yoloe") -and ($_.Length -gt 1024)
-    } |
-    ForEach-Object {
-      Write-Host ("  {0} ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB))
-      Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $destW $_.Name) -Force
-      Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $destA $_.Name) -Force
-    }
-}
+if ($NoDetectWeights) {
+  Write-Host "  -NoDetectWeights: skip .pt / mobileclip (Mini kit)" -ForegroundColor Yellow
+} else {
+  foreach ($srcDir in $weightSources) {
+    if (-not (Test-Path -LiteralPath $srcDir)) { continue }
+    Get-ChildItem -LiteralPath $srcDir -File -Filter "*.pt" -ErrorAction SilentlyContinue |
+      Where-Object {
+        $n = $_.Name.ToLowerInvariant()
+        ($n -notmatch "seg") -and ($n -notmatch "yoloe") -and ($_.Length -gt 1024)
+      } |
+      ForEach-Object {
+        Write-Host ("  {0} ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB))
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $destW $_.Name) -Force
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $destA $_.Name) -Force
+      }
+  }
 
-# Prefer yolo26n-ft.pt as best when FullKit
-$ft = Join-Path $destA "yolo26n-ft.pt"
-$bestA = Join-Path $destA "best.pt"
-$y26 = Join-Path $destA "yolo26n.pt"
-if ($FullKit -and (Test-Path -LiteralPath $ft)) {
-  Copy-Item $ft $bestA -Force
-  Write-Host "  mirrored yolo26n-ft.pt → assets/models/best.pt"
-} elseif ((-not (Test-Path $bestA) -or (Get-Item $bestA).Length -lt 1024) -and (Test-Path $y26)) {
-  Copy-Item $y26 $bestA -Force
-  Write-Host "  mirrored yolo26n.pt → assets/models/best.pt"
-}
+  # Prefer yolo26n-ft.pt as best when FullKit
+  $ft = Join-Path $destA "yolo26n-ft.pt"
+  $bestA = Join-Path $destA "best.pt"
+  $y26 = Join-Path $destA "yolo26n.pt"
+  if ($FullKit -and (Test-Path -LiteralPath $ft)) {
+    Copy-Item $ft $bestA -Force
+    Write-Host "  mirrored yolo26n-ft.pt → assets/models/best.pt"
+  } elseif ((-not (Test-Path $bestA) -or (Get-Item $bestA).Length -lt 1024) -and (Test-Path $y26)) {
+    Copy-Item $y26 $bestA -Force
+    Write-Host "  mirrored yolo26n.pt → assets/models/best.pt"
+  }
 
-if ($FullKit -and -not (Test-Path -LiteralPath $ft)) {
-  Write-Host "WARNING: yolo26n-ft.pt missing in assets/models — FullKit will ship other detect weights if any." -ForegroundColor Yellow
+  if ($FullKit -and -not (Test-Path -LiteralPath $ft)) {
+    Write-Host "WARNING: yolo26n-ft.pt missing in assets/models — FullKit will ship other detect weights if any." -ForegroundColor Yellow
+  }
 }
 
 if (Test-Path (Join-Path $Repo "military_classes.yaml")) {
   Copy-Item (Join-Path $Repo "military_classes.yaml") $Stage -Force
 }
 
-$clipCandidates = @(
-  (Join-Path $Repo "mobileclip2_b.ts"),
-  (Join-Path $Repo "assets\models\mobileclip2_b.ts")
-)
-foreach ($clip in $clipCandidates) {
-  if (-not (Test-Path $clip)) { continue }
-  $sz = (Get-Item $clip).Length / 1MB
-  if ($sz -lt 280 -or $FullKit) {
-    Write-Host ("Copy mobileclip2_b.ts ({0:N0} MB)" -f $sz)
-    Copy-Item $clip (Join-Path $Stage "mobileclip2_b.ts") -Force
-    Copy-Item $clip (Join-Path $destA "mobileclip2_b.ts") -Force
-  } else {
-    Write-Host "Skip oversized mobileclip2_b.ts (use -FullKit to force)"
+if (-not $NoDetectWeights) {
+  $clipCandidates = @(
+    (Join-Path $Repo "mobileclip2_b.ts"),
+    (Join-Path $Repo "assets\models\mobileclip2_b.ts")
+  )
+  foreach ($clip in $clipCandidates) {
+    if (-not (Test-Path $clip)) { continue }
+    $sz = (Get-Item $clip).Length / 1MB
+    if ($sz -lt 280 -or $FullKit) {
+      Write-Host ("Copy mobileclip2_b.ts ({0:N0} MB)" -f $sz)
+      Copy-Item $clip (Join-Path $Stage "mobileclip2_b.ts") -Force
+      Copy-Item $clip (Join-Path $destA "mobileclip2_b.ts") -Force
+    } else {
+      Write-Host "Skip oversized mobileclip2_b.ts (use -FullKit to force)"
+    }
+    break
   }
-  break
 }
 
 Copy-Item (Join-Path $Repo "Запустить.bat") $Stage -Force
@@ -298,18 +341,129 @@ if ($FetchEmbeddablePython) {
     Copy-Item $pyExe $scriptsPy -Force
   }
 
-  & $pyExe -m pip install --upgrade pip setuptools wheel --no-warn-script-location
-  & $pyExe -m pip install --no-cache-dir -r (Join-Path $Repo "backend\requirements.txt") --no-warn-script-location
-  if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
+  # Harden TLS for embeddable pip: vendor cacert can vanish during pip self-upgrade
+  # (OSError: Could not find a suitable TLS CA certificate bundle).
+  # Always pin env vars to a *stable* host certifi path — never the staged vendor
+  # file, which pip may delete mid-install while SSL_CERT_FILE still points at it.
+  function Ensure-PipCaBundle([string]$PyHomePath) {
+    $vendorPem = Join-Path $PyHomePath "Lib\site-packages\pip\_vendor\certifi\cacert.pem"
+    $cachePem = Join-Path $CacheDir "cacert.pem"
+    $hostCandidates = @(
+      (Join-Path $Repo "muravei_env\Lib\site-packages\certifi\cacert.pem"),
+      (Join-Path $Repo "muravei_env\Lib\site-packages\pip\_vendor\certifi\cacert.pem")
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+    $source = $null
+    if ($hostCandidates.Count -gt 0) { $source = $hostCandidates[0] }
+    elseif ($env:SSL_CERT_FILE -and (Test-Path -LiteralPath $env:SSL_CERT_FILE)) { $source = $env:SSL_CERT_FILE }
+    elseif ($env:REQUESTS_CA_BUNDLE -and (Test-Path -LiteralPath $env:REQUESTS_CA_BUNDLE)) { $source = $env:REQUESTS_CA_BUNDLE }
 
-  if ($FullKit) {
-    Write-Host "FullKit: forcing torch+cu128 in staged muravei_env (replace CPU wheel from PyPI)..." -ForegroundColor Yellow
+    # Prefer cache copy (outside stage, survives Remove-Item of stage + pip vendor churn)
+    if ($source) {
+      New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
+      Copy-Item -LiteralPath $source -Destination $cachePem -Force
+    }
+    $stable = if (Test-Path -LiteralPath $cachePem) { $cachePem } else { $source }
+
+    if ($stable -and -not (Test-Path -LiteralPath $vendorPem)) {
+      $destDir = Split-Path -Parent $vendorPem
+      New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+      Copy-Item -LiteralPath $stable -Destination $vendorPem -Force
+      Write-Host "Restored pip vendor CA bundle from $stable"
+    }
+    if ($stable) {
+      $env:SSL_CERT_FILE = $stable
+      $env:REQUESTS_CA_BUNDLE = $stable
+      $env:PIP_CERT = $stable
+      $env:CURL_CA_BUNDLE = $stable
+      Write-Host "PIP TLS bundle (stable): $stable"
+    } else {
+      Write-Host "WARNING: no CA bundle found; pip may fail TLS" -ForegroundColor Yellow
+    }
+  }
+  Ensure-PipCaBundle $PyHome
+
+  # Drive installs with host pip into the embed interpreter. Staged `python -m pip`
+  # frequently self-corrupts mid-run on Windows (vendor modules / cacert vanish).
+  if (-not (Test-Path -LiteralPath $HostPy)) {
+    throw "Host muravei_env python required to bake portable deps: $HostPy"
+  }
+  Write-Host "Baking deps via host pip --python (embed target)..." -ForegroundColor Yellow
+  # Note: --python must come BEFORE the subcommand name
+  & $HostPy -m pip --python $pyExe install --upgrade pip setuptools wheel --no-warn-script-location
+  $bakeEc = $LASTEXITCODE
+  if ($bakeEc -ne 0) { throw "pip upgrade failed" }
+  Ensure-PipCaBundle $PyHome
+  $reqFile = Join-Path $Repo "backend\requirements.txt"
+  $wheelDir = Join-Path $CacheDir "wheels"
+  $hasWheels = (Test-Path -LiteralPath $wheelDir) -and (
+    $null -ne (Get-ChildItem -LiteralPath $wheelDir -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+  )
+  if ($hasWheels) {
+    Write-Host "Using local wheel cache: $wheelDir" -ForegroundColor Yellow
+    $bakeArgs = @("--python", $pyExe, "install", "--no-index", "--find-links", $wheelDir, "--prefer-binary", "--no-warn-script-location", "-r", $reqFile)
+  } else {
+    Write-Host "No portable/cache/wheels — online install (run scripts/cache_portable_wheels.ps1 once)" -ForegroundColor Yellow
+    $bakeArgs = @("--python", $pyExe, "install", "--no-cache-dir", "--prefer-binary", "--no-warn-script-location", "-r", $reqFile)
+  }
+  # Default: host pip --python into embed. Robocopy only if bake fails or MURAVEI_PORTABLE_MIRROR=1.
+  # Stop host uvicorn before build if AV/DLL locks persist; restart PC as last resort.
+  $mirrorHost = ($env:MURAVEI_PORTABLE_MIRROR -eq "1")
+  $bakeEc = 1
+  if (-not $mirrorHost) {
+    $maxBakeAttempts = 2
+    for ($attempt = 1; $attempt -le $maxBakeAttempts; $attempt++) {
+      Ensure-PipCaBundle $PyHome
+      Get-ChildItem -LiteralPath (Join-Path $PyHome "Lib\site-packages") -Recurse -Filter "*.tmp" -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+      Write-Host "Requirements bake attempt $attempt/$maxBakeAttempts ..." -ForegroundColor Yellow
+      & $HostPy -m pip @bakeArgs
+      $bakeEc = $LASTEXITCODE
+      if ($bakeEc -eq 0) { break }
+      Write-Host "Bake attempt $attempt failed (exit $bakeEc)" -ForegroundColor Yellow
+      Start-Sleep -Seconds 2
+    }
+    if ($bakeEc -ne 0) {
+      Write-Host "Host-pip bake failed — falling back to robocopy host site-packages" -ForegroundColor Yellow
+      $mirrorHost = $true
+    }
+  }
+  if ($mirrorHost) {
+    Write-Host "Mirroring host site-packages → stage (robocopy) ..." -ForegroundColor Yellow
+    $hostSp = Join-Path $Repo "muravei_env\Lib\site-packages"
+    $stageSp = Join-Path $PyHome "Lib\site-packages"
+    Assert-File $hostSp
+    New-Item -ItemType Directory -Force -Path $stageSp | Out-Null
+    & robocopy $hostSp $stageSp /E /XD __pycache__ /NFL /NDL /NJH /NJS /R:5 /W:2 | Out-Null
+    $rc = $LASTEXITCODE
+    # robocopy: bits 0-7 success-ish; 8+ = some copy failures (often locked DLLs if host uvicorn running)
+    if ($rc -ge 16) { throw "robocopy host site-packages fatal (exit $rc)" }
+    if ($rc -ge 8) {
+      Write-Host "WARNING: robocopy exit $rc (some files skipped/locked) — will verify via BAKE_OK" -ForegroundColor Yellow
+    } else {
+      Write-Host "Host site-packages mirrored (robocopy exit $rc)"
+    }
+  }
+
+  if ($FullKit -and -not $mirrorHost) {
+    Write-Host "FullKit: forcing torch+cu128 in staged muravei_env..." -ForegroundColor Yellow
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & $pyExe -m pip uninstall -y torch torchvision 2>&1 | Out-Host
+    & $HostPy -m pip --python $pyExe uninstall -y torch torchvision 2>&1 | Out-Host
     $ErrorActionPreference = $prevEap
-    & $pyExe -m pip install --no-cache-dir --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu128 --no-warn-script-location
-    if ($LASTEXITCODE -ne 0) { throw "torch cu128 install failed" }
+    $torchArgs = @("--python", $pyExe, "install", "--force-reinstall", "--no-warn-script-location", "torch", "torchvision")
+    if ($hasWheels) {
+      $torchArgs = @("--python", $pyExe, "install", "--no-index", "--find-links", $wheelDir, "--force-reinstall", "--no-warn-script-location", "torch", "torchvision")
+      Write-Host "FullKit torch from wheel cache (expect cu128 wheels present)" -ForegroundColor Yellow
+    } else {
+      $torchArgs += @("--no-cache-dir", "--index-url", "https://download.pytorch.org/whl/cu128")
+    }
+    & $HostPy -m pip @torchArgs
+    $bakeEc = $LASTEXITCODE
+    if ($bakeEc -ne 0) { throw "torch cu128 install failed" }
+    & $pyExe -c "import torch; assert torch.version.cuda, 'expected CUDA wheel'; print('STAGE_TORCH', torch.__version__, torch.version.cuda)"
+    if ($LASTEXITCODE -ne 0) { throw "staged torch CUDA wheel check failed" }
+  } elseif ($FullKit -and $mirrorHost) {
+    Write-Host "FullKit: host mirror already includes torch — verifying CUDA..." -ForegroundColor Yellow
     & $pyExe -c "import torch; assert torch.version.cuda, 'expected CUDA wheel'; print('STAGE_TORCH', torch.__version__, torch.version.cuda)"
     if ($LASTEXITCODE -ne 0) { throw "staged torch CUDA wheel check failed" }
   }
@@ -364,7 +518,7 @@ if ($FullKit) {
     throw @"
 FullKit: model qwen2.5vl:7b not found.
 
-Checked OLLAMA_MODELS, D:\LLM\ollama, %USERPROFILE%\.ollama.
+Checked: -OllamaModelsRoot, OLLAMA_MODELS, %USERPROFILE%\.ollama (and .ollama\models).
 
 On the build machine run:
   ollama pull qwen2.5vl:7b
@@ -386,26 +540,56 @@ Or pass -OllamaModelsRoot path\to\store (folder with blobs\ + manifests\).
   if (Test-Path -LiteralPath $readmeFull) {
     Copy-Item $readmeFull (Join-Path $Stage "PORTABLE_README.md") -Force
   }
+
+  # 3D sidecars (COLMAP + gsplat examples)
+  Write-Host "FullKit: bundling 3D sidecars..." -ForegroundColor Yellow
+  $sidecarDest = Join-Path $Stage "sidecars"
+  New-Item -ItemType Directory -Force -Path $sidecarDest | Out-Null
+  $colmapSrc = Join-Path $Repo "sidecars\colmap"
+  if (Test-Path -LiteralPath $colmapSrc) {
+    Copy-Item -LiteralPath $colmapSrc -Destination (Join-Path $sidecarDest "colmap") -Recurse -Force
+    Write-Host "  sidecars\colmap copied"
+  } else {
+    Write-Host "WARNING: sidecars\colmap missing — 3D recon will be unavailable in this ZIP." -ForegroundColor Yellow
+  }
+  $gsplatSrc = Join-Path $Repo "sidecars\gsplat_examples"
+  if (Test-Path -LiteralPath $gsplatSrc) {
+    Copy-Item -LiteralPath $gsplatSrc -Destination (Join-Path $sidecarDest "gsplat_examples") -Recurse -Force
+    Write-Host "  sidecars\gsplat_examples copied"
+  } else {
+    Write-Host "WARNING: sidecars\gsplat_examples missing — gsplat train may be unavailable." -ForegroundColor Yellow
+  }
 }
 
-$kitLabel = if ($FullKit) { "Full Field Kit" } else { "Portable Lite" }
+$kitLabel = if ($FullKit) { "Full Field Kit" } elseif ($NoDetectWeights) { "Mini (no detect weights)" } else { "Portable Lite" }
+$modelsLine = if ($NoDetectWeights) {
+  "assets\models\        (empty — import .pt via USB / Система)"
+} else {
+  "assets\models\        (detect .pt; no seg/SAM in Lite copy filter)"
+}
+$sidecarLine = if ($FullKit) {
+  "sidecars\colmap\      (COLMAP)`nsidecars\gsplat_examples\  (trainer)`nollama\               (ollama.exe + models/qwen2.5vl)`nPORTABLE_README.md"
+} else {
+  "README.md"
+}
 $note = @"
-MuraveiVision PRO v3.0 — $kitLabel
+MuraveiVision PRO v3.1 — $kitLabel
 =================================
 Запустить.bat
 muravei_env\          (embeddable Python 3.12.10 + packages$(if ($FullKit) { ' + torch cu128' }))
 dist\                 (UI + CSP)
 backend\              (FastAPI)
-assets\models\        (detect .pt)
+$modelsLine
 runs\detect\train\weights\
 archive\ crops\ recordings\ captures\
 military_classes.yaml
-$(if ($FullKit) { "ollama\               (ollama.exe + models/qwen2.5vl)`nPORTABLE_README.md" } else { "README.md" })
+$sidecarLine
 
 PIN: operator 1234567 / engineer 0000000 / master 0987907
 
 Python: ONLY muravei_env (3.12) — never system 3.14.
 CPU Intel/AMD amd64 OK; NVIDIA recommended for realtime YOLO/VLM.
+Offline map tiles (assets/map_tiles) are NOT in this ZIP — ship separately if needed.
 "@
 Set-Content -LiteralPath (Join-Path $Stage "PORTABLE.txt") -Value $note -Encoding UTF8
 

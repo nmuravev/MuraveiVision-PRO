@@ -9,6 +9,8 @@ runs/
 assets/models/*.pt
 assets/models/*.pth
 assets/models/*.onnx
+assets/map_tiles/
+assets/map_tiles.mbtiles
 
 # Build artifacts
 dist/
@@ -67,6 +69,7 @@ ollama/models/
 # Runtime DB / secrets / test artifacts (user data — never commit)
 muravei.db
 muravei.db-*
+muravei.db.backup
 .env
 .env.*
 playwright-report/

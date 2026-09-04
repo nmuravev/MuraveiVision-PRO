@@ -13,6 +13,7 @@ import {
 } from '../types/muravei';
 import { classLabelRu } from '../lib/classLabels';
 import { mediaPathsMatch } from '../lib/mediaPaths';
+import { SILENT_API_ERROR_HEADER } from '../lib/apiError';
 
 export function authHeaders(): HeadersInit {
   const token = localStorage.getItem('muravei-token');
@@ -25,13 +26,14 @@ export function authToken(): string {
   return localStorage.getItem('muravei-token') || '';
 }
 
-export function detectionCropSrc(id: string, cropPath?: string | null): string {
+/** Crop image URL — always detections API (never media/stream with raw crop_path). */
+export function detectionCropSrc(id: string, _cropPath?: string | null): string {
   const token = encodeURIComponent(authToken());
-  if (cropPath) {
-    return `/api/media/stream?path=${encodeURIComponent(cropPath)}&token=${token}`;
-  }
-  return `/api/detections/${id}/crop?token=${token}`;
+  return `/api/detections/${encodeURIComponent(id)}/crop?token=${token}`;
 }
+
+/** Ensure Viewer sourcePath is under archive/ for media/stream. */
+export { toArchiveMediaPath as archiveMediaPath } from '../lib/mediaPaths';
 
 export function xyxyFromRow(row: PersistedDetection): BoundingBox {
   return {
@@ -249,7 +251,6 @@ export const useMuraveiStore = create<MuraveiState>((set, get) => ({
 
   hydrateDetections: async (sourceVideo) => {
     const prevHydrated = get().hydratedSourceVideo;
-    console.log('[Store] hydrateDetections:', { sourceVideo, previous: prevHydrated });
 
     if (hydrateAbort) {
       hydrateAbort.abort();
@@ -258,7 +259,6 @@ export const useMuraveiStore = create<MuraveiState>((set, get) => ({
 
     const path = (sourceVideo || '').trim();
     if (!path) {
-      console.log('[Store] clearDetections (no sourceVideo)');
       set({
         detections: [],
         suppressedDetections: [],
@@ -284,7 +284,40 @@ export const useMuraveiStore = create<MuraveiState>((set, get) => ({
       const data = await res.json();
       if (signal.aborted) return;
 
-      const rows = (data.detections ?? []) as PersistedDetection[];
+      let rows = (data.detections ?? []) as PersistedDetection[];
+      const needsGps = rows.some(
+        (d) => !d.is_deleted && (d.gps_lat == null || d.gps_lon == null),
+      );
+      if (needsGps && !mediaPathsMatch(prevHydrated || '', path)) {
+        try {
+          const geoRes = await fetch('/api/geo/import', {
+            method: 'POST',
+            headers: {
+              ...authHeaders(),
+              [SILENT_API_ERROR_HEADER]: '1',
+            },
+            body: JSON.stringify({ video_path: path }),
+            signal,
+          });
+          if (signal.aborted) return;
+          if (geoRes.ok) {
+            const geo = (await geoRes.json().catch(() => ({}))) as { backfilled?: number };
+            if ((geo.backfilled ?? 0) > 0) {
+              const res2 = await fetch(`/api/detections?${params.toString()}`, {
+                headers: authHeaders(),
+                signal,
+              });
+              if (signal.aborted) return;
+              if (res2.ok) {
+                const data2 = await res2.json();
+                rows = (data2.detections ?? rows) as PersistedDetection[];
+              }
+            }
+          }
+        } catch (geoErr) {
+          if ((geoErr as Error).name === 'AbortError') return;
+        }
+      }
       const live = rows.filter((d) => !d.is_deleted);
       const serverSuppressed = rows.filter((d) => d.is_deleted);
       // Preserve in-memory live-dismiss stubs for this source across remounts
@@ -297,7 +330,6 @@ export const useMuraveiStore = create<MuraveiState>((set, get) => ({
       const suppressed = [...serverSuppressed, ...clientStubs];
       const activeId = get().activeDetectionId;
       const activeRow = live.find((d) => d.id === activeId);
-      console.log('[Store] loaded detections:', { sourceVideo: path, count: live.length });
       set({
         detections: live,
         suppressedDetections: suppressed,

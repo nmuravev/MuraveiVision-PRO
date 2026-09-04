@@ -96,11 +96,21 @@ async def export_dataset_zip(
 
 class TrainStartBody(BaseModel):
     epochs: int = Field(default=10, ge=1, le=50)
+    resume_from: str | None = None
+    imgsz: int = Field(default=640, ge=320, le=1024)
+    batch: int = Field(default=4, ge=1, le=8)
 
 
 @router.get("/api/train/status")
 async def train_status(_user: dict[str, Any] = Depends(require_role("operator"))) -> dict[str, Any]:
     return trainer.status()
+
+
+@router.get("/api/train/checkpoints")
+async def train_checkpoints(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    return trainer.list_checkpoints()
 
 
 @router.post("/api/train/start")
@@ -109,12 +119,22 @@ async def train_start(
     _user: dict[str, Any] = Depends(require_role("operator")),
 ) -> dict[str, Any]:
     epochs = body.epochs if body else 10
+    resume_from = body.resume_from if body else None
+    imgsz = body.imgsz if body else 640
+    batch = body.batch if body else 4
     try:
-        return trainer.start(epochs=epochs)
+        return trainer.start(
+            epochs=epochs,
+            resume_from=resume_from,
+            imgsz=imgsz,
+            batch=batch,
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

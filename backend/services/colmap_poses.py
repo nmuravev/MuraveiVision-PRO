@@ -104,8 +104,11 @@ def export_camera_poses(
     frame_times: dict[str, float],
     t_start: float = 0.0,
     fps_sample: float = 1.0,
+    hud_crop: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Build camera_poses.json from COLMAP sparse/0 text model."""
+    from services.hud_exclusion import map_intrinsics_to_full_frame
+
     sparse_dir = Path(sparse_dir)
     cameras_txt = sparse_dir / "cameras.txt"
     images_txt = sparse_dir / "images.txt"
@@ -114,11 +117,15 @@ def export_camera_poses(
 
     cameras = _parse_cameras_txt(cameras_txt)
     images = _parse_images_txt(images_txt)
+    full_w = int((hud_crop or {}).get("full_width") or 0)
+    full_h = int((hud_crop or {}).get("full_height") or 0)
     frames: list[dict[str, Any]] = []
     for idx, img in enumerate(sorted(images, key=lambda x: x["image"])):
         cam = cameras.get(img["camera_id"], {})
         intr = cam.get("intrinsics") or {"fx": 1000.0, "fy": 1000.0, "cx": 960.0, "cy": 540.0}
         size = cam.get("image_size") or {"width": 1920, "height": 1080}
+        if hud_crop and full_w > 0 and full_h > 0:
+            intr, size = map_intrinsics_to_full_frame(intr, size, hud_crop, full_w, full_h)
         name = img["image"]
         time_sec = frame_times.get(name)
         if time_sec is None:
@@ -142,6 +149,13 @@ def export_camera_poses(
         "fps_sample": fps_sample,
         "frames": frames,
     }
+    if hud_crop:
+        payload["hud_crop"] = {
+            "top": float(hud_crop.get("top") or 0),
+            "bottom": float(hud_crop.get("bottom") or 0),
+            "left": float(hud_crop.get("left") or 0),
+            "right": float(hud_crop.get("right") or 0),
+        }
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return payload

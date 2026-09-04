@@ -7,6 +7,17 @@ export interface NetworkConfig {
   server_ip: string;
   port: number;
   base_name: string;
+  base_id?: string;
+  has_hub_pin?: boolean;
+}
+
+export interface NetworkStatus {
+  mode: string;
+  base_id: string;
+  last_sync_ts: number | null;
+  last_error: string | null;
+  hub_reachable: boolean;
+  worker_alive: boolean;
 }
 
 export interface NetworkBase {
@@ -41,12 +52,14 @@ export interface NetworkMessage {
 
 interface NetworkState {
   config: NetworkConfig;
+  status: NetworkStatus | null;
   bases: NetworkBase[];
   targets: NetworkTarget[];
   messages: NetworkMessage[];
   error: string | null;
   loadConfig: () => Promise<void>;
-  saveConfig: (patch: Partial<NetworkConfig>) => Promise<void>;
+  saveConfig: (patch: Partial<NetworkConfig> & { hub_pin?: string }) => Promise<void>;
+  fetchStatus: () => Promise<void>;
   fetchBases: () => Promise<void>;
   fetchTargets: () => Promise<void>;
   fetchMessages: () => Promise<void>;
@@ -69,6 +82,7 @@ const defaultConfig: NetworkConfig = {
 
 export const useNetworkStore = create<NetworkState>((set, get) => ({
   config: defaultConfig,
+  status: null,
   bases: [],
   targets: [],
   messages: [],
@@ -85,6 +99,8 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
           server_ip: data.server_ip || '127.0.0.1',
           port: data.port || 8000,
           base_name: data.base_name || 'База-1',
+          base_id: data.base_id || '',
+          has_hub_pin: Boolean(data.has_hub_pin),
         },
         error: null,
       });
@@ -96,11 +112,19 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   },
 
   saveConfig: async (patch) => {
-    const next = { ...get().config, ...patch };
+    const { hub_pin, ...rest } = patch;
+    const next = { ...get().config, ...rest };
+    const body: Record<string, unknown> = {
+      mode: next.mode,
+      server_ip: next.server_ip,
+      port: next.port,
+      base_name: next.base_name,
+    };
+    if (hub_pin && hub_pin.trim()) body.hub_pin = hub_pin.trim();
     const res = await fetch('/api/network/config', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify(next),
+      body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Ошибка сохранения');
@@ -110,9 +134,27 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
         server_ip: data.server_ip,
         port: data.port,
         base_name: data.base_name,
+        base_id: data.base_id || next.base_id,
+        has_hub_pin: Boolean(data.has_hub_pin),
       },
     });
     logger.info('network', `Режим сети: ${data.mode}`);
+  },
+
+  fetchStatus: async () => {
+    const res = await fetch('/api/network/status', { headers: authHeaders() });
+    if (!res.ok) return;
+    const data = await res.json();
+    set({
+      status: {
+        mode: data.mode || '',
+        base_id: data.base_id || '',
+        last_sync_ts: data.last_sync_ts ?? null,
+        last_error: data.last_error ?? null,
+        hub_reachable: Boolean(data.hub_reachable),
+        worker_alive: Boolean(data.worker_alive),
+      },
+    });
   },
 
   fetchBases: async () => {

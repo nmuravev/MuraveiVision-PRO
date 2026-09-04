@@ -36,16 +36,35 @@ def archive_root() -> Path:
     return (BASE_DIR / "archive").resolve()
 
 
-def assert_in_archive(path: str | Path) -> Path:
-    """Resolve path and reject anything outside archive/. Raises HTTP 403."""
+def resolve_under_archive(path: str | Path) -> Path:
+    """Join relative paths under archive/; reject traversal. Absolute must stay under archive.
+
+    KEEP: used by media/crops — do not weaken confinement.
+    """
     init_db()
-    target = safe_path_resolve(path)
+    raw = str(path or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty path")
+    p = Path(raw)
     root = archive_root()
+    if p.is_absolute():
+        target = safe_path_resolve(p)
+    else:
+        # Strip optional archive/ prefix so crops/x.jpg and archive/crops/x.jpg both work
+        norm = raw.replace("\\", "/").lstrip("/")
+        if norm.lower().startswith("archive/"):
+            norm = norm[len("archive/") :]
+        target = safe_path_resolve(root / norm)
     try:
         target.relative_to(root)
     except ValueError as exc:
         raise HTTPException(status_code=403, detail="Path outside archive") from exc
     return target
+
+
+def assert_in_archive(path: str | Path) -> Path:
+    """Resolve path under archive/ (relative → archive_root). Raises HTTP 403 if outside."""
+    return resolve_under_archive(path)
 
 
 def decode_token(token: str) -> dict[str, Any]:

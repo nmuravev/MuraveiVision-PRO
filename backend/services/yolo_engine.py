@@ -302,6 +302,14 @@ class YoloEngine:
             print(f"[YOLO] force_load missing: {weights}")
             return False
         try:
+            self.model = None
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:  # noqa: BLE001
+                pass
             if not self._try_load(weights):
                 return False
             self.model_name = weights.name

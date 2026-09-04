@@ -17,9 +17,11 @@ class ConfigBody(BaseModel):
     server_ip: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     base_name: str = "База-1"
+    hub_pin: str | None = None
 
 
 class TargetBody(BaseModel):
+    id: str | None = None
     class_name: str
     confidence: float = 0.0
     gps_lat: float | None = None
@@ -55,12 +57,22 @@ async def post_config(
         server_ip=body.server_ip,
         port=body.port,
         base_name=body.base_name,
+        hub_pin=body.hub_pin,
     )
 
 
 @router.get("/bases")
 async def get_bases(_user: dict[str, Any] = Depends(require_role("operator"))) -> dict[str, Any]:
     return {"bases": net.list_bases()}
+
+
+@router.get("/status")
+async def get_network_status(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    from services import network_sync as nsync
+
+    return nsync.status_dict()
 
 
 @router.post("/heartbeat")
@@ -73,8 +85,11 @@ async def post_heartbeat(
 
 
 @router.get("/targets")
-async def get_targets(_user: dict[str, Any] = Depends(require_role("operator"))) -> dict[str, Any]:
-    return {"targets": net.list_targets()}
+async def get_targets(
+    since: float | None = None,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    return {"targets": net.list_targets(since=since)}
 
 
 @router.post("/targets")
@@ -95,18 +110,7 @@ async def post_target(
         source_base=body.source_base or cfg.get("base_name") or str(user.get("role")),
         source_video=body.source_video,
         notes=body.notes,
-    )
-    # Mirror as incoming for local demo / multi-client same DB
-    net.add_target(
-        direction="in",
-        class_name=body.class_name,
-        confidence=body.confidence,
-        gps_lat=body.gps_lat,
-        gps_lon=body.gps_lon,
-        crop_path=body.crop_path,
-        source_base=body.source_base or cfg.get("base_name"),
-        source_video=body.source_video,
-        notes=body.notes,
+        target_id=body.id,
     )
     return {"ok": True, "target": row}
 
@@ -126,5 +130,4 @@ async def post_message(
         raise HTTPException(status_code=400, detail="Сеть выключена (mode=off)")
     sender = cfg.get("base_name") or str(user.get("role"))
     msg = net.add_message(direction="out", sender=str(sender), body=body.body)
-    net.add_message(direction="in", sender=str(sender), body=body.body)
     return {"ok": True, "message": msg}

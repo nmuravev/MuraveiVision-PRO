@@ -1,16 +1,18 @@
-"""3D reconstruction API — COLMAP sidecar + SSE progress."""
+"""3D reconstruction API — COLMAP sidecar + SSE progress + gsplat train presets."""
 from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from services import recon_scanner
+from services import recon_scanner, recon_train
 from services.security import require_role
+from services.train_presets import presets_for_client
 
 router = APIRouter(tags=["recon"])
 
@@ -28,6 +30,11 @@ class ManifestPatchBody(BaseModel):
     rotation_x: float | None = None
 
 
+class TrainStartBody(BaseModel):
+    job_id: str = Field(..., min_length=8, max_length=32)
+    preset: str = Field(..., min_length=1, max_length=32)
+
+
 @router.get("/api/recon/status")
 async def recon_status(_user: dict[str, Any] = Depends(require_role("operator"))) -> dict[str, Any]:
     return recon_scanner.status()
@@ -38,6 +45,8 @@ async def recon_start(
     body: ReconStartBody,
     _user: dict[str, Any] = Depends(require_role("operator")),
 ) -> dict[str, Any]:
+    if recon_train.status().get("status") == "training":
+        raise HTTPException(status_code=409, detail="Дождитесь завершения обучения 3D")
     try:
         return recon_scanner.start(
             video_path=body.video_path,
@@ -64,6 +73,7 @@ async def recon_stop(_user: dict[str, Any] = Depends(require_role("operator"))) 
 async def recon_stream(_user: dict[str, Any] = Depends(require_role("operator"))) -> StreamingResponse:
     async def gen():
         idx = 0
+        last_status_push = 0.0
         yield f"data: {json.dumps({'type': 'status', **recon_scanner.status()}, ensure_ascii=False)}\n\n"
         while True:
             events, idx = recon_scanner.drain_events(idx)
@@ -75,6 +85,11 @@ async def recon_stream(_user: dict[str, Any] = Depends(require_role("operator"))
             if st.get("status") in ("done", "colmap_done", "error", "idle") and not events:
                 yield f"data: {json.dumps({'type': 'status', **st}, ensure_ascii=False)}\n\n"
                 return
+            # Heartbeat while running so long mapper stages refresh FE without new events
+            now = time.monotonic()
+            if st.get("status") == "running" and (now - last_status_push) >= 2.0 and not events:
+                yield f"data: {json.dumps({'type': 'status', **st}, ensure_ascii=False)}\n\n"
+                last_status_push = now
             await asyncio.sleep(0.4)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
@@ -92,8 +107,12 @@ async def recon_manifest(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not man:
-        return {"manifest": None}
-    return {"manifest": man}
+        return {"manifest": None, "colmap_available": recon_scanner.colmap_available()}
+    return {
+        "manifest": man,
+        "colmap_available": recon_scanner.colmap_available(),
+        "colmap_path": recon_scanner.colmap_path(),
+    }
 
 
 @router.patch("/api/recon/manifest/{job_id}")
@@ -146,3 +165,63 @@ async def recon_asset(
         ".jpg": "image/jpeg",
     }
     return FileResponse(path, media_type=media.get(path.suffix.lower(), "application/octet-stream"))
+
+
+@router.get("/api/recon/train/presets")
+async def recon_train_presets(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    return {"presets": presets_for_client(), "colmap_running": recon_scanner.status().get("status") == "running"}
+
+
+@router.get("/api/recon/train/status")
+async def recon_train_status(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    return recon_train.status()
+
+
+@router.post("/api/recon/train/start")
+async def recon_train_start(
+    body: TrainStartBody,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    try:
+        return recon_train.start(body.job_id, body.preset)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/api/recon/train/stop")
+async def recon_train_stop(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    return recon_train.stop()
+
+
+@router.get("/api/recon/train/stream")
+async def recon_train_stream(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> StreamingResponse:
+    async def gen():
+        idx = 0
+        yield f"data: {json.dumps({'type': 'status', **recon_train.status()}, ensure_ascii=False)}\n\n"
+        while True:
+            events, idx = recon_train.drain_events(idx)
+            for ev in events:
+                yield f"data: {json.dumps({'type': 'progress', **ev}, ensure_ascii=False)}\n\n"
+                if ev.get("status") in ("done", "error", "idle"):
+                    return
+            st = recon_train.status()
+            if st.get("status") in ("done", "error", "idle") and not events:
+                yield f"data: {json.dumps({'type': 'status', **st}, ensure_ascii=False)}\n\n"
+                return
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")

@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Eye, KeyRound, RefreshCw, Upload, Cpu } from 'lucide-react';
+import { AlertTriangle, Eye, KeyRound, RefreshCw, Upload, Cpu, Usb } from 'lucide-react';
 import { authHeaders, useMuraveiStore } from '../../store/useMuraveiStore';
 import { ClassDictionary } from './ClassDictionary';
+import { Modal } from '../ui';
 
 type Hw = Record<string, unknown>;
 
@@ -22,6 +23,31 @@ export const AdminPanel: React.FC = () => {
   const [pinRole, setPinRole] = useState('operator');
   const [masterPin, setMasterPin] = useState('');
   const [info, setInfo] = useState<string | null>(null);
+  const [usbBusy, setUsbBusy] = useState(false);
+  const [usbDrives, setUsbDrives] = useState<
+    Array<{
+      letter: string;
+      label: string;
+      files: Array<{
+        path: string;
+        name: string;
+        type: 'model' | 'classes';
+        size_mb: number;
+        valid: boolean;
+        nc?: number | null;
+        count?: number | null;
+        error?: string | null;
+      }>;
+    }>
+  >([]);
+  const [usbErrors, setUsbErrors] = useState<string[]>([]);
+  const [usbPending, setUsbPending] = useState<{
+    path: string;
+    type: 'model' | 'classes';
+    dest?: string;
+    message?: string;
+  } | null>(null);
+  const [usbResult, setUsbResult] = useState<string | null>(null);
 
   // Detection inference config (SAHI + Response Validator)
   type DetectCfg = {
@@ -33,9 +59,20 @@ export const AdminPanel: React.FC = () => {
     validator_min_bbox_area: number;
     validator_max_bbox_area: number;
     validator_min_confidence: number;
+    hud_exclude_archive: boolean;
+    hud_exclude_live: boolean;
   };
   const [detectCfg, setDetectCfg] = useState<DetectCfg | null>(null);
   const [detectCfgSaved, setDetectCfgSaved] = useState<string | null>(null);
+  const [segStatus, setSegStatus] = useState<{
+    ready: boolean;
+    loaded: boolean;
+    weight: string | null;
+    available: string[];
+  } | null>(null);
+  const [segWeightPick, setSegWeightPick] = useState('yolo26n-seg.pt');
+  const [segBusy, setSegBusy] = useState(false);
+  const [segMsg, setSegMsg] = useState<string | null>(null);
 
   const loadDetectCfg = useCallback(async () => {
     if (!isEng) return;
@@ -64,6 +101,30 @@ export const AdminPanel: React.FC = () => {
     if (!isAuthenticated || !isEng) return;
     void loadDetectCfg().catch((e) => setError(String(e)));
   }, [isAuthenticated, isEng, loadDetectCfg]);
+
+  const refreshSegStatus = useCallback(async () => {
+    const res = await fetch('/api/seg/status', { headers: authHeaders() });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      ready?: boolean;
+      loaded?: boolean;
+      weight?: string | null;
+      available?: string[];
+    };
+    const available = Array.isArray(data.available) ? data.available : [];
+    setSegStatus({
+      ready: Boolean(data.ready),
+      loaded: Boolean(data.loaded),
+      weight: data.weight ?? null,
+      available,
+    });
+    setSegWeightPick((prev) => (available.includes(prev) ? prev : available[0] || prev));
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !isEng) return;
+    void refreshSegStatus().catch(() => undefined);
+  }, [isAuthenticated, isEng, refreshSegStatus]);
 
   const refreshHw = useCallback(async () => {
     if (!isEng) return;
@@ -171,6 +232,80 @@ export const AdminPanel: React.FC = () => {
           /* ignore */
         }
       }
+    }
+  };
+
+  const scanUsb = async () => {
+    setError(null);
+    setUsbResult(null);
+    setUsbBusy(true);
+    try {
+      const res = await fetch('/api/models/usb-scan', { headers: authHeaders() });
+      const data = (await res.json()) as {
+        drives?: typeof usbDrives;
+        errors?: string[];
+        detail?: string;
+      };
+      if (!res.ok) throw new Error(data.detail || 'USB scan failed');
+      setUsbDrives(data.drives || []);
+      setUsbErrors(data.errors || []);
+    } finally {
+      setUsbBusy(false);
+    }
+  };
+
+  const previewUsb = async (file: { path: string; type: 'model' | 'classes' }) => {
+    setError(null);
+    const res = await fetch('/api/models/usb-import', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_path: file.path,
+        target_type: file.type,
+        confirm: false,
+      }),
+    });
+    const data = (await res.json()) as {
+      dest_path?: string;
+      message?: string;
+      detail?: string;
+      valid?: boolean;
+      error?: string;
+    };
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'preview failed');
+    if (data.valid === false) throw new Error(data.error || 'Файл невалиден');
+    setUsbPending({
+      path: file.path,
+      type: file.type,
+      dest: data.dest_path,
+      message: data.message,
+    });
+  };
+
+  const confirmUsb = async () => {
+    if (!usbPending) return;
+    setUsbBusy(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/models/usb-import', {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_path: usbPending.path,
+          target_type: usbPending.type,
+          confirm: true,
+        }),
+      });
+      const data = (await res.json()) as {
+        success?: boolean;
+        message?: string;
+        detail?: string;
+      };
+      if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'import failed');
+      setUsbResult(data.message || (data.success ? 'Импортировано' : 'Ошибка'));
+      setUsbPending(null);
+    } finally {
+      setUsbBusy(false);
     }
   };
 
@@ -381,6 +516,32 @@ export const AdminPanel: React.FC = () => {
               </label>
             </div>
 
+            <div className="flex flex-col gap-1 text-[11px] border-t border-[var(--dv-border)] pt-2">
+              <div className="text-[var(--dv-text-muted)]">Исключить HUD (авто)</div>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  data-testid="cfg-hud-archive"
+                  checked={detectCfg.hud_exclude_archive !== false}
+                  onChange={(e) =>
+                    setDetectCfg({ ...detectCfg, hud_exclude_archive: e.target.checked })
+                  }
+                />
+                <span>Архив / скан / CD / recon (по умолчанию ВКЛ)</span>
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  data-testid="cfg-hud-live"
+                  checked={Boolean(detectCfg.hud_exclude_live)}
+                  onChange={(e) =>
+                    setDetectCfg({ ...detectCfg, hud_exclude_live: e.target.checked })
+                  }
+                />
+                <span>Live WS (по умолчанию ВЫКЛ)</span>
+              </label>
+            </div>
+
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -404,6 +565,82 @@ export const AdminPanel: React.FC = () => {
         )}
       </div>
 
+      <div className="border border-[var(--dv-border)] bg-[var(--dv-bg-deep)] p-3 space-y-2" data-testid="seg-config">
+        <div className="font-semibold">Сегментация (архив)</div>
+        <p className="text-[10px] text-[var(--dv-text-muted)]">
+          Только yolo26n-seg / yolo26s-seg. Не держите seg и detect вместе на 8 ГБ VRAM. Live не сегментируется.
+        </p>
+        {segStatus && (
+          <div className="text-[10px] font-mono text-[var(--dv-text-muted)]">
+            ready={segStatus.ready ? '1' : '0'} loaded={segStatus.loaded ? '1' : '0'}
+            {segStatus.weight ? ` · ${segStatus.weight}` : ''}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            className="bg-[#1a1a1a] border border-[var(--dv-border)] text-[11px] px-1 py-0.5"
+            value={segWeightPick}
+            onChange={(e) => setSegWeightPick(e.target.value)}
+            disabled={segBusy}
+          >
+            {(segStatus?.available?.length ? segStatus.available : ['yolo26n-seg.pt', 'yolo26s-seg.pt']).map(
+              (name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ),
+            )}
+          </select>
+          <button
+            type="button"
+            className="px-2 py-1 bg-[#333] rounded-sm disabled:opacity-40"
+            disabled={segBusy || !(segStatus?.available?.length)}
+            onClick={() => {
+              setSegBusy(true);
+              setSegMsg(null);
+              void fetch('/api/seg/load', {
+                method: 'POST',
+                headers: authHeaders(),
+                body: JSON.stringify({ weight: segWeightPick }),
+              })
+                .then(async (res) => {
+                  const data = await res.json().catch(() => ({}));
+                  if (!res.ok) throw new Error((data as { detail?: string }).detail || 'load failed');
+                  setSegMsg(`Загружено: ${(data as { weight?: string }).weight || segWeightPick}`);
+                  await refreshSegStatus();
+                })
+                .catch((err) => setError(String(err)))
+                .finally(() => setSegBusy(false));
+            }}
+          >
+            {segBusy ? '…' : 'Загрузить'}
+          </button>
+          <button
+            type="button"
+            className="px-2 py-1 bg-[#333] rounded-sm disabled:opacity-40"
+            disabled={segBusy || !segStatus?.loaded}
+            onClick={() => {
+              setSegBusy(true);
+              setSegMsg(null);
+              void fetch('/api/seg/unload', { method: 'POST', headers: authHeaders() })
+                .then(async (res) => {
+                  if (!res.ok) throw new Error('unload failed');
+                  setSegMsg('Выгружено');
+                  await refreshSegStatus();
+                })
+                .catch((err) => setError(String(err)))
+                .finally(() => setSegBusy(false));
+            }}
+          >
+            Выгрузить
+          </button>
+        </div>
+        {segMsg && <div className="text-[10px] text-[var(--dv-accent)]">{segMsg}</div>}
+        {segStatus && !segStatus.ready && (
+          <div className="text-[10px] text-red-400">Нет yolo26n-seg.pt / yolo26s-seg.pt в assets/models/</div>
+        )}
+      </div>
+
       <ClassDictionary />
 
       <div className="border border-[var(--dv-border)] bg-[var(--dv-bg-deep)] p-3 space-y-2">
@@ -420,6 +657,99 @@ export const AdminPanel: React.FC = () => {
         {importLog.length > 0 && (
           <pre className="max-h-24 overflow-auto text-[10px] bg-black/40 p-2">{importLog.join('\n')}</pre>
         )}
+      </div>
+
+      <div data-testid="usb-import" className="border border-[var(--dv-border)] bg-[var(--dv-bg-deep)] p-3 space-y-2">
+        <div className="font-semibold flex items-center gap-2">
+          <Usb size={14} /> Импорт с USB
+        </div>
+        <p className="text-[10px] text-[var(--dv-text-muted)]">
+          Съёмный диск: .pt (nc 12 или 238) и словарь классов YAML. Текущий файл сохраняется как .backup.
+          Модель подхватывается без перезапуска.
+        </p>
+        <button
+          type="button"
+          className="px-2 py-1 bg-[#333] rounded-sm disabled:opacity-40"
+          disabled={usbBusy}
+          onClick={() => void scanUsb().catch((e) => setError(String(e)))}
+        >
+          {usbBusy ? 'Сканирование…' : 'Сканировать USB'}
+        </button>
+        {usbErrors.map((e) => (
+          <div key={e} className="text-[10px] text-[var(--dv-text-muted)]">
+            {e}
+          </div>
+        ))}
+        {usbDrives.map((drive) => (
+          <div key={drive.letter} className="border border-[var(--dv-border)]/60 p-2 space-y-1">
+            <div className="text-[11px] font-semibold">
+              {drive.letter} {drive.label ? `· ${drive.label}` : ''}
+            </div>
+            {drive.files.length === 0 && (
+              <div className="text-[10px] text-[var(--dv-text-muted)]">Нет .pt / .yaml</div>
+            )}
+            {drive.files.map((file) => (
+              <div
+                key={file.path}
+                className="flex flex-wrap items-center gap-2 text-[10px] py-0.5 border-t border-[var(--dv-border)]/40"
+              >
+                <span className="truncate max-w-[14rem]" title={file.path}>
+                  {file.name}
+                </span>
+                <span className="text-[var(--dv-text-muted)]">{file.size_mb} MB</span>
+                <span className={file.valid ? 'text-emerald-400' : 'text-red-400'}>
+                  {file.valid ? 'валиден' : 'невалиден'}
+                </span>
+                {file.type === 'model' && file.nc != null && <span>nc={file.nc}</span>}
+                {file.type === 'classes' && file.count != null && <span>{file.count} классов</span>}
+                {file.error && (
+                  <span className="text-[var(--dv-text-muted)] truncate max-w-[12rem]">{file.error}</span>
+                )}
+                <button
+                  type="button"
+                  className="px-1.5 py-0.5 bg-[#333] rounded-sm disabled:opacity-40"
+                  disabled={!file.valid || usbBusy}
+                  onClick={() => void previewUsb(file).catch((e) => setError(String(e)))}
+                >
+                  Предпросмотр
+                </button>
+              </div>
+            ))}
+          </div>
+        ))}
+        {usbResult && <div className="text-[11px] text-[var(--dv-accent)]">{usbResult}</div>}
+        <Modal
+          open={Boolean(usbPending)}
+          title="Импорт с USB"
+          onClose={() => setUsbPending(null)}
+          footer={
+            <>
+              <button type="button" className="px-2 py-1 bg-[#333] rounded-sm" onClick={() => setUsbPending(null)}>
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="px-2 py-1 bg-[var(--dv-accent)] text-black rounded-sm disabled:opacity-40"
+                disabled={usbBusy}
+                onClick={() => void confirmUsb().catch((e) => setError(String(e)))}
+              >
+                Да, импортировать
+              </button>
+            </>
+          }
+        >
+          {usbPending && (
+            <div className="space-y-1 text-[12px]">
+              <p>{usbPending.message || `Импортировать ${usbPending.path}?`}</p>
+              {usbPending.dest && (
+                <p className="text-[10px] text-[var(--dv-text-muted)] font-mono break-all">{usbPending.dest}</p>
+              )}
+              <p className="text-[10px] text-[var(--dv-text-muted)]">
+                Текущий файл будет сохранён как .backup
+              </p>
+            </div>
+          )}
+        </Modal>
       </div>
 
       <div className="border border-[var(--dv-border)] bg-[var(--dv-bg-deep)] p-3 space-y-2">

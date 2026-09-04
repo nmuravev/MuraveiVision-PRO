@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from services.classes import get_class_catalog, ui_name_by_index
@@ -21,7 +21,9 @@ from services.db import (
     soft_delete_detections_for_source,
     update_detection,
 )
-from services.security import assert_in_archive, require_role
+from services.export_csv import generate_detections_csv
+from services.security import require_role, resolve_under_archive
+from services.telemetry import attach_gps
 
 router = APIRouter(prefix="/api/detections", tags=["detections"])
 
@@ -184,6 +186,24 @@ async def detections_list(
     return {"detections": rows}
 
 
+@router.get("/export")
+async def detections_export_csv(
+    source_video: str = Query(..., min_length=1),
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> Response:
+    key = normalize_media_path(source_video)
+    if not key:
+        raise HTTPException(status_code=400, detail="source_video required")
+    csv_content = generate_detections_csv(key)
+    safe_name = key.replace("/", "_").replace("\\", "_")
+    filename = f"detections_{safe_name}.csv"
+    return Response(
+        content=csv_content,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.delete("")
 async def detections_delete_all_for_source(
     source_video: str = Query(..., min_length=1),
@@ -208,24 +228,26 @@ async def detections_create(
     class_name = _resolve_name(body.class_id, body.class_name)
     source_video = normalize_media_path(body.source_video)
     row = insert_detection(
-        {
-            "id": body.id,
-            "source_video": source_video,
-            "time_sec": body.time_sec,
-            "frame_idx": body.frame_idx,
-            "class_id": body.class_id,
-            "class_name": class_name,
-            "confidence": body.confidence,
-            "bbox_x": x,
-            "bbox_y": y,
-            "bbox_w": w,
-            "bbox_h": h,
-            "is_edited": 1,
-            "edited_by": user.get("role"),
-            "edited_at": time.time(),
-            "user_notes": body.user_notes,
-            "origin": body.origin if body.origin in {"auto", "manual", "batch_scan"} else "manual",
-        }
+        attach_gps(
+            {
+                "id": body.id,
+                "source_video": source_video,
+                "time_sec": body.time_sec,
+                "frame_idx": body.frame_idx,
+                "class_id": body.class_id,
+                "class_name": class_name,
+                "confidence": body.confidence,
+                "bbox_x": x,
+                "bbox_y": y,
+                "bbox_w": w,
+                "bbox_h": h,
+                "is_edited": 1,
+                "edited_by": user.get("role"),
+                "edited_at": time.time(),
+                "user_notes": body.user_notes,
+                "origin": body.origin if body.origin in {"auto", "manual", "batch_scan"} else "manual",
+            }
+        )
     )
     jpeg = _decode_jpeg(body.frame_jpeg)
     if jpeg:
@@ -255,21 +277,23 @@ async def detections_commit(
             continue
         class_name = _resolve_name(obj.class_id, obj.class_name)
         row = insert_detection(
-            {
-                "source_video": source_video,
-                "time_sec": body.time_sec,
-                "frame_idx": body.frame_idx,
-                "class_id": obj.class_id,
-                "class_name": class_name,
-                "ai_class_name": class_name,
-                "confidence": obj.confidence,
-                "bbox_x": x,
-                "bbox_y": y,
-                "bbox_w": w,
-                "bbox_h": h,
-                "is_edited": 0,
-                "origin": "auto",
-            }
+            attach_gps(
+                {
+                    "source_video": source_video,
+                    "time_sec": body.time_sec,
+                    "frame_idx": body.frame_idx,
+                    "class_id": obj.class_id,
+                    "class_name": class_name,
+                    "ai_class_name": class_name,
+                    "confidence": obj.confidence,
+                    "bbox_x": x,
+                    "bbox_y": y,
+                    "bbox_w": w,
+                    "bbox_h": h,
+                    "is_edited": 0,
+                    "origin": "auto",
+                }
+            )
         )
         if jpeg:
             crop_path = save_crop_jpeg(
@@ -361,9 +385,19 @@ async def detections_crop(
     _user: dict[str, Any] = Depends(require_role("operator")),
 ):
     row = get_detection(det_id)
-    if not row or not row.get("crop_path"):
-        raise HTTPException(status_code=404, detail="Crop not found")
-    path = assert_in_archive(row["crop_path"])
-    if not path.is_file():
+    candidates: list[str] = []
+    if row and row.get("crop_path"):
+        candidates.append(str(row["crop_path"]))
+    candidates.append(f"crops/{det_id}.jpg")
+    path = None
+    for cand in candidates:
+        try:
+            p = resolve_under_archive(cand)
+        except HTTPException:
+            continue
+        if p.is_file():
+            path = p
+            break
+    if path is None:
         raise HTTPException(status_code=404, detail="Crop not found")
     return FileResponse(path, media_type="image/jpeg")

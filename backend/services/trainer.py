@@ -1,7 +1,8 @@
 """Quick-finetune YOLO from operator crops — SSE progress."""
 from __future__ import annotations
 
-import json
+import csv
+import re
 import shutil
 import threading
 import time
@@ -83,6 +84,152 @@ def _is_detect_base(path: Path) -> bool:
     return path.is_file() and path.stat().st_size > 1024
 
 
+_CKPT_NAME_RE = re.compile(r"^(last|best|epoch_?\d+)\.pt$", re.IGNORECASE)
+
+SAFE_IMGSZ_DEFAULT = 640
+SAFE_BATCH_DEFAULT = 4
+MAX_IMGSZ = 1024
+MAX_BATCH = 8
+
+
+def _empty_cuda() -> None:
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def vram_mb() -> int:
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            props = torch.cuda.get_device_properties(0)
+            return int(props.total_memory / (1024 * 1024))
+    except Exception:  # noqa: BLE001
+        pass
+    return 8192
+
+
+def clamp_imgsz(imgsz: int) -> int:
+    n = max(320, min(MAX_IMGSZ, int(imgsz)))
+    return max(320, (n // 32) * 32)
+
+
+def clamp_batch(batch: int) -> int:
+    return max(1, min(MAX_BATCH, int(batch)))
+
+
+def _ckpt_dirs() -> list[Path]:
+    return [
+        TRAIN_ROOT / "ultralytics" / "weights",
+        WEIGHTS_DIR,
+        BASE_DIR / "assets" / "models",
+    ]
+
+
+def _metrics_from_results_csv(weights_dir: Path) -> dict[str, Any] | None:
+    csv_path = weights_dir.parent / "results.csv"
+    if not csv_path.is_file():
+        return None
+    try:
+        with csv_path.open(encoding="utf-8", errors="replace", newline="") as fh:
+            rows = list(csv.DictReader(fh))
+        if not rows:
+            return None
+        last = {str(k).strip(): v for k, v in rows[-1].items()}
+        out: dict[str, Any] = {}
+        epoch_raw = last.get("epoch")
+        if epoch_raw not in (None, ""):
+            try:
+                out["epoch"] = int(float(epoch_raw))
+            except ValueError:
+                pass
+        for key, dest in (
+            ("metrics/mAP50(B)", "map50"),
+            ("metrics/mAP50-95(B)", "map50_95"),
+            ("train/box_loss", "box_loss"),
+            ("train/cls_loss", "cls_loss"),
+        ):
+            raw = last.get(key)
+            if raw in (None, ""):
+                continue
+            try:
+                out[dest] = round(float(raw), 4)
+            except ValueError:
+                continue
+        return out or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def list_checkpoints() -> dict[str, Any]:
+    """Scan detect checkpoints (last/best/epoch). Skip YOLOE-seg."""
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for folder in _ckpt_dirs():
+        if not folder.is_dir():
+            continue
+        metrics = _metrics_from_results_csv(folder)
+        for path in sorted(folder.glob("*.pt"), key=lambda p: p.stat().st_mtime, reverse=True):
+            if not _CKPT_NAME_RE.match(path.name):
+                continue
+            if not _is_detect_base(path):
+                continue
+            key = str(path.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            resumable = path.name.lower() == "last.pt"
+            items.append(
+                {
+                    "name": path.name,
+                    "path": str(path),
+                    "size_mb": round(path.stat().st_size / (1024 * 1024), 2),
+                    "mtime": path.stat().st_mtime,
+                    "resumable": resumable,
+                    "metrics": metrics,
+                    "dir": str(folder),
+                }
+            )
+    last_pt = next((c for c in items if c["name"].lower() == "last.pt" and c["resumable"]), None)
+    return {
+        "checkpoints": items,
+        "can_resume": last_pt is not None,
+        "resume_from": last_pt["name"] if last_pt else None,
+        "vram_mb": vram_mb(),
+        "safe_imgsz": SAFE_IMGSZ_DEFAULT,
+        "safe_batch": SAFE_BATCH_DEFAULT,
+    }
+
+
+def resolve_resume(resume_from: str) -> Path:
+    """Resolve a checkpoint basename under allowed dirs. Rejects seg and path traversal."""
+    raw = (resume_from or "").strip()
+    if not raw:
+        raise ValueError("resume_from пуст")
+    name = Path(raw.replace("\\", "/")).name
+    if not _CKPT_NAME_RE.match(name):
+        raise ValueError(f"Недопустимое имя чекпоинта: {name}")
+    lowered = name.lower()
+    if "seg" in lowered or "yoloe" in lowered:
+        raise ValueError("YOLOE/seg нельзя использовать как detect-train base")
+    for folder in _ckpt_dirs():
+        if not folder.is_dir():
+            continue
+        cand = (folder / name).resolve()
+        try:
+            cand.relative_to(folder.resolve())
+        except ValueError:
+            continue
+        if _is_detect_base(cand):
+            return cand
+    raise FileNotFoundError(f"Чекпоинт не найден: {name}")
+
+
 def _active_weights() -> Path:
     """
     Hard detect-only base for crop finetune.
@@ -123,8 +270,17 @@ def _resolve_train_device() -> str | int:
     return "cpu"
 
 
-def _train_batches(device: str | int) -> tuple[int, ...]:
-    return (16, 8, 4, 2) if device != "cpu" else (8, 4, 2)
+def _train_batches(device: str | int, requested: int) -> tuple[int, ...]:
+    start = clamp_batch(requested)
+    seq = [start]
+    n = start
+    while n > 1:
+        n = max(1, n // 2)
+        if n not in seq:
+            seq.append(n)
+    if device == "cpu" and 1 not in seq:
+        seq.append(1)
+    return tuple(seq)
 
 
 def _build_dataset(source_video: str | None = None) -> tuple[Path, int]:
@@ -205,127 +361,182 @@ def _atomic_promote(new_best: Path) -> Path:
     return target
 
 
-def _run(epochs: int = 10, source_video: str | None = None) -> None:
+def _run(
+    epochs: int = 10,
+    source_video: str | None = None,
+    resume_ckpt: Path | None = None,
+    imgsz: int = SAFE_IMGSZ_DEFAULT,
+    batch: int = SAFE_BATCH_DEFAULT,
+) -> None:
     global _thread
     try:
+        _empty_cuda()
         _emit({"status": "running", "message": "Preparing dataset…", "error": None})
         yaml_path, n = _build_dataset(source_video=source_video)
-        base = _active_weights()
         src_note = f" source={Path(source_video).name}" if source_video else ""
-        _emit(
-            {
-                "message": f"Dataset ready ({n} images){src_note}. Base model: {base.name}",
-                "epochs": epochs,
-            }
-        )
 
         from ultralytics import YOLO
 
-        print(f"[TRAIN] Инициализация обучения. Base model: {base.name}")
-        model = YOLO(str(base))
         device = _resolve_train_device()
-        batches = list(_train_batches(device))
-        last_err: Exception | None = None
         run_dir = TRAIN_ROOT / "ultralytics"
-        if run_dir.exists():
-            shutil.rmtree(run_dir, ignore_errors=True)
 
-        class _Cb:
-            def on_train_epoch_end(self, trainer):  # noqa: N802
-                if _stop.is_set():
-                    trainer.stop = True
-                metrics = getattr(trainer, "metrics", {}) or {}
-                loss = getattr(trainer, "loss_items", None)
-                box_loss = cls_loss = None
-                try:
-                    if loss is not None and len(loss) >= 2:
-                        box_loss = float(loss[0])
-                        cls_loss = float(loss[1])
-                except Exception:
-                    pass
-                epoch = int(getattr(trainer, "epoch", 0)) + 1
-                _emit(
-                    {
-                        "status": "running",
-                        "epoch": epoch,
-                        "epochs": int(getattr(trainer, "epochs", epochs)),
-                        "box_loss": box_loss,
-                        "cls_loss": cls_loss,
-                        "map50": float(metrics.get("metrics/mAP50(B)", metrics.get("mAP50", 0)) or 0)
-                        if metrics
-                        else None,
-                        "map50_95": float(
-                            metrics.get("metrics/mAP50-95(B)", metrics.get("mAP50-95", 0)) or 0
-                        )
-                        if metrics
-                        else None,
-                        "message": f"Epoch {epoch}/{epochs}",
-                    }
-                )
+        if resume_ckpt is not None:
+            if not _is_detect_base(resume_ckpt):
+                raise ValueError(f"Запрещённый чекпоинт (seg/yoloe): {resume_ckpt.name}")
+            _emit(
+                {
+                    "message": f"Resume from {resume_ckpt.name} ({n} images){src_note}",
+                    "epochs": epochs,
+                    "batch": batch,
+                }
+            )
+            _log(f"resume {resume_ckpt}")
+            print(f"[TRAIN] Resume from {resume_ckpt.name}")
+            model = YOLO(str(resume_ckpt))
+            _empty_cuda()
 
-        # Register once per training session — do not re-add on OOM batch retry.
-        model.add_callback("on_train_epoch_end", _Cb().on_train_epoch_end)
+            class _CbResume:
+                def on_train_epoch_end(self, trainer):  # noqa: N802
+                    if _stop.is_set():
+                        trainer.stop = True
+                    metrics = getattr(trainer, "metrics", {}) or {}
+                    epoch = int(getattr(trainer, "epoch", 0)) + 1
+                    total = int(getattr(trainer, "epochs", epochs))
+                    _emit(
+                        {
+                            "status": "running",
+                            "epoch": epoch,
+                            "epochs": total,
+                            "message": f"Epoch {epoch}/{total} (resume)",
+                            "map50": float(metrics.get("metrics/mAP50(B)", metrics.get("mAP50", 0)) or 0)
+                            if metrics
+                            else None,
+                        }
+                    )
 
-        for batch in batches:
-            if _stop.is_set():
-                _emit({"status": "idle", "message": "Stopped by user"})
-                return
+            model.add_callback("on_train_epoch_end", _CbResume().on_train_epoch_end)
             try:
-                _emit({"message": f"Training batch={batch} device={device} (detect)", "batch": batch})
-                model.train(
-                    data=str(yaml_path),
-                    task="detect",
-                    imgsz=1024,
-                    batch=batch,
-                    epochs=epochs,
-                    device=device,
-                    # Sprint 3: detect-only YOLO26 — MuSGD-style SGD + ProgLoss schedule
-                    optimizer="SGD",
-                    momentum=0.937,
-                    lr0=0.001,
-                    lrf=0.01,
-                    weight_decay=0.0005,
-                    box=7.5,
-                    cls=0.5,
-                    dfl=1.5,
-                    warmup_epochs=1.0,
-                    close_mosaic=max(1, int(epochs * 0.2)),
-                    # STAL-ish small-target emphasis via heavy copy-paste / light mosaic
-                    copy_paste=1.0,
-                    mosaic=0.5,
-                    mixup=0.0,
-                    project=str(TRAIN_ROOT),
-                    name="ultralytics",
-                    exist_ok=True,
-                    verbose=False,
-                    plots=False,
-                    save=True,
-                )
-                last_err = None
-                break
+                model.train(resume=True, device=device, verbose=False, plots=False)
             except Exception as exc:  # noqa: BLE001
-                last_err = exc
                 msg = str(exc).lower()
-                _log(f"batch={batch} failed: {exc}")
                 if "segment dataset" in msg or "len(segments)" in msg:
                     raise RuntimeError(
                         "Detect/segment mismatch — refusing seg weights for box crops. "
-                        f"Base was {base.name}. Need yolo26n.pt."
+                        f"Checkpoint was {resume_ckpt.name}."
                     ) from exc
-                if "out of memory" in msg or ("cuda" in msg and "memory" in msg):
-                    _emit({"message": f"OOM at batch={batch}, retrying smaller…"})
-                    try:
-                        import torch
-
-                        if torch.cuda.is_available():
-                            torch.cuda.empty_cache()
-                    except Exception:  # noqa: BLE001
-                        pass
-                    continue
                 raise
+        else:
+            base = _active_weights()
+            _emit(
+                {
+                    "message": (
+                        f"Dataset ready ({n} images){src_note}. Base model: {base.name} "
+                        f"imgsz={imgsz} batch={batch}"
+                    ),
+                    "epochs": epochs,
+                    "batch": batch,
+                }
+            )
+            print(f"[TRAIN] Инициализация обучения. Base model: {base.name}")
+            model = YOLO(str(base))
+            batches = list(_train_batches(device, batch))
+            last_err: Exception | None = None
+            if run_dir.exists():
+                shutil.rmtree(run_dir, ignore_errors=True)
 
-        if last_err is not None:
-            raise last_err
+            class _Cb:
+                def on_train_epoch_end(self, trainer):  # noqa: N802
+                    if _stop.is_set():
+                        trainer.stop = True
+                    metrics = getattr(trainer, "metrics", {}) or {}
+                    loss = getattr(trainer, "loss_items", None)
+                    box_loss = cls_loss = None
+                    try:
+                        if loss is not None and len(loss) >= 2:
+                            box_loss = float(loss[0])
+                            cls_loss = float(loss[1])
+                    except Exception:
+                        pass
+                    epoch = int(getattr(trainer, "epoch", 0)) + 1
+                    _emit(
+                        {
+                            "status": "running",
+                            "epoch": epoch,
+                            "epochs": int(getattr(trainer, "epochs", epochs)),
+                            "box_loss": box_loss,
+                            "cls_loss": cls_loss,
+                            "map50": float(metrics.get("metrics/mAP50(B)", metrics.get("mAP50", 0)) or 0)
+                            if metrics
+                            else None,
+                            "map50_95": float(
+                                metrics.get("metrics/mAP50-95(B)", metrics.get("mAP50-95", 0)) or 0
+                            )
+                            if metrics
+                            else None,
+                            "message": f"Epoch {epoch}/{epochs}",
+                        }
+                    )
+
+            model.add_callback("on_train_epoch_end", _Cb().on_train_epoch_end)
+
+            for b in batches:
+                if _stop.is_set():
+                    _emit({"status": "idle", "message": "Stopped by user"})
+                    return
+                try:
+                    _empty_cuda()
+                    _emit(
+                        {
+                            "message": f"Training batch={b} imgsz={imgsz} device={device} (detect)",
+                            "batch": b,
+                        }
+                    )
+                    model.train(
+                        data=str(yaml_path),
+                        task="detect",
+                        imgsz=imgsz,
+                        batch=b,
+                        epochs=epochs,
+                        device=device,
+                        optimizer="SGD",
+                        momentum=0.937,
+                        lr0=0.001,
+                        lrf=0.01,
+                        weight_decay=0.0005,
+                        box=7.5,
+                        cls=0.5,
+                        dfl=1.5,
+                        warmup_epochs=1.0,
+                        close_mosaic=max(1, int(epochs * 0.2)),
+                        copy_paste=1.0,
+                        mosaic=0.5,
+                        mixup=0.0,
+                        project=str(TRAIN_ROOT),
+                        name="ultralytics",
+                        exist_ok=True,
+                        verbose=False,
+                        plots=False,
+                        save=True,
+                    )
+                    last_err = None
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    last_err = exc
+                    msg = str(exc).lower()
+                    _log(f"batch={b} failed: {exc}")
+                    if "segment dataset" in msg or "len(segments)" in msg:
+                        raise RuntimeError(
+                            "Detect/segment mismatch — refusing seg weights for box crops. "
+                            f"Base was {base.name}. Need yolo26n.pt."
+                        ) from exc
+                    if "out of memory" in msg or ("cuda" in msg and "memory" in msg):
+                        _emit({"message": f"OOM at batch={b}, retrying smaller…"})
+                        _empty_cuda()
+                        continue
+                    raise
+
+            if last_err is not None:
+                raise last_err
 
         candidates = [
             TRAIN_ROOT / "ultralytics" / "weights" / "best.pt",
@@ -359,8 +570,20 @@ def _run(epochs: int = 10, source_video: str | None = None) -> None:
         with _lock:
             _thread = None
 
-def start(epochs: int = 10, source_video: str | None = None) -> dict[str, Any]:
+
+def start(
+    epochs: int = 10,
+    source_video: str | None = None,
+    resume_from: str | None = None,
+    imgsz: int = SAFE_IMGSZ_DEFAULT,
+    batch: int = SAFE_BATCH_DEFAULT,
+) -> dict[str, Any]:
     global _thread
+    ckpt: Path | None = None
+    if resume_from:
+        ckpt = resolve_resume(resume_from)
+    imgsz = clamp_imgsz(imgsz)
+    batch = clamp_batch(batch)
     with _lock:
         if _state["status"] == "running" or (_thread and _thread.is_alive()):
             raise RuntimeError("Training already running")
@@ -376,7 +599,7 @@ def start(epochs: int = 10, source_video: str | None = None) -> dict[str, Any]:
                 "cls_loss": None,
                 "map50": None,
                 "map50_95": None,
-                "batch": None,
+                "batch": batch,
                 "started_at": time.time(),
                 "finished_at": None,
                 "error": None,
@@ -384,7 +607,7 @@ def start(epochs: int = 10, source_video: str | None = None) -> dict[str, Any]:
         )
         _thread = threading.Thread(
             target=_run,
-            args=(epochs, source_video),
+            args=(epochs, source_video, ckpt, imgsz, batch),
             daemon=True,
             name="yolo-train",
         )

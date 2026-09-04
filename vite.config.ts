@@ -30,6 +30,8 @@ export default defineConfig({
         '**/runs/**',
         '**/muravei_env/**',
         '**/reports/**',
+        '**/portable/**',
+        '**/sidecars/**',
         '**/.backup/**',
         '**/openreel-reference/**',
       ],
@@ -39,5 +41,33 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const n = id.replace(/\\/g, '/');
+          if (n.includes('gaussian-splats-3d')) {
+            return 'vendor-splats';
+          }
+          if (n.includes('node_modules/three/examples')) {
+            return 'vendor-three-examples';
+          }
+          if (n.includes('node_modules/three')) {
+            return 'vendor-three';
+          }
+          if (n.includes('react-mosaic-component')) {
+            return 'vendor-mosaic';
+          }
+          if (
+            n.includes('node_modules/react/') ||
+            n.includes('node_modules/react-dom') ||
+            n.includes('node_modules/scheduler') ||
+            n.includes('node_modules/zustand')
+          ) {
+            return 'vendor-react';
+          }
+          return undefined;
+        },
+      },
+    },
   },
 })

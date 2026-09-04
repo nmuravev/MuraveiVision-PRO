@@ -18,8 +18,18 @@ import { useHotkeys } from './hooks/useHotkeys';
 import { useTimelineStore } from './store/timeline-store';
 import { useViewerStore } from './store/useViewerStore';
 import { useMuraveiStore } from './store/useMuraveiStore';
+import { useSam3Store } from './store/useSam3Store';
+import { useReconStore } from './store/useReconStore';
 import { SplashScreen, shouldShowSplash } from './components/SplashScreen';
+import { ErrorDetailsModal } from './components/ErrorDetailsModal';
+import {
+  SHOW_ERROR_MODAL_EVENT,
+  installApiErrorReporter,
+  type ApiErrorDetails,
+} from './lib/apiError';
 import { logger } from './services/logger';
+import { initSessionTrace } from './debug/sessionTrace';
+import { SessionTraceDock } from './components/debug/SessionTraceDock';
 
 function App() {
   const mosaicTree = usePanelLayoutStore((s) => s.mosaicTree);
@@ -32,9 +42,31 @@ function App() {
   const [layoutHydrated, setLayoutHydrated] = useState(
     () => usePanelLayoutStore.persist.hasHydrated(),
   );
+  const [apiError, setApiError] = useState<ApiErrorDetails | null>(null);
+  const [traceDockOpen, setTraceDockOpen] = useState(true);
 
   usePlaybackClock();
   useHotkeys();
+
+  useEffect(() => installApiErrorReporter(), []);
+  useEffect(() => initSessionTrace(), []);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<ApiErrorDetails>).detail;
+      if (detail) setApiError(detail);
+    };
+    window.addEventListener(SHOW_ERROR_MODAL_EVENT, handler);
+    return () => window.removeEventListener(SHOW_ERROR_MODAL_EVENT, handler);
+  }, []);
+
+  useEffect(() => {
+    if (workspaceMode !== 'liveQuad') return;
+    const { setSourceMode, viewers } = useViewerStore.getState();
+    for (const id of ['viewer-1', 'viewer-2', 'viewer-3', 'viewer-4'] as const) {
+      if (viewers[id]?.sourceMode !== 'live') setSourceMode(id, 'live');
+    }
+  }, [workspaceMode]);
 
   // Dev-only: expose stores for debugging and Playwright introspection.
   useEffect(() => {
@@ -43,6 +75,8 @@ function App() {
       timeline: useTimelineStore,
       viewer: useViewerStore,
       muravei: useMuraveiStore,
+      sam3: useSam3Store,
+      recon: useReconStore,
     };
   }, []);
 
@@ -114,6 +148,8 @@ function App() {
         onTabChange={onTabChange}
         isDefaultLayout={!maximizedId}
         onResetLayout={handleResetLayout}
+        traceDockOpen={traceDockOpen}
+        onToggleTraceDock={() => setTraceDockOpen((v) => !v)}
       />
       <div className="flex-1 min-h-0 relative mosaic-root">
         {!layoutHydrated ? (
@@ -133,6 +169,8 @@ function App() {
           </>
         )}
       </div>
+      <ErrorDetailsModal error={apiError} onClose={() => setApiError(null)} />
+      <SessionTraceDock open={traceDockOpen} onClose={() => setTraceDockOpen(false)} />
     </div>
   );
 }

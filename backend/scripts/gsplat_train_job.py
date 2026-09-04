@@ -2,9 +2,10 @@
 
 Expects layout:
   job_dir/frames/*.jpg
-  job_dir/colmap/sparse/0/  (TXT or BIN)
+  job_dir/colmap/sparse/N/  (best model via get_best_sparse_dir; TXT or BIN)
 
 Writes job_dir/model.ply and returns relative name on success.
+Trainer staging still uses gsplat_data/sparse/0/ (gsplat examples layout).
 
   .\\muravei_env\\Scripts\\python.exe backend\\scripts\\gsplat_train_job.py --job-dir archive/recon/<id>
 
@@ -19,6 +20,9 @@ import sys
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(BASE / "backend"))
+from services.job_ids import sanitize_job_dir  # noqa: E402
+from services.recon_diagnose import get_best_sparse_dir  # noqa: E402
 
 
 def _fail(msg: str) -> int:
@@ -36,13 +40,14 @@ def main() -> int:
     job_dir = args.job_dir
     if not job_dir.is_absolute():
         job_dir = (BASE / job_dir).resolve()
+    job_dir = sanitize_job_dir(job_dir)
     if not job_dir.is_dir():
         return _fail(f"job dir missing: {job_dir}")
 
     frames = job_dir / "frames"
-    sparse = job_dir / "colmap" / "sparse" / "0"
-    if not frames.is_dir() or not sparse.is_dir():
-        return _fail("need frames/ and colmap/sparse/0/")
+    sparse = get_best_sparse_dir(job_dir)
+    if not frames.is_dir() or sparse is None:
+        return _fail("need frames/ and valid colmap/sparse/N/")
 
     try:
         import torch
@@ -70,7 +75,7 @@ def main() -> int:
     data_dir.mkdir(parents=True)
     images_link = data_dir / "images"
     sparse_link = data_dir / "sparse" / "0"
-    sparse_link.parent.mkdir(parents=True, exist_ok=True)
+    sparse_link.mkdir(parents=True, exist_ok=True)
     # Copy/symlink frames → images (Windows: copy is safer)
     shutil.copytree(frames, images_link)
     for name in ("cameras.bin", "images.bin", "points3D.bin", "cameras.txt", "images.txt", "points3D.txt"):
@@ -85,6 +90,8 @@ def main() -> int:
             sys.executable,
             str(trainer),
             "default",
+            "--disable_viewer",
+            "--disable_video",
             "--data_dir",
             str(data_dir),
             "--data_factor",
@@ -95,6 +102,9 @@ def main() -> int:
             str(args.max_steps),
             "--save_ply",
             "--ply_steps",
+            str(args.max_steps),
+            # Avoid mid-run traj crash on tiny camera sets; still eval at end.
+            "--eval_steps",
             str(args.max_steps),
         ]
         print("running:", " ".join(cmd))
