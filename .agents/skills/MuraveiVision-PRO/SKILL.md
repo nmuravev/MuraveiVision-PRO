@@ -1,0 +1,256 @@
+---
+name: muraveivision-pro-conventions
+description: Development conventions and patterns for MuraveiVision-PRO. Python Vite project with conventional commits.
+---
+
+# Muraveivision Pro Conventions
+
+> Generated from [nmuravev/MuraveiVision-PRO](https://github.com/nmuravev/MuraveiVision-PRO) on 2026-09-04
+
+## Overview
+
+This skill teaches Claude the development patterns and conventions used in MuraveiVision-PRO.
+
+## Tech Stack
+
+- **Primary Language**: Python
+- **Framework**: Vite
+- **Architecture**: type-based module organization
+- **Test Location**: separate
+
+## When to Use This Skill
+
+Activate this skill when:
+- Making changes to this repository
+- Adding new features following established patterns
+- Writing tests that match project conventions
+- Creating commits with proper message format
+
+## Commit Conventions
+
+Follow these commit message conventions based on 68 analyzed commits.
+
+### Commit Style: Conventional Commits
+
+### Prefixes Used
+
+- `docs`
+- `feat`
+- `fix`
+
+### Message Guidelines
+
+- Average message length: ~61 characters
+- Keep first line concise and descriptive
+- Use imperative mood ("Add feature" not "Added feature")
+
+
+*Commit message example*
+
+```text
+feat: real network replication (3.1) - multi-machine target sync via JWT
+```
+
+*Commit message example*
+
+```text
+docs: Phase 4 retrospective, ROADMAP/TODO update, P3 v2 backlog
+```
+
+*Commit message example*
+
+```text
+test: Add Playwright E2E for Segmentation and Change Detection UI
+```
+
+*Commit message example*
+
+```text
+fix: SAM3 point click respects video.paused and surfaces silent failures
+```
+
+*Commit message example*
+
+```text
+chore: add gsplat Windows JIT training scripts and sidecars; remove obsolete hotkeys test
+```
+
+*Commit message example*
+
+```text
+feat: persist GPS on all detection writes and consolidate architecture docs.
+```
+
+*Commit message example*
+
+```text
+feat: CLIP find-similar (P1.6) and train resume from last.pt (P1.8).
+```
+
+*Commit message example*
+
+```text
+feat: P3.13 Segmentation v1.1 - explicit VRAM control (load/unload), manual frame button
+```
+
+## Architecture
+
+### Project Structure: Single Package
+
+This project uses **type-based** module organization.
+
+### Source Layout
+
+```
+src/
+├── components/
+├── debug/
+├── hooks/
+├── layout/
+├── lib/
+├── store/
+```
+
+### Entry Points
+
+- `src/App.tsx`
+
+### Configuration Files
+
+- `package.json`
+- `vite.config.ts`
+
+### Guidelines
+
+- Group code by type (components, services, utils)
+- Keep related functionality in the same type folder
+- Avoid circular dependencies between type folders
+
+## Code Style
+
+### Language: Python
+
+### Naming Conventions
+
+| Element | Convention |
+|---------|------------|
+| Files | snake_case |
+| Functions | camelCase |
+| Classes | PascalCase |
+| Constants | SCREAMING_SNAKE_CASE |
+
+### Import Style: Relative Imports
+
+### Export Style: Mixed Style
+
+
+*Preferred import style*
+
+```typescript
+// Use relative imports
+import { Button } from '../components/Button'
+import { useAuth } from './hooks/useAuth'
+```
+
+## Testing
+
+### Test Framework
+
+No specific test framework detected — use the repository's existing test patterns.
+
+### File Pattern: `*.test.ts`
+
+### Test Types
+
+- **Unit tests**: Test individual functions and components in isolation
+
+
+## Error Handling
+
+### Error Handling Style: Try-Catch Blocks
+
+
+*Standard error handling pattern*
+
+```typescript
+try {
+  const result = await riskyOperation()
+  return result
+} catch (error) {
+  console.error('Operation failed:', error)
+  throw new Error('User-friendly message')
+}
+```
+
+## Common Workflows
+
+These workflows were detected from analyzing commit patterns.
+
+### Feature Development
+
+Standard feature implementation workflow
+
+**Frequency**: ~16 times per month
+
+**Steps**:
+1. Add feature implementation
+2. Add tests for feature
+3. Update documentation
+
+**Files typically involved**:
+- `src/components/panels/*`
+- `src/store/*`
+- `src/*`
+- `**/*.test.*`
+- `**/api/**`
+
+**Example commit sequence**:
+```
+feat: real network replication (3.1) - multi-machine target sync via JWT
+feat: persist GPS on all detection writes and consolidate architecture docs.
+feat: CLIP find-similar (P1.6) and train resume from last.pt (P1.8).
+```
+
+### Test Driven Development
+
+Test-first development workflow (TDD)
+
+**Frequency**: ~8 times per month
+
+**Steps**:
+1. Write failing test
+2. Implement code to pass test
+3. Refactor if needed
+
+**Files typically involved**:
+- `**/*.test.*`
+- `**/*.spec.*`
+- `src/**/*`
+
+**Example commit sequence**:
+```
+test: add tests for user validation
+feat: implement user validation
+```
+
+
+## Best Practices
+
+Based on analysis of the codebase, follow these practices:
+
+### Do
+
+- Use conventional commit format (feat:, fix:, etc.)
+- Follow *.test.ts naming pattern
+- Use snake_case for file names
+- Prefer mixed exports
+
+### Don't
+
+- Don't write vague commit messages
+- Don't skip tests for new features
+- Don't deviate from established patterns without discussion
+
+---
+
+*This skill was auto-generated by [ECC Tools](https://ecc.tools). Review and customize as needed for your team.*
