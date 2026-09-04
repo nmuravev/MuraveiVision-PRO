@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-04
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** (pending) chrome overflow TopBar/Viewer/Timeline
+- **Commit:** `e8b0b25` chrome overflow TopBar/Viewer/Timeline
 - **Unit tests:** 198
 - **E2E specs:** 6+
 - **Status:** TopBar/Viewer/Timeline overflow UX; Detect/Ещё menus visible
-- **Last updated by:** fix: chrome overflow TopBar Viewer Timeline
+- **Last updated by:** fix: chrome overflow (e8b0b25)
 
 ---
 
