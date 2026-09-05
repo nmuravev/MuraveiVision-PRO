@@ -158,7 +158,14 @@ def _run_cli(
         raise RuntimeError(f"AliceVision {step} failed to start: {exc}") from exc
 
     if proc.returncode != 0:
-        tail = ((proc.stderr or "") + "\n" + (proc.stdout or "")).strip()[-800:]
+        blob = ((proc.stderr or "") + "\n" + (proc.stdout or "")).strip()
+        # Prefer fatal/error lines over noisy OCIO "found" traces
+        prefer: list[str] = []
+        for line in blob.splitlines():
+            low = line.lower()
+            if "[fatal]" in low or "[error]" in low or "error:" in low:
+                prefer.append(line.strip())
+        tail = (" | ".join(prefer[-4:]) if prefer else blob)[-800:]
         raise RuntimeError(f"AliceVision {step} exit {proc.returncode}: {tail}")
     if emit:
         emit(
@@ -260,9 +267,11 @@ def inject_colmap_poses(
                 "distortionLocked": "false",
                 "distortionInitializationMode": "none",
                 "distortionParams": ["0", "0", "0"],
+                "distortionType": "none",
+                # AliceVision 3.3 prepareDenseScene fatals without undistortionType
+                "undistortionType": "none",
                 "undistortionOffset": ["0", "0"],
                 "undistortionParams": "",
-                "distortionType": "none",
                 "locked": "true",
             }
         )
@@ -407,6 +416,11 @@ def run_dense_pipeline(
         sfm = work / "sfm_colmap.sfm"
         matched = inject_colmap_poses(camera_init, sparse_dir, av_input, sfm)
         _log(f"injected COLMAP poses views={matched}")
+        if matched < 5:
+            _warn(
+                f"Only {matched} COLMAP-registered views — Dense quality will be poor. "
+                "Re-run «Построить 3D» on a segment with more parallax / less HUD crop."
+            )
 
         dense_dir = work / "dense"
         dense_dir.mkdir(parents=True, exist_ok=True)

@@ -1668,7 +1668,7 @@ export const Flight3D: React.FC = () => {
                       'Запустить Dense (AliceVision MVS)'
                     }
                   >
-                    Dense → AliceVision (облако)
+                    Dense → точечное облако (локальный AliceVision)
                   </button>
                   <button
                     type="button"

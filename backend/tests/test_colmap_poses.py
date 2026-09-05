@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from services.colmap_poses import _parse_cameras_txt, _quat_to_rot, nearest_pose
+from services.colmap_poses import _parse_cameras_txt, _parse_images_txt, _quat_to_rot, nearest_pose
 
 
 class ColmapPoseTests(unittest.TestCase):
@@ -51,6 +51,22 @@ class ColmapPoseTests(unittest.TestCase):
         )
         doc = {"frames": [{"time_sec": 1.0}, {"time_sec": 3.0}]}
         self.assertEqual(nearest_pose(doc, 2.6), {"time_sec": 3.0})
+
+    def test_images_txt_skips_points2d_float_lines(self) -> None:
+        text = "\n".join(
+            [
+                "# comment",
+                "1 1 0 0 0 0 0 0 1 000001.jpg",
+                "10.5 20.5 -1 11.5 21.5 2 12.0 22.0 -1",
+                "2 1 0 0 0 1 2 3 1 000002.jpg",
+                "1.0 2.0 -1",
+            ]
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "images.txt"
+            path.write_text(text, encoding="utf-8")
+            images = _parse_images_txt(path)
+        self.assertEqual([im["image"] for im in images], ["000001.jpg", "000002.jpg"])
 
 
 if __name__ == "__main__":

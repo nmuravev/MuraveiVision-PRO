@@ -159,6 +159,7 @@ class TestInjectColmapPoses(unittest.TestCase):
             self.assertEqual(len(data["poses"]), 2)
             self.assertEqual(len(data["views"]), 2)
             self.assertTrue(data["intrinsics"])
+            self.assertEqual(data["intrinsics"][0].get("undistortionType"), "none")
 
 
 if __name__ == "__main__":
