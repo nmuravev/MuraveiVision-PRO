@@ -4,13 +4,13 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** `7be38f7` — offline muravei_env_pack (wheels)
-- **Unit tests:** 267 OK
+- **Commit:** (pending push) — Windows CPU+DirectML field edition
+- **Unit tests:** 280 OK
 - **E2E specs:** 6+
-- **Status:** v3.2 Dense OK; separate offline env wheels pack (`make_env_pack` / `setup_env`); **do not merge to main**
-- **Last updated by:** feat offline muravei_env_pack.zip (wheels, not copied venv)
-- **Portable artifacts:** Mini ~0.54 GB (no AV); FullKit+AV ~17.8 GB (`MuraveiVision_PRO_FullKit.zip`)
-- **Env pack:** `dist/muravei_env_pack.zip` ~2.88 GB / sha256 `5c662a9e375ab199046c74a72973aca372a7ea4450baf5a843df054ee511b42f` (not in git) — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
+- **Status:** CPU profile + DirectML YOLO + win_cpu/win_cuda packs; **do not merge to main**
+- **Last updated by:** feat Intel+AMD field edition (no CUDA)
+- **Portable artifacts:** Mini ~0.54 GB; FullKit+AV CUDA; FullKit `-TorchFlavor cpu`
+- **Env pack:** win_cuda ~2952 MB (`5c662a9e…`); win_cpu ~439 MB (`d55f4d49…`) — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md), [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md)
 - **Isolated test copy:** `MuraveiVision-Pro-3.2.0/` on :8001/:3001 (gitignored)
 
 ## Major Changes in This Release

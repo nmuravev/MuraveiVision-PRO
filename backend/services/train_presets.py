@@ -159,22 +159,37 @@ def used_vram_gb() -> float:
 
 
 def presets_for_client() -> list[dict[str, Any]]:
+    from services.accelerator import (
+        CPU_DENSE_DISABLED_RU,
+        CPU_DENSE_ETA_RU,
+        GSPLAT_CUDA_REASON_RU,
+        cpu_dense_mesh_disabled,
+        is_cpu_profile,
+        log_profile_once,
+    )
     from services.alicevision import alicevision_available, alicevision_cuda_ready
     from services.gsplat_msvc import gsplat_train_ready
 
+    log_profile_once()
     presets, _ = load_presets()
     vram = total_vram_gb()
     msvc_ok, msvc_reason = gsplat_train_ready()
     av_ok = alicevision_available()
     cuda_ok, cuda_reason = alicevision_cuda_ready()
+    cpu = is_cpu_profile()
     items: list[dict[str, Any]] = []
     for pid, cfg in presets.items():
         min_v = float(cfg.get("min_vram_gb") or 0)
         script = str(cfg.get("script") or "")
         disabled = False
         reason = ""
+        eta = str(cfg.get("eta") or "")
         if script in ("alicevision_mvs", "alicevision_mesh"):
-            if not sys.platform.startswith("win") and not av_ok:
+            if cpu and cpu_dense_mesh_disabled():
+                disabled = True
+                reason = CPU_DENSE_DISABLED_RU
+                eta = CPU_DENSE_ETA_RU
+            elif not sys.platform.startswith("win") and not av_ok:
                 disabled = True
                 reason = "AliceVision пока только Windows (macOS — позже)"
             elif not av_ok:
@@ -183,6 +198,9 @@ def presets_for_client() -> list[dict[str, Any]]:
             elif not cuda_ok:
                 disabled = True
                 reason = cuda_reason or "AliceVision dense/mesh требует NVIDIA CUDA"
+                if cpu:
+                    eta = CPU_DENSE_ETA_RU
+                    reason = f"{reason}. {CPU_DENSE_ETA_RU}"
             elif min_v and (vram <= 0 or vram < min_v):
                 disabled = True
                 reason = (
@@ -190,13 +208,18 @@ def presets_for_client() -> list[dict[str, Any]]:
                     if vram > 0
                     else f"Нужно ≥{min_v:g} ГБ VRAM (CUDA недоступна)"
                 )
+            elif cpu:
+                eta = CPU_DENSE_ETA_RU
         elif script == "gsplat":
-            if min_v and vram > 0 and vram < min_v:
+            if cpu or not cuda_ok:
+                disabled = True
+                reason = GSPLAT_CUDA_REASON_RU
+            elif min_v and vram > 0 and vram < min_v:
                 disabled = True
                 reason = f"Нужно ≥{min_v:g} ГБ VRAM (сейчас {vram:.1f} ГБ)"
             elif min_v and vram <= 0:
                 disabled = True
-                reason = f"Нужно ≥{min_v:g} ГБ VRAM (CUDA недоступна)"
+                reason = GSPLAT_CUDA_REASON_RU
             elif not msvc_ok:
                 disabled = True
                 reason = msvc_reason or "Нужен MSVC 14.44 (см. ENGINEER_GUIDE) или пресет Bootstrap"
@@ -211,7 +234,7 @@ def presets_for_client() -> list[dict[str, Any]]:
             {
                 "id": pid,
                 "label": cfg.get("label") or pid,
-                "eta": cfg.get("eta") or "",
+                "eta": eta,
                 "default": bool(cfg.get("default")),
                 "disabled": disabled,
                 "disabled_reason": reason,

@@ -26,7 +26,7 @@ import { useMuraveiStore } from '../store/useMuraveiStore';
 import { useViewerStore } from '../store/useViewerStore';
 import { downloadAuthorized } from '../lib/download';
 import { logger } from '../services/logger';
-import { Button, Menu, MenuItem, Modal, VramIndicator } from './ui';
+import { Button, Menu, MenuItem, Modal, VramIndicator, YoloBackendBadge } from './ui';
 
 interface TopBarProps {
   activeTab: string;
@@ -503,6 +503,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
+          {isAuthenticated && <YoloBackendBadge />}
           {isAuthenticated && <VramIndicator />}
 
           <div className="relative">

@@ -22,6 +22,7 @@
 | [ATTRIBUTION.md](ATTRIBUTION.md) | Юристы / релиз | AliceVision MPL-2.0 и сторонние лицензии |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Сборка / поле | Развёртывание с нуля, portable, troubleshooting |
 | [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md) | Сборка / поле | Offline env pack (wheels): make_env_pack / setup_env |
+| [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md) | Поле AMD | Intel MacBook + Radeon 5500M: CPU + DirectML |
 | [PORTABLE.md](PORTABLE.md) | Сборка / поле | Portable ZIP, embeddable Python, состав комплекта |
 | [FEATURES.md](FEATURES.md) | Все | Что реализовано (с примерами использования) |
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | Все | Ограничения, flaky-зоны, вне скоупа |

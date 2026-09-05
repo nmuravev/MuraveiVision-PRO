@@ -18,6 +18,9 @@ _sim: dict[str, Any] = {"active": None}
 
 @router.get("/hardware")
 async def hardware(_user: dict[str, Any] = Depends(require_role("operator"))) -> dict[str, Any]:
+    from services.accelerator import log_profile_once, profile_snapshot
+
+    log_profile_once()
     spec = hardware_spec()
     # enrich with optional pynvml
     try:
@@ -76,6 +79,15 @@ async def hardware(_user: dict[str, Any] = Depends(require_role("operator"))) ->
     spec["vram_used_gb"] = round(used_mb / 1024, 2)
     spec["vram_free_gb"] = round(free_mb / 1024, 2)
     spec.setdefault("gpu_name", "CPU" if total_mb <= 0 else spec.get("gpu") or "GPU")
+
+    snap = profile_snapshot()
+    spec.update(snap)
+    try:
+        from services.yolo_directml import directml_available
+
+        spec["directml_available"] = directml_available()
+    except Exception:  # noqa: BLE001
+        spec["directml_available"] = False
 
     if _sim["active"] == "gpu_oom":
         spec["simulated"] = "gpu_oom"
@@ -190,9 +202,16 @@ class DetectConfigBody(BaseModel):
     # HUD exclusion
     hud_exclude_archive: bool = True
     hud_exclude_live: bool = False
+    # YOLO backend: auto | torch | directml (experimental DirectML)
+    yolo_inference_backend: str = Field(default="auto", pattern=r"^(auto|torch|directml)$")
 
 
 def _read_detect_config() -> dict[str, Any]:
+    from services.yolo_directml import directml_available
+
+    backend = get_setting("yolo_inference_backend") or "auto"
+    if backend not in ("auto", "torch", "directml"):
+        backend = "auto"
     return {
         "use_sahi_default": (get_setting("use_sahi_default") or "0") == "1",
         "slice_height": int(get_setting("sahi_slice_height") or "512"),
@@ -204,6 +223,9 @@ def _read_detect_config() -> dict[str, Any]:
         "validator_min_confidence": float(get_setting("validator_min_confidence") or "0.01"),
         "hud_exclude_archive": (get_setting("hud_exclude_archive") or "1") == "1",
         "hud_exclude_live": (get_setting("hud_exclude_live") or "0") == "1",
+        "yolo_inference_backend": backend,
+        "yolo_directml_available": directml_available(),
+        "yolo_directml_preset": "YOLO DirectML (AMD/Intel GPU)",
     }
 
 
@@ -229,4 +251,5 @@ async def put_detect_config(
     set_setting("validator_min_confidence", str(body.validator_min_confidence))
     set_setting("hud_exclude_archive", "1" if body.hud_exclude_archive else "0")
     set_setting("hud_exclude_live", "1" if body.hud_exclude_live else "0")
+    set_setting("yolo_inference_backend", body.yolo_inference_backend)
     return _read_detect_config()

@@ -1,24 +1,27 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Build a portable offline wheels pack: dist/muravei_env_pack.zip
+  Build a portable offline wheels pack for Windows field machines.
 
 .DESCRIPTION
-  Downloads wheels for backend/requirements.txt (+ optional torch cu128),
-  writes scripts/wheels_manifest.json, packs wheels/ + requirements copy + README.
+  Downloads wheels for backend/requirements.txt + torch (cpu or cuda),
+  writes scripts/wheels_manifest.json, packs wheels/ + requirements + README.
 
   Field machine: unpack ZIP into project root → scripts\setup_env.bat
 
-.PARAMETER WithTorchCu128
-  Also download torch/torchvision from the cu128 index (default: on).
-  Pass -WithTorchCu128:$false to skip (CPU-only / smaller pack).
+.PARAMETER TorchFlavor
+  cpu  → PyTorch CPU index; pack name muravei_env_pack_win_cpu.zip (~1 GB)
+  cuda → cu128 index; pack name muravei_env_pack_win_cuda.zip (~3 GB)
+  Legacy alias: -WithTorchCu128:$false ≈ cpu; $true ≈ cuda.
 
 .PARAMETER OutZip
-  Output zip path relative to repo root (default: dist/muravei_env_pack.zip).
+  Override output zip path (relative to repo root).
 #>
 param(
+  [ValidateSet("cpu", "cuda")]
+  [string]$TorchFlavor = "",
   [bool]$WithTorchCu128 = $true,
-  [string]$OutZip = "dist\muravei_env_pack.zip"
+  [string]$OutZip = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,6 +30,24 @@ $HostPy = Join-Path $Repo "muravei_env\Scripts\python.exe"
 $Req = Join-Path $Repo "backend\requirements.txt"
 $Stage = Join-Path $Repo "dist\_env_pack_stage"
 $WheelDir = Join-Path $Stage "wheels"
+
+if (-not $TorchFlavor) {
+  $TorchFlavor = if ($WithTorchCu128) { "cuda" } else { "cpu" }
+}
+$IsCuda = ($TorchFlavor -eq "cuda")
+
+if (-not $OutZip) {
+  $OutZip = if ($IsCuda) {
+    "dist\muravei_env_pack_win_cuda.zip"
+  } else {
+    "dist\muravei_env_pack_win_cpu.zip"
+  }
+}
+# Legacy alias kept for older docs / scripts
+if ($OutZip -eq "dist\muravei_env_pack.zip" -and $IsCuda) {
+  $OutZip = "dist\muravei_env_pack_win_cuda.zip"
+}
+
 $OutPath = Join-Path $Repo $OutZip
 
 function Get-FileSha256([string]$Path) {
@@ -41,6 +62,7 @@ if (-not (Test-Path -LiteralPath $Req)) {
 }
 
 Write-Host "Repo: $Repo" -ForegroundColor Cyan
+Write-Host "TorchFlavor: $TorchFlavor" -ForegroundColor Cyan
 Write-Host "Staging: $Stage" -ForegroundColor Cyan
 
 if (Test-Path -LiteralPath $Stage) {
@@ -51,11 +73,28 @@ New-Item -ItemType Directory -Force -Path (Join-Path $Stage "scripts") | Out-Nul
 New-Item -ItemType Directory -Force -Path (Join-Path $Stage "backend") | Out-Null
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutPath) | Out-Null
 
-Write-Host "pip download -r backend\requirements.txt ..." -ForegroundColor Cyan
-& $HostPy -m pip download -r $Req -d $WheelDir --prefer-binary
+# Filter requirements for CPU pack: swap onnxruntime-gpu → onnxruntime-directml
+$ReqForDownload = $Req
+$TmpReq = Join-Path $Stage "backend\_requirements_pack.txt"
+if (-not $IsCuda) {
+  $lines = Get-Content -LiteralPath $Req
+  $outLines = foreach ($ln in $lines) {
+    if ($ln -match '^\s*onnxruntime-gpu') {
+      "onnxruntime-directml>=1.16.0"
+    } else {
+      $ln
+    }
+  }
+  $outLines | Set-Content -LiteralPath $TmpReq -Encoding UTF8
+  $ReqForDownload = $TmpReq
+  Write-Host "CPU pack: onnxruntime-directml instead of onnxruntime-gpu" -ForegroundColor Yellow
+}
+
+Write-Host "pip download -r requirements ..." -ForegroundColor Cyan
+& $HostPy -m pip download -r $ReqForDownload -d $WheelDir --prefer-binary
 if ($LASTEXITCODE -ne 0) { throw "pip download requirements failed (exit $LASTEXITCODE)" }
 
-if ($WithTorchCu128) {
+if ($IsCuda) {
   Write-Host "pip download torch torchvision (cu128) ..." -ForegroundColor Cyan
   & $HostPy -m pip download torch torchvision -d $WheelDir `
     --index-url https://download.pytorch.org/whl/cu128 --prefer-binary --no-deps
@@ -72,7 +111,6 @@ if ($WithTorchCu128) {
     & curl.exe -L --retry 5 --retry-delay 3 -C - -o $tvOut $tvUrl
     if ($LASTEXITCODE -ne 0) { throw "curl torchvision cu128 failed (exit $LASTEXITCODE)" }
   }
-  # Prefer CUDA torch over CPU torch pulled by requirements
   Get-ChildItem -LiteralPath $WheelDir -Filter "torch-*.whl" | Where-Object {
     $_.Name -notmatch 'cu\d+'
   } | ForEach-Object {
@@ -85,17 +123,40 @@ if ($WithTorchCu128) {
     Write-Host "Removing CPU torchvision wheel: $($_.Name)" -ForegroundColor Yellow
     Remove-Item -LiteralPath $_.FullName -Force
   }
+} else {
+  Write-Host "pip download torch torchvision (CPU index) ..." -ForegroundColor Cyan
+  & $HostPy -m pip download torch torchvision -d $WheelDir `
+    --index-url https://download.pytorch.org/whl/cpu --prefer-binary --no-deps
+  if ($LASTEXITCODE -ne 0) { throw "pip download torch CPU failed (exit $LASTEXITCODE)" }
+  # Drop any CUDA torch that sneaked in from requirements
+  Get-ChildItem -LiteralPath $WheelDir -Filter "torch-*.whl" | Where-Object {
+    $_.Name -match 'cu\d+'
+  } | ForEach-Object {
+    Write-Host "Removing CUDA torch wheel (cpu pack): $($_.Name)" -ForegroundColor Yellow
+    Remove-Item -LiteralPath $_.FullName -Force
+  }
+  Get-ChildItem -LiteralPath $WheelDir -Filter "torchvision-*.whl" | Where-Object {
+    $_.Name -match 'cu\d+'
+  } | ForEach-Object {
+    Write-Host "Removing CUDA torchvision (cpu pack): $($_.Name)" -ForegroundColor Yellow
+    Remove-Item -LiteralPath $_.FullName -Force
+  }
+  Get-ChildItem -LiteralPath $WheelDir -Filter "onnxruntime_gpu*.whl" | ForEach-Object {
+    Write-Host "Removing onnxruntime-gpu (cpu pack): $($_.Name)" -ForegroundColor Yellow
+    Remove-Item -LiteralPath $_.FullName -Force
+  }
 }
 
 $wheels = Get-ChildItem -LiteralPath $WheelDir -File | Sort-Object Name
 if ($wheels.Count -lt 1) { throw "wheels/ пуст после download" }
 
 $manifest = [ordered]@{
-  generated_at = (Get-Date).ToUniversalTime().ToString("o")
-  python_hint  = "3.12"
-  requirements = "backend/requirements.txt"
-  with_torch_cu128 = $WithTorchCu128
-  wheels = @()
+  generated_at     = (Get-Date).ToUniversalTime().ToString("o")
+  python_hint      = "3.12"
+  requirements     = "backend/requirements.txt"
+  torch_flavor     = $TorchFlavor
+  with_torch_cu128 = $IsCuda
+  wheels           = @()
 }
 foreach ($w in $wheels) {
   $manifest.wheels += [ordered]@{
@@ -109,15 +170,20 @@ $manifestPath = Join-Path $Stage "scripts\wheels_manifest.json"
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 
 Copy-Item -LiteralPath $Req -Destination (Join-Path $Stage "backend\requirements.txt") -Force
+if (Test-Path -LiteralPath $TmpReq) {
+  Copy-Item -LiteralPath $TmpReq -Destination (Join-Path $Stage "backend\requirements_pack.txt") -Force
+}
 
+$flavorNote = if ($IsCuda) { "CUDA (cu128)" } else { "CPU + DirectML (onnxruntime-directml)" }
 $readme = @"
-MuraveiVision PRO — offline env pack (wheels)
+MuraveiVision PRO — offline env pack ($flavorNote)
 
 1. Распакуйте этот ZIP в КОРЕНЬ проекта (рядом с backend/, scripts/).
 2. Запустите: scripts\setup_env.bat
 3. Дождитесь создания muravei_env и офлайн-установки из wheels/.
 4. Затем Запустить.bat или npm run backend.
 5. Интернет на полевой машине не нужен, если wheels/ на месте.
+6. AMD/Intel без NVIDIA: используйте пак win_cpu (не win_cuda).
 "@
 Set-Content -LiteralPath (Join-Path $Stage "README_PACK.txt") -Value $readme -Encoding UTF8
 
@@ -125,7 +191,6 @@ if (Test-Path -LiteralPath $OutPath) {
   Remove-Item -LiteralPath $OutPath -Force
 }
 
-# Compress-Archive fails above ~2 GB ("Stream was too long"); use tar/bsdtar (Zip64).
 Write-Host "Zipping → $OutPath (tar Zip64) ..." -ForegroundColor Cyan
 $stageAbs = (Resolve-Path -LiteralPath $Stage).Path
 Push-Location $stageAbs
@@ -145,7 +210,7 @@ $zipSizeMb = [math]::Round($zipLen / 1MB, 2)
 $zipSizeGb = [math]::Round($zipLen / 1GB, 3)
 
 Write-Host ""
-Write-Host "=== muravei_env_pack ready ===" -ForegroundColor Green
+Write-Host "=== muravei_env_pack ready ($TorchFlavor) ===" -ForegroundColor Green
 Write-Host "  file:   $OutPath"
 Write-Host "  wheels: $($wheels.Count)"
 Write-Host "  size:   $zipSizeMb MB ($zipSizeGb GB)"

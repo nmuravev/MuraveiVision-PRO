@@ -11,8 +11,9 @@
 .\muravei_env\Scripts\pip.exe install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu128
 npm install
 
-# Поле без интернета: распаковать muravei_env_pack.zip → scripts\setup_env.bat
-# Сборка пака на dev: .\scripts\make_env_pack.ps1
+# Поле без интернета: распаковать muravei_env_pack_win_cpu|cuda.zip → scripts\setup_env.bat
+# Сборка пака: .\scripts\make_env_pack.ps1 -TorchFlavor cpu|cuda
+# AMD field: docs\SPEC_FIELD_MACBOOK.md
 ```
 Правило: только `muravei_env\Scripts\python.exe` (3.12.10) — [.cursor/rules/muravei-python-env.mdc](../.cursor/rules/muravei-python-env.mdc). Bare `python`/`pip` использовать нельзя (PATH → 3.14).
 

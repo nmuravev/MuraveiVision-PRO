@@ -29,6 +29,8 @@ env/
 wheels/
 muravei_env.zip
 dist/muravei_env_pack.zip
+dist/muravei_env_pack_win_cpu.zip
+dist/muravei_env_pack_win_cuda.zip
 dist/_env_pack_stage/
 
 # IDE and editor files

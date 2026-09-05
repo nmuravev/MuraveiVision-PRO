@@ -22,6 +22,7 @@ from services.alicevision import (
     log_first_use,
 )
 from services.colmap_poses import _parse_cameras_txt, _parse_images_txt
+from services.recon_diagnose import get_best_sparse_dir
 from services.runtime_log import write as runtime_write
 
 EmitFn = Callable[[dict[str, Any]], None]
@@ -29,6 +30,37 @@ EmitFn = Callable[[dict[str, Any]], None]
 # Soft-fail gates (avoid native meshing crash 0xC0000409 on degenerate MVS)
 MIN_MATCHED_VIEWS_FOR_DENSE = 8
 MIN_DEPTH_MAP_BYTES = 50_000
+# depthMapEstimation uses SfM landmarks as SGM seeds (sgmUseSfmSeeds=true by default).
+# Without structure, every depth EXR is an empty stub (~12–13 KB) in seconds.
+MIN_LANDMARKS_FOR_DENSE = 100
+MAX_INJECTED_LANDMARKS = 50_000
+
+
+def resolve_sparse_dir_for_dense(job_dir: Path, sparse_dir: Path | None = None) -> Path:
+    """COLMAP mapper may write sparse/0 (tiny) + sparse/N (usable).
+
+    Always prefer ``get_best_sparse_dir`` when any model exists. An explicit
+    ``sparse_dir`` under ``colmap/sparse/`` is ignored if a larger model wins
+    (legacy callers often pass ``sparse/0``). Custom paths outside that tree
+    are honored for tests. Fallback: legacy ``colmap/sparse/0``.
+    """
+    job_dir = Path(job_dir)
+    best = get_best_sparse_dir(job_dir)
+    if best is not None:
+        if sparse_dir is None:
+            return best
+        override = Path(sparse_dir)
+        sparse_root = (job_dir / "colmap" / "sparse").resolve()
+        try:
+            override.resolve().relative_to(sparse_root)
+        except ValueError:
+            # Outside colmap/sparse — intentional custom fixture / test path
+            return override
+        # Under sparse/ — never pin sparse/0 when a better model exists
+        return best
+    if sparse_dir is not None:
+        return Path(sparse_dir)
+    return job_dir / "colmap" / "sparse" / "0"
 
 
 def format_cli_failure(returncode: int, blob: str) -> str:
@@ -65,7 +97,7 @@ def depth_maps_usable(depth_dir: Path, *, min_bytes: int = MIN_DEPTH_MAP_BYTES) 
         sizes = ", ".join(f"{p.name}={p.stat().st_size}B" for p in maps[:4])
         return (
             False,
-            f"Depth maps пустые/stub ({sizes}). Обычно мало общих видов / слабый SfM — meshing пропущен.",
+            f"Depth maps пустые/stub ({sizes}). Обычно нет SfM landmarks / мало общих видов — meshing пропущен.",
         )
     return True, f"{len(usable)}/{len(maps)} depth maps OK"
 
@@ -214,10 +246,12 @@ def _run_cli(
         )
 
 
-def _copy_frames(frames_dir: Path, dest: Path) -> int:
+def _copy_frames(frames_dir: Path, dest: Path, *, max_n: int | None = None) -> int:
     dest.mkdir(parents=True, exist_ok=True)
     n = 0
     for src in sorted(frames_dir.iterdir()):
+        if max_n is not None and n >= int(max_n):
+            break
         if not src.is_file():
             continue
         if src.suffix.lower() not in (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".exr"):
@@ -227,6 +261,99 @@ def _copy_frames(frames_dir: Path, dest: Path) -> int:
     return n
 
 
+def _obj_vertices_to_ply(
+    obj_path: Path,
+    ply_path: Path,
+    *,
+    max_points: int = 1_500_000,
+) -> int:
+    """Write ASCII PLY from OBJ ``v`` lines (AliceVision meshing output).
+
+    ``exportMeshlab`` only writes a MeshLab ``.mlp`` project and does **not**
+    create the referenced PLY. ``convertMesh`` in AV 3.3 fatals on ``.ply``
+    ("Invalid mesh file type ply"). This fallback keeps Dense usable.
+    """
+    obj_path = Path(obj_path)
+    ply_path = Path(ply_path)
+    if not obj_path.is_file():
+        return 0
+    verts: list[tuple[float, float, float, int, int, int]] = []
+    total = 0
+    with obj_path.open("r", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if not line.startswith("v "):
+                continue
+            total += 1
+    if total <= 0:
+        return 0
+    step = max(1, total // max(1, int(max_points)))
+    idx = 0
+    with obj_path.open("r", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if not line.startswith("v "):
+                continue
+            if idx % step == 0:
+                parts = line.split()
+                if len(parts) < 4:
+                    idx += 1
+                    continue
+                try:
+                    x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
+                except ValueError:
+                    idx += 1
+                    continue
+                r = g = b = 200
+                if len(parts) >= 7:
+                    try:
+                        rf, gf, bf = float(parts[4]), float(parts[5]), float(parts[6])
+                        if max(rf, gf, bf) <= 1.0:
+                            r, g, b = int(rf * 255), int(gf * 255), int(bf * 255)
+                        else:
+                            r, g, b = int(rf), int(gf), int(bf)
+                        r = max(0, min(255, r))
+                        g = max(0, min(255, g))
+                        b = max(0, min(255, b))
+                    except ValueError:
+                        pass
+                verts.append((x, y, z, r, g, b))
+            idx += 1
+    if not verts:
+        return 0
+    ply_path.parent.mkdir(parents=True, exist_ok=True)
+    with ply_path.open("w", encoding="ascii", newline="\n") as out:
+        out.write("ply\nformat ascii 1.0\n")
+        out.write(f"element vertex {len(verts)}\n")
+        out.write("property float x\nproperty float y\nproperty float z\n")
+        out.write("property uchar red\nproperty uchar green\nproperty uchar blue\n")
+        out.write("end_header\n")
+        for x, y, z, r, g, b in verts:
+            out.write(f"{x} {y} {z} {r} {g} {b}\n")
+    return len(verts)
+
+
+def _ensure_dense_ply(job_dir: Path, work: Path, mesh_raw: Path, dense_ply: Path) -> bool:
+    """Ensure ``dense_point_cloud.ply`` exists after meshing / exportMeshlab."""
+    if dense_ply.is_file() and dense_ply.stat().st_size > 1000:
+        return True
+    # exportMeshlab may leave PLY elsewhere; harvest candidates
+    for cand in list(work.glob("**/*.ply")) + list(job_dir.glob("*.ply")):
+        if cand.resolve() == dense_ply.resolve():
+            continue
+        if cand.is_file() and cand.stat().st_size > 1000 and "sparse" not in cand.name.lower():
+            try:
+                shutil.copy2(cand, dense_ply)
+                if dense_ply.is_file() and dense_ply.stat().st_size > 1000:
+                    return True
+            except OSError:
+                pass
+    if mesh_raw.is_file():
+        n = _obj_vertices_to_ply(mesh_raw, dense_ply)
+        if n > 0 and dense_ply.is_file():
+            _log(f"dense PLY from mesh.obj vertices={n}")
+            return True
+    return dense_ply.is_file() and dense_ply.stat().st_size > 1000
+
+
 def _rot_to_list(R: list[list[float]]) -> list[str]:
     # AliceVision pose rotation is row-major 3x3 as flat list of strings
     out: list[str] = []
@@ -234,6 +361,114 @@ def _rot_to_list(R: list[list[float]]) -> list[str]:
         for v in row:
             out.append(str(float(v)))
     return out
+
+
+def _parse_images_points2d(images_txt: Path) -> dict[int, list[tuple[float, float]]]:
+    """COLMAP images.txt → ``image_id → [(x, y), ...]`` in POINTS2D order."""
+    out: dict[int, list[tuple[float, float]]] = {}
+    lines = images_txt.read_text(encoding="utf-8", errors="replace").splitlines()
+    i = 0
+    _img_ext = (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp")
+    while i < len(lines):
+        line = lines[i].strip()
+        i += 1
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 10:
+            continue
+        name = parts[9]
+        if not name.lower().endswith(_img_ext):
+            continue
+        image_id = int(parts[0])
+        coords: list[tuple[float, float]] = []
+        if i < len(lines) and not lines[i].strip().startswith("#"):
+            pts = lines[i].split()
+            i += 1
+            # POINTS2D: X, Y, POINT3D_ID triples
+            for j in range(0, len(pts) - 2, 3):
+                try:
+                    coords.append((float(pts[j]), float(pts[j + 1])))
+                except ValueError:
+                    break
+        out[image_id] = coords
+    return out
+
+
+def _build_structure_from_colmap(
+    sparse_dir: Path,
+    *,
+    image_id_to_view_id: dict[int, str],
+    max_landmarks: int = MAX_INJECTED_LANDMARKS,
+) -> list[dict[str, Any]]:
+    """Convert COLMAP points3D (+ POINTS2D) into AliceVision ``structure`` landmarks.
+
+    AliceVision ``depthMapEstimation`` needs landmarks to seed min/max depth per view.
+    Pose-only SfM (no structure) yields stub depth EXRs.
+    """
+    pts_path = Path(sparse_dir) / "points3D.txt"
+    imgs_path = Path(sparse_dir) / "images.txt"
+    if not pts_path.is_file() or not imgs_path.is_file():
+        return []
+    pts2d = _parse_images_points2d(imgs_path)
+    allowed = set(image_id_to_view_id.keys())
+    candidates: list[tuple[int, dict[str, Any]]] = []
+    for line in pts_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 8:
+            continue
+        try:
+            pid = int(parts[0])
+            xyz = (float(parts[1]), float(parts[2]), float(parts[3]))
+            rgb = (int(float(parts[4])), int(float(parts[5])), int(float(parts[6])))
+        except ValueError:
+            continue
+        track = parts[8:]
+        obs: list[dict[str, Any]] = []
+        for k in range(0, len(track) - 1, 2):
+            try:
+                image_id = int(track[k])
+                p2d_idx = int(track[k + 1])
+            except ValueError:
+                continue
+            if image_id not in allowed:
+                continue
+            view_id = image_id_to_view_id.get(image_id)
+            if view_id is None:
+                continue
+            coords = pts2d.get(image_id) or []
+            if p2d_idx < 0 or p2d_idx >= len(coords):
+                continue
+            x, y = coords[p2d_idx]
+            obs.append(
+                {
+                    "observationId": str(view_id),
+                    "featureId": str(p2d_idx),
+                    "x": [str(x), str(y)],
+                    "scale": "0.0",
+                    "depth": "-1.0",
+                }
+            )
+        if len(obs) < 2:
+            continue
+        candidates.append(
+            (
+                len(obs),
+                {
+                    "landmarkId": str(pid),
+                    "descType": "unknown",
+                    "color": [str(rgb[0]), str(rgb[1]), str(rgb[2])],
+                    "X": [str(xyz[0]), str(xyz[1]), str(xyz[2])],
+                    "observations": obs,
+                },
+            )
+        )
+    # Prefer well-supported tracks; cap size for JSON/IO
+    candidates.sort(key=lambda t: t[0], reverse=True)
+    return [lm for _, lm in candidates[: max(0, int(max_landmarks))]]
 
 
 def _invert_w2c(R: list[list[float]], t: list[float]) -> tuple[list[list[float]], list[float]]:
@@ -315,6 +550,7 @@ def inject_colmap_poses(
 
     poses: list[dict[str, Any]] = []
     matched = 0
+    image_id_to_view_id: dict[int, str] = {}
     for view in views:
         basename = Path(str(view.get("path") or "")).name.lower()
         col = by_name.get(basename)
@@ -326,6 +562,7 @@ def inject_colmap_poses(
         view["intrinsicId"] = cam_id_to_intrinsic.get(int(col["camera_id"]), view.get("intrinsicId"))
         # Prefer absolute path under image_folder
         view["path"] = str((image_folder / Path(str(view.get("path") or "")).name).resolve())
+        image_id_to_view_id[int(col["image_id"])] = str(view.get("viewId") or pose_id)
         poses.append(
             {
                 "poseId": pose_id,
@@ -348,6 +585,11 @@ def inject_colmap_poses(
     # Drop views without poses
     posed_ids = {p["poseId"] for p in poses}
     sfm["views"] = [v for v in views if str(v.get("poseId")) in posed_ids]
+    # Inject COLMAP sparse points — required for depthMapEstimation SGM seeds
+    structure = _build_structure_from_colmap(
+        sparse_dir, image_id_to_view_id=image_id_to_view_id
+    )
+    sfm["structure"] = structure
     out_sfm.write_text(json.dumps(sfm, indent=4), encoding="utf-8")
     return matched
 
@@ -374,10 +616,11 @@ def run_dense_pipeline(
     """
     job_dir = Path(job_dir)
     frames_dir = Path(frames_dir or (job_dir / "frames"))
-    sparse_dir = Path(sparse_dir or (job_dir / "colmap" / "sparse" / "0"))
+    sparse_dir = resolve_sparse_dir_for_dense(job_dir, sparse_dir)
     work = job_dir / "alicevision"
     av_input = job_dir / "alicevision_input"
     result: dict[str, Any] = {"ok": False, "artifacts": {}, "warning": None, "error": None}
+    _log(f"dense sparse_dir={sparse_dir} (job={job_dir.name})")
 
     def _emit(ev: dict[str, Any]) -> None:
         if emit:
@@ -388,6 +631,22 @@ def run_dense_pipeline(
         result["error"] = msg
         result["warning"] = msg
         _emit({"event": "alicevision-discover", "available": False, "message": msg})
+        return result
+
+    from services.accelerator import CPU_DENSE_DISABLED_RU, cpu_dense_mesh_disabled
+
+    if cpu_dense_mesh_disabled():
+        result["error"] = CPU_DENSE_DISABLED_RU
+        result["warning"] = CPU_DENSE_DISABLED_RU
+        _emit(
+            {
+                "event": "alicevision-discover",
+                "available": True,
+                "cuda": False,
+                "cpu_profile": True,
+                "message": CPU_DENSE_DISABLED_RU,
+            }
+        )
         return result
 
     cuda_ok, cuda_reason = alicevision_cuda_ready()
@@ -425,7 +684,17 @@ def run_dense_pipeline(
         work.mkdir(parents=True, exist_ok=True)
         if av_input.exists():
             shutil.rmtree(av_input, ignore_errors=True)
-        n_frames = _copy_frames(frames_dir, av_input)
+        from services.accelerator import CPU_DENSE_ETA_RU, dense_frame_cap, is_cpu_profile
+
+        frame_cap = dense_frame_cap()
+        n_frames = _copy_frames(frames_dir, av_input, max_n=frame_cap)
+        if is_cpu_profile() and frame_cap is not None:
+            warn_cpu = (
+                f"{CPU_DENSE_ETA_RU} — лимит {frame_cap} кадров на CPU-профиле"
+            )
+            _log(warn_cpu)
+            result["warning"] = warn_cpu
+            _emit({"event": "alicevision-cpu-cap", "max_frames": frame_cap, "message": warn_cpu})
         if n_frames < 2:
             raise RuntimeError(f"Need ≥2 frames in {frames_dir}, got {n_frames}")
 
@@ -452,7 +721,12 @@ def run_dense_pipeline(
 
         sfm = work / "sfm_colmap.sfm"
         matched = inject_colmap_poses(camera_init, sparse_dir, av_input, sfm)
-        _log(f"injected COLMAP poses views={matched}")
+        n_landmarks = 0
+        try:
+            n_landmarks = len(json.loads(sfm.read_text(encoding="utf-8")).get("structure") or [])
+        except (OSError, json.JSONDecodeError, TypeError):
+            n_landmarks = 0
+        _log(f"injected COLMAP poses views={matched} landmarks={n_landmarks}")
         if matched < MIN_MATCHED_VIEWS_FOR_DENSE:
             msg = (
                 f"COLMAP зарегистрировал только {matched} кадров "
@@ -469,6 +743,27 @@ def run_dense_pipeline(
                     "alicevision_step": "preflight",
                     "message": msg,
                     "matched_views": matched,
+                }
+            )
+            return result
+        if n_landmarks < MIN_LANDMARKS_FOR_DENSE:
+            msg = (
+                f"В SfM только {n_landmarks} landmarks (нужно ≥{MIN_LANDMARKS_FOR_DENSE}) — "
+                "depthMapEstimation даст пустые stub EXR без SfM seeds. "
+                "Проверьте points3D в лучшей sparse/N после Build 3D."
+            )
+            _warn(msg)
+            result["error"] = msg
+            result["warning"] = msg
+            result["matched_views"] = matched
+            result["landmarks"] = n_landmarks
+            _emit(
+                {
+                    "event": "alicevision-step-error",
+                    "alicevision_step": "preflight",
+                    "message": msg,
+                    "matched_views": matched,
+                    "landmarks": n_landmarks,
                 }
             )
             return result
@@ -608,7 +903,7 @@ def run_dense_pipeline(
             return result
 
         dense_ply = job_dir / "dense_point_cloud.ply"
-        # Prefer exportMeshlab PLY; fall back to convertMesh vertices
+        # Prefer exportMeshlab PLY; fall back to OBJ→PLY (exportMeshlab often only writes .mlp)
         try:
             _run_cli(
                 "exportMeshlab",
@@ -628,18 +923,12 @@ def run_dense_pipeline(
                 step="exportMeshlab",
             )
         except RuntimeError as exc:
-            _warn(f"exportMeshlab failed ({exc}); convertMesh fallback")
-            if mesh_raw.is_file():
-                _run_cli(
-                    "convertMesh",
-                    ["--inputMesh", str(mesh_raw), "--output", str(dense_ply)],
-                    cwd=work,
-                    timeout=600,
-                    emit=emit,
-                    step="convertMesh",
-                )
+            _warn(f"exportMeshlab failed ({exc}); will try mesh.obj → PLY")
 
-        if dense_ply.is_file():
+        if not _ensure_dense_ply(job_dir, work, mesh_raw, dense_ply):
+            _warn("dense_point_cloud.ply missing after exportMeshlab / mesh.obj fallback")
+
+        if dense_ply.is_file() and dense_ply.stat().st_size > 1000:
             result["artifacts"]["dense"] = {
                 "file": dense_ply.name,
                 "size_mb": _file_size_mb(dense_ply),

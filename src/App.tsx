@@ -30,6 +30,7 @@ import {
 import { logger } from './services/logger';
 import { initSessionTrace } from './debug/sessionTrace';
 import { SessionTraceDock } from './components/debug/SessionTraceDock';
+import { CpuProfileBanner } from './components/ui/CpuProfileBanner';
 
 function App() {
   const mosaicTree = usePanelLayoutStore((s) => s.mosaicTree);
@@ -151,6 +152,7 @@ function App() {
         traceDockOpen={traceDockOpen}
         onToggleTraceDock={() => setTraceDockOpen((v) => !v)}
       />
+      <CpuProfileBanner />
       <div className="flex-1 min-h-0 relative mosaic-root">
         {!layoutHydrated ? (
           <div className="h-full flex items-center justify-center text-xs text-[var(--dv-text-muted)]">
