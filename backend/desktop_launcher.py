@@ -16,6 +16,9 @@ ROOT = BACKEND.parent
 _COLMAP_SIDECAR = ROOT / "sidecars" / "colmap"
 if _COLMAP_SIDECAR.is_dir():
     os.environ.setdefault("COLMAP_ROOT", str(_COLMAP_SIDECAR))
+_AV_SIDECAR = ROOT / "sidecars" / "alicevision" / "windows-x64"
+if (_AV_SIDECAR / "bin").is_dir():
+    os.environ.setdefault("ALICEVISION_ROOT", str(_AV_SIDECAR))
 # KEEP: session trace — do not remove without explicit user order
 os.environ.setdefault("MURAVEI_SESSION_TRACE", "1")
 

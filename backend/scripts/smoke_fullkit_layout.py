@@ -76,6 +76,14 @@ def main() -> int:
         readme = FULL_STAGE / "PORTABLE_README.md"
         colmap = FULL_STAGE / "sidecars" / "colmap"
         gsplat = FULL_STAGE / "sidecars" / "gsplat_examples" / "simple_trainer.py"
+        av_bin = (
+            FULL_STAGE
+            / "sidecars"
+            / "alicevision"
+            / "windows-x64"
+            / "bin"
+            / "aliceVision_featureExtraction.exe"
+        )
         payload["full_stage"] = {
             "path": str(FULL_STAGE),
             "ollama_exe": str(ollama_exe),
@@ -84,6 +92,7 @@ def main() -> int:
             "has_muravei_env": True,
             "has_colmap_sidecar": colmap.is_dir(),
             "has_gsplat_examples": gsplat.is_file(),
+            "has_alicevision_sidecar": av_bin.is_file(),
         }
         if colmap.is_dir():
             assert (
@@ -91,6 +100,9 @@ def main() -> int:
                 or (colmap / "colmap.exe").is_file()
                 or (colmap / "bin" / "colmap.exe").is_file()
             ), "sidecars/colmap present but no COLMAP binary/bat"
+        # AliceVision is optional even in FullKit — only assert when present
+        if (FULL_STAGE / "sidecars" / "alicevision").is_dir() and not av_bin.is_file():
+            raise AssertionError("sidecars/alicevision present but featureExtraction.exe missing")
     else:
         payload["full_stage"] = {
             "path": str(FULL_STAGE),

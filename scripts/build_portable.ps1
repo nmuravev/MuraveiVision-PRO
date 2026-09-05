@@ -32,6 +32,8 @@ param(
   [switch]$SkipZip,
   [switch]$FullKit,
   [switch]$NoDetectWeights,
+  [switch]$IncludeAliceVision,
+  [switch]$NoAliceVision,
   [string]$OllamaZipPath = "",
   [string]$OllamaVersion = "v0.11.4",
   [string]$OllamaModelsRoot = ""
@@ -559,6 +561,38 @@ Or pass -OllamaModelsRoot path\to\store (folder with blobs\ + manifests\).
   } else {
     Write-Host "WARNING: sidecars\gsplat_examples missing — gsplat train may be unavailable." -ForegroundColor Yellow
   }
+
+  # AliceVision dense/mesh (optional; large). Default ON for FullKit when staged bins exist.
+  $avBinProbe = Join-Path $Repo "sidecars\alicevision\windows-x64\bin\aliceVision_featureExtraction.exe"
+  $wantAv = $false
+  if ($NoAliceVision) {
+    $wantAv = $false
+  } elseif ($IncludeAliceVision) {
+    $wantAv = $true
+  } else {
+    # Default: include when FullKit and binaries already staged
+    $wantAv = (Test-Path -LiteralPath $avBinProbe)
+  }
+  if ($wantAv) {
+    $avSrc = Join-Path $Repo "sidecars\alicevision"
+    if (Test-Path -LiteralPath $avBinProbe) {
+      $avDest = Join-Path $sidecarDest "alicevision"
+      New-Item -ItemType Directory -Force -Path $avDest | Out-Null
+      foreach ($name in @("LICENSE.MPL-2.0", "README.txt")) {
+        $f = Join-Path $avSrc $name
+        if (Test-Path -LiteralPath $f) { Copy-Item -LiteralPath $f -Destination (Join-Path $avDest $name) -Force }
+      }
+      Copy-Item -LiteralPath (Join-Path $avSrc "windows-x64") -Destination (Join-Path $avDest "windows-x64") -Recurse -Force
+      if (Test-Path -LiteralPath (Join-Path $avSrc "macos-arm64")) {
+        Copy-Item -LiteralPath (Join-Path $avSrc "macos-arm64") -Destination (Join-Path $avDest "macos-arm64") -Recurse -Force
+      }
+      Write-Host "  sidecars\alicevision copied (-IncludeAliceVision / FullKit default when staged)"
+    } else {
+      Write-Host "WARNING: -IncludeAliceVision requested but windows-x64 bins missing — skip." -ForegroundColor Yellow
+    }
+  } else {
+    Write-Host "  AliceVision sidecar skipped (Mini never bundles; FullKit use -IncludeAliceVision or stage bins)"
+  }
 }
 
 $kitLabel = if ($FullKit) { "Full Field Kit" } elseif ($NoDetectWeights) { "Mini (no detect weights)" } else { "Portable Lite" }
@@ -568,7 +602,7 @@ $modelsLine = if ($NoDetectWeights) {
   "assets\models\        (detect .pt; no seg/SAM in Lite copy filter)"
 }
 $sidecarLine = if ($FullKit) {
-  "sidecars\colmap\      (COLMAP)`nsidecars\gsplat_examples\  (trainer)`nollama\               (ollama.exe + models/qwen2.5vl)`nPORTABLE_README.md"
+  "sidecars\colmap\      (COLMAP)`nsidecars\gsplat_examples\  (trainer)`nsidecars\alicevision\  (optional Dense/Mesh)`nollama\               (ollama.exe + models/qwen2.5vl)`nPORTABLE_README.md"
 } else {
   "README.md"
 }
