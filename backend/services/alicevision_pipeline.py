@@ -26,6 +26,49 @@ from services.runtime_log import write as runtime_write
 
 EmitFn = Callable[[dict[str, Any]], None]
 
+# Soft-fail gates (avoid native meshing crash 0xC0000409 on degenerate MVS)
+MIN_MATCHED_VIEWS_FOR_DENSE = 8
+MIN_DEPTH_MAP_BYTES = 50_000
+
+
+def format_cli_failure(returncode: int, blob: str) -> str:
+    """Prefer fatal/error lines; translate common Windows abort codes."""
+    prefer: list[str] = []
+    for line in (blob or "").splitlines():
+        low = line.lower()
+        if "[fatal]" in low or "[error]" in low or "error:" in low:
+            prefer.append(line.strip())
+    tail = (" | ".join(prefer[-4:]) if prefer else (blob or "").strip())[-800:]
+    # NTSTATUS: 0xC0000409 = STATUS_STACK_BUFFER_OVERRUN (often abort on bad mesh input)
+    if returncode in (3221226505, -1073740791) or (returncode & 0xFFFFFFFF) == 0xC0000409:
+        return (
+            f"AliceVision native crash (0xC0000409) — обычно пустые depth maps / мало видов SfM. "
+            f"{tail}"
+        )
+    if returncode < 0 or (returncode & 0xC0000000) == 0xC0000000:
+        return f"AliceVision native abort (exit {returncode:#x}): {tail}"
+    return f"exit {returncode}: {tail}"
+
+
+def depth_maps_usable(depth_dir: Path, *, min_bytes: int = MIN_DEPTH_MAP_BYTES) -> tuple[bool, str]:
+    """Return (ok, reason) — stub EXRs (~7KB) are not usable for meshing."""
+    depth_dir = Path(depth_dir)
+    if not depth_dir.is_dir():
+        return False, f"depth folder missing: {depth_dir}"
+    maps = sorted(depth_dir.glob("*_depthMap.exr"))
+    if not maps:
+        maps = sorted(depth_dir.glob("*depth*.exr"))
+    if not maps:
+        return False, "нет depthMap EXR после depthMapEstimation"
+    usable = [p for p in maps if p.stat().st_size >= min_bytes]
+    if not usable:
+        sizes = ", ".join(f"{p.name}={p.stat().st_size}B" for p in maps[:4])
+        return (
+            False,
+            f"Depth maps пустые/stub ({sizes}). Обычно мало общих видов / слабый SfM — meshing пропущен.",
+        )
+    return True, f"{len(usable)}/{len(maps)} depth maps OK"
+
 
 def ensure_colmap_text_model(sparse_dir: Path) -> bool:
     """Ensure cameras.txt + images.txt exist (convert from .bin via COLMAP if needed).
@@ -159,14 +202,8 @@ def _run_cli(
 
     if proc.returncode != 0:
         blob = ((proc.stderr or "") + "\n" + (proc.stdout or "")).strip()
-        # Prefer fatal/error lines over noisy OCIO "found" traces
-        prefer: list[str] = []
-        for line in blob.splitlines():
-            low = line.lower()
-            if "[fatal]" in low or "[error]" in low or "error:" in low:
-                prefer.append(line.strip())
-        tail = (" | ".join(prefer[-4:]) if prefer else blob)[-800:]
-        raise RuntimeError(f"AliceVision {step} exit {proc.returncode}: {tail}")
+        detail = format_cli_failure(proc.returncode, blob)
+        raise RuntimeError(f"AliceVision {step} {detail}")
     if emit:
         emit(
             {
@@ -416,11 +453,25 @@ def run_dense_pipeline(
         sfm = work / "sfm_colmap.sfm"
         matched = inject_colmap_poses(camera_init, sparse_dir, av_input, sfm)
         _log(f"injected COLMAP poses views={matched}")
-        if matched < 5:
-            _warn(
-                f"Only {matched} COLMAP-registered views — Dense quality will be poor. "
-                "Re-run «Построить 3D» on a segment with more parallax / less HUD crop."
+        if matched < MIN_MATCHED_VIEWS_FOR_DENSE:
+            msg = (
+                f"COLMAP зарегистрировал только {matched} кадров "
+                f"(нужно ≥{MIN_MATCHED_VIEWS_FOR_DENSE}) — Dense/Mesh нестабилен, meshing пропущен. "
+                "Пересоберите «Построить 3D» на сегменте с большим parallax / меньше HUD."
             )
+            _warn(msg)
+            result["error"] = msg
+            result["warning"] = msg
+            result["matched_views"] = matched
+            _emit(
+                {
+                    "event": "alicevision-step-error",
+                    "alicevision_step": "preflight",
+                    "message": msg,
+                    "matched_views": matched,
+                }
+            )
+            return result
 
         dense_dir = work / "dense"
         dense_dir.mkdir(parents=True, exist_ok=True)
@@ -484,27 +535,77 @@ def run_dense_pipeline(
             step="depthMapFiltering",
         )
 
+        depth_ok, depth_reason = depth_maps_usable(depth_filt)
+        if not depth_ok:
+            depth_ok, depth_reason = depth_maps_usable(depth_dir)
+        if not depth_ok:
+            _warn(depth_reason)
+            result["error"] = depth_reason
+            result["warning"] = depth_reason
+            result["matched_views"] = matched
+            _emit(
+                {
+                    "event": "alicevision-step-error",
+                    "alicevision_step": "depthMapValidation",
+                    "message": depth_reason,
+                }
+            )
+            return result
+
         mesh_raw = work / "mesh.obj"
         dense_sfm = work / "dense.sfm"
-        _run_cli(
-            "meshing",
-            [
-                "--input",
-                str(sfm),
-                "--depthMapsFolder",
-                str(depth_filt),
-                "--output",
-                str(dense_sfm),
-                "--outputMesh",
-                str(mesh_raw),
-                "--verboseLevel",
-                "info",
-            ],
-            cwd=work,
-            timeout=7200,
-            emit=emit,
-            step="meshing",
-        )
+        depth_for_mesh = depth_filt if any(depth_filt.glob("*")) else depth_dir
+        try:
+            _run_cli(
+                "meshing",
+                [
+                    "--input",
+                    str(sfm),
+                    "--depthMapsFolder",
+                    str(depth_for_mesh),
+                    "--output",
+                    str(dense_sfm),
+                    "--outputMesh",
+                    str(mesh_raw),
+                    "--saveRawDensePointCloud",
+                    "1",
+                    "--colorizeOutput",
+                    "1",
+                    "--maxInputPoints",
+                    "5000000",
+                    "--maxPoints",
+                    "2000000",
+                    "--minStep",
+                    "2",
+                    "--verboseLevel",
+                    "info",
+                ],
+                cwd=work,
+                timeout=7200,
+                emit=emit,
+                step="meshing",
+            )
+        except RuntimeError as mesh_exc:
+            _warn(f"meshing failed: {mesh_exc}")
+            # Look for any raw dense cloud AliceVision may have flushed before abort
+            dense_ply = job_dir / "dense_point_cloud.ply"
+            for cand in list(work.glob("**/*dense*.ply")) + list(work.glob("**/*point*cloud*.ply")):
+                if cand.is_file() and cand.stat().st_size > 1000:
+                    shutil.copy2(cand, dense_ply)
+                    result["artifacts"]["dense"] = {
+                        "file": dense_ply.name,
+                        "size_mb": _file_size_mb(dense_ply),
+                    }
+                    result["warning"] = f"meshing crashed; recovered partial dense PLY. ({mesh_exc})"
+                    result["ok"] = True
+                    result["matched_views"] = matched
+                    _emit({"event": "dense-artifact-ready", "file": dense_ply.name})
+                    return result
+            result["error"] = str(mesh_exc)
+            result["warning"] = str(mesh_exc)
+            result["matched_views"] = matched
+            _emit({"event": "alicevision-step-error", "message": str(mesh_exc), "error": str(mesh_exc)})
+            return result
 
         dense_ply = job_dir / "dense_point_cloud.ply"
         # Prefer exportMeshlab PLY; fall back to convertMesh vertices
@@ -545,6 +646,7 @@ def run_dense_pipeline(
             }
             _emit({"event": "dense-artifact-ready", "file": dense_ply.name})
 
+        result["matched_views"] = matched
         mesh_out = job_dir / "textured_mesh.obj"
         if mode == "mesh":
             mesh_filt = work / "meshFiltered.obj"
@@ -593,7 +695,6 @@ def run_dense_pipeline(
                 step="texturing",
             )
             # Meshroom writes texturedMesh.obj inside output folder
-            candidates = list(tex_dir.glob("*.obj")) + list(tex_dir.glob("texturedMesh.*"))
             src_obj = None
             for c in tex_dir.rglob("*.obj"):
                 src_obj = c

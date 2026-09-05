@@ -31,7 +31,9 @@
 - **Optional sidecar:** Dense/Mesh presets disable with clear Russian `disabled_reason` when `sidecars/alicevision` missing or CUDA unavailable (no CPU depth-map fallback).
 - **Binaries not in git:** fetch via `scripts/fetch_alicevision.ps1`; FullKit may bundle with `-IncludeAliceVision`.
 - **macOS AliceVision:** not in this RC — placeholder `macos-arm64/.gitkeep` only (do not conflate with `feature/macos-mps`).
-- **Field smoke** of full Dense/Mesh on production footage: pending after RC tag.
+- **Field smoke** of full Dense/Mesh on production footage: pending after RC tag; integration tests cover 9-min clip segment + soft-fail gates.
+- **RESOLVED (2026-09-05): COLMAP text model missing** — Dense failed when `sparse/0` had only `.bin`. Fix: `ensure_colmap_text_model()` auto-runs COLMAP `model_converter` → TXT before AliceVision. Retry Dense after backend reload.
+- **RESOLVED (2026-09-05): meshing exit 0xC0000409** — native crash on empty depth / &lt;8 SfM views. Fix: preflight matched_views≥8, stub-depth gate, safer meshing flags, crash-code translation. Re-run «Построить 3D» until COLMAP registers enough frames, then Dense.
 
 - **Intel Arc/XPU** — не тестируется, провайдеры ORT могут отсутствовать. Только CUDA и CPU.
 - **Native multi-monitor windows** — только in-app floating panels; нативных окон на отдельные мониторы нет.

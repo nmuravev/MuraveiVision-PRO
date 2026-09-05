@@ -104,6 +104,18 @@ class TestPipelineFallback(unittest.TestCase):
             (sparse / "images.txt").write_text("y", encoding="utf-8")
             self.assertTrue(avp.ensure_colmap_text_model(sparse))
 
+    def test_format_crash_code(self) -> None:
+        msg = avp.format_cli_failure(3221226505, "[fatal] empty")
+        self.assertIn("0xC0000409", msg)
+
+    def test_depth_stub_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "x_depthMap.exr").write_bytes(b"0" * 8000)
+            ok, reason = avp.depth_maps_usable(d)
+            self.assertFalse(ok)
+            self.assertTrue(reason)
+
 
 class TestInjectColmapPoses(unittest.TestCase):
     def test_inject_matches_by_basename(self) -> None:

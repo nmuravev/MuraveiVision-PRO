@@ -22,6 +22,16 @@ Aliases: `bootstrap`→sparse/bootstrap script, `balanced`/`high`→splat.
 
 On failure: sparse stays intact; `manifest.alicevision_warning` + train channel error. Never wipe COLMAP.
 
+### Soft-fail gates (anti-crash)
+
+- **Matched views &lt; 8:** Dense/Mesh aborts before depth/meshing with a clear Russian message (avoids native `0xC0000409` on degenerate SfM).
+- **Stub depth EXR (~7 KB):** meshing skipped — empty depth maps usually mean weak multi-view overlap.
+- **Meshing native abort:** translated to RU; partial dense PLY recovered if AliceVision flushed one.
+
+### Field 9-minute clip
+
+Integration tests (`backend/tests/test_long_clip_field.py`) use `archive/video_2026-08-25_09-17-15.mp4` or `MURAVEI_TEST_LONG_CLIP`. Shared frames cache: `archive/.test_cache/long_clip_frames/` (gitignored). Frame budget for ~9 min stays within `COLMAP_MAX_FRAMES` (default 600); matcher stays **sequential**.
+
 ## Sidecar
 
 - Manifest: [`scripts/alicevision_manifest.json`](../scripts/alicevision_manifest.json) (version **3.3.0**, SHA256, tool list)
