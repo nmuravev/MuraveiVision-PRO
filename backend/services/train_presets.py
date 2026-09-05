@@ -45,7 +45,7 @@ def _validate(raw: dict[str, Any]) -> dict[str, dict[str, Any]] | None:
         if not isinstance(key, str) or not isinstance(val, dict):
             return None
         script = str(val.get("script") or "")
-        if script not in ("bootstrap", "gsplat"):
+        if script not in ("bootstrap", "gsplat", "alicevision_mvs", "alicevision_mesh", "colmap_only"):
             return None
         entry = dict(val)
         entry["label"] = str(val.get("label") or key)
@@ -56,14 +56,16 @@ def _validate(raw: dict[str, Any]) -> dict[str, dict[str, Any]] | None:
                 return None
             entry["max_steps"] = steps
             entry["data_factor"] = int(val.get("data_factor") or 4)
-        else:
+        elif script == "bootstrap":
             entry["max_points"] = int(val.get("max_points") or 80_000)
+        elif script in ("alicevision_mvs", "alicevision_mesh", "colmap_only"):
+            entry["backend"] = script
         if "min_vram_gb" in val:
             entry["min_vram_gb"] = float(val["min_vram_gb"])
         if val.get("default"):
             entry["default"] = True
         out[key] = entry
-    if "balanced" not in out and "bootstrap" not in out:
+    if "balanced" not in out and "bootstrap" not in out and "sparse" not in out:
         return None
     return out
 
