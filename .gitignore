@@ -84,6 +84,9 @@ mobileclip2_b.ts
 *.pt.backup
 sidecars/colmap/bin/
 sidecars/colmap/lib/
+# AliceVision C++ sidecar (binaries + download staging; keep LICENSE/README)
+sidecars/alicevision/windows-x64/
+sidecars/alicevision/downloads/
 
 # Runtime log dumps (keep directory placeholder)
 logs/*
