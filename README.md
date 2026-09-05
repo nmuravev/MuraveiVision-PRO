@@ -1,7 +1,8 @@
-# MuraveiVision PRO v3.0
+# MuraveiVision PRO v3.1
 
 Автономный тактический видеоанализ (YOLO) для Windows. Portable ZIP — без установки Node/Python на полевом ноутбуке.
 
+**Latest release:** [v3.1.0](https://github.com/nmuravev/MuraveiVision-PRO/releases/tag/v3.1.0)  
 **Документация:** [`docs/`](docs/README.md) — архитектура, API, обучение, portable, гайд оператора, roadmap.
 
 ## Быстрый старт (Portable)
