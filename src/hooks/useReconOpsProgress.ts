@@ -251,6 +251,61 @@ export function useReconOpsProgress(opts: {
       const doneAll = phaseUi === 'success';
       const trainingNow = training || train.status === 'training';
       const stepsDone = (train.steps ?? 0) > 0;
+      const preset = String(train.preset || lastPresetRef.current || '');
+      const isAv =
+        preset === 'dense' ||
+        preset === 'mesh' ||
+        /alicevision/i.test(train.message || '') ||
+        /AliceVision/i.test(train.message || '');
+
+      if (isAv) {
+        const avSteps = [
+          'cameraInit',
+          'prepareDenseScene',
+          'depthMapEstimation',
+          'depthMapFiltering',
+          'meshing',
+          ...(preset === 'mesh' ? ['meshFiltering', 'texturing'] : ['exportMeshlab']),
+        ];
+        const curStep = Math.max(0, train.steps ?? 0);
+        const rows: OpsStep[] = [
+          {
+            id: 'av_discover',
+            label: 'AliceVision discover',
+            status: err ? 'error' : trainingNow || doneAll ? 'done' : 'pending',
+            detail: train.message,
+          },
+          ...avSteps.map((id, i) => {
+            const idx = i + 1;
+            let status: OpsStepStatus = 'pending';
+            if (err && curStep === idx) status = 'error';
+            else if (doneAll || curStep > idx) status = 'done';
+            else if (trainingNow && curStep === idx) status = 'running';
+            else if (trainingNow && curStep + 1 === idx) status = 'running';
+            return {
+              id: `alicevision_${id}`,
+              label: id,
+              status,
+              detail: status === 'running' ? train.message : undefined,
+            } as OpsStep;
+          }),
+          {
+            id: 'load_scene',
+            label: 'Загрузка сцены',
+            status: err
+              ? 'pending'
+              : sceneLoading
+                ? 'running'
+                : doneAll || sceneKind === 'dense' || sceneKind === 'mesh' || sceneKind === 'splat'
+                  ? 'done'
+                  : train.status === 'done'
+                    ? 'running'
+                    : 'pending',
+          },
+        ];
+        return rows.map((r) => ({ ...r, durationMs: markDur(r.id, r.status) }));
+      }
+
       const prepDone =
         err ||
         doneAll ||
