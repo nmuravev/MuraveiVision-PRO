@@ -1,8 +1,10 @@
-# 3D Reconstruction (COLMAP + gsplat)
+# 3D Reconstruction (COLMAP + AliceVision + gsplat)
 
 Visual-only photogrammetry for archive MP4 **without GPS**. Designed for EW/jammed environments where SRT telemetry is unavailable.
 
 **Paths:** recon `video_path` and media assets resolve through dynamic `archive_root()` / `assert_in_archive` — never bake host absolute paths into manifests or client state. Prefer `archive/...` from the Media API.
+
+**v3.2:** optional AliceVision dense MVS / textured mesh after COLMAP — see [ALICEVISION.md](ALICEVISION.md).
 
 ## Requirements
 
@@ -10,6 +12,7 @@ Visual-only photogrammetry for archive MP4 **without GPS**. Designed for EW/jamm
 |-----------|--------|
 | Python 3.12.10 | `muravei_env\Scripts\python.exe` only |
 | COLMAP | Sidecar `sidecars/colmap` — auto-detect или `COLMAP_ROOT` |
+| AliceVision (Dense/Mesh) | `sidecars/alicevision/windows-x64` or `ALICEVISION_ROOT` + NVIDIA CUDA |
 | gsplat (train) | Prebuilt wheel on build machine + NVIDIA CUDA |
 | ffmpeg/ffprobe | `assets/ffmpeg.exe` or PATH |
 
@@ -37,6 +40,7 @@ npm run backend
 ```
 
 3. In UI: open MP4 → **Flight3D** → **Построить 3D** (segment ≤120 s from playhead).
+4. After sparse: hierarchy **Sparse / Dense / Mesh / Splat** (Dense/Mesh need AliceVision+CUDA; Splat = gsplat). Artifact selector «Показать» + export.
 
    **Product rule:** «Построить 3D» = **COLMAP sparse only** (`colmap_done`, `manifest.next_action=balanced_for_splat`). Ops modal steps: extracting → colmap → export_poses → load_scene — **no** inline «gsplat train (optional)». Photorealism = UI presets Balanced / Bootstrap / High.
 

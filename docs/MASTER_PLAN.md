@@ -3,21 +3,24 @@
 ## Meta
 
 - **Snapshot date:** 2026-09-05
-- **Branch:** `feature/network-replication-3.1`
-- **Commit:** `b358803` — v3.1 release candidate
-- **Unit tests:** 227 OK
+- **Branch:** `feature/alicevision-v3.2`
+- **Commit:** (see `v3.2.0-rc.1` tip) — AliceVision dense/mesh RC
+- **Unit tests:** 250 OK
 - **E2E specs:** 6+
-- **Status:** v3.1 release candidate — Mini/Full portable verified; ready for squash merge to main
-- **Last updated by:** docs: v3.1 RC (b358803)
-- **Portable artifacts:** `MuraveiVision_PRO_Mini.zip` (~540 MB), `MuraveiVision_PRO_FullKit.zip` (~16.6 GB)
+- **Status:** v3.2.0-rc.1 on branch only — **do not merge to main** until field smoke; macOS AV pending
+- **Last updated by:** docs: AliceVision v3.2 RC (250 tests)
+- **Portable artifacts:** Mini unchanged; FullKit may include AliceVision when staged (~+3 GB extracted)
 
 ## Major Changes in This Release
 
+- AliceVision optional dense MVS + textured mesh after COLMAP sparse
+- Preset hierarchy Sparse / Dense / Mesh / Splat (+ aliases)
+- Flight3D multi-artifact viewer + export
+- FullKit `-IncludeAliceVision` portable bundling
 - 3D Reconstruction: COLMAP sequential matching + frame budget (stable on 8GB VRAM)
 - HUD Exclusion: Auto-detection + blur/crop for detect/CD/recon
 - Session Trace: Page-lifetime singleton + sessionStorage UUID
 - Media Paths: Canonical `archive/...` paths, no hardcoded `D:\` paths
-- 3D Train UI: Presets (Bootstrap/Balanced/High) with VRAM gate
 - CSP Security: `blob:` support for 3D splat
 - Zero-Hardcode Policy: Systematic scan + durable Cursor rule
 - Portable build hardening: unique `stage_*`, host-pip bake, offline wheels, stable CA bundle

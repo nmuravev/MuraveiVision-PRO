@@ -107,8 +107,8 @@ cd ..\MuraveiVision-PRO-Base2
 ### Build3D vs train presets
 
 - **«Построить 3D»** runs COLMAP → poses → sparse only. Does **not** call inline gsplat unless `GSPLAT_INLINE=1`.
-- Photoreal `model.ply` = Flight3D presets (Balanced / Bootstrap / High) or CLI wrappers below.
-- After sparse: `manifest.next_action = "balanced_for_splat"` drives the yellow CTA. Successful Balanced (`_patch_artifact` → `model.ply`) **clears** `next_action`; FE also hides the CTA when `classifyArtifact(artifact)==='splat'`.
+- Photoreal / dense / mesh = Flight3D hierarchy (**Sparse / Dense / Mesh / Splat**) or aliases Bootstrap / Balanced / High. See [ALICEVISION.md](ALICEVISION.md).
+- After sparse: `manifest.next_action = "balanced_for_splat"` drives the yellow CTA. Successful Splat (`_patch_artifact` → `model.ply`) **clears** `next_action`; FE also hides the CTA when `classifyArtifact(artifact)==='splat'`.
 
 ```powershell
 # Rare: re-enable short inline train after COLMAP (not recommended for field UX)
@@ -117,9 +117,18 @@ $env:GSPLAT_INLINE = "1"
 
 ### UI presets (`config/train_presets.json`)
 
-Repo-root JSON controls Flight3D **Сцена** buttons (Bootstrap / Balanced / High). Example keys: `script` (`bootstrap`|`gsplat`), `max_steps`, `data_factor`, `max_points`, `min_vram_gb`, `eta`, `default`. Missing/invalid file → built-in Balanced defaults.
+Repo-root JSON controls Flight3D **Сцена** buttons. Canonical: `sparse` / `dense` / `mesh` / `splat`; aliases `bootstrap` / `balanced` / `high`. Scripts: `colmap_only` | `alicevision_mvs` | `alicevision_mesh` | `bootstrap` | `gsplat`. Missing/invalid file → built-in hierarchy.
 
-VRAM gate for High uses `torch.cuda.get_device_properties(0).total_memory` (no `nvidia-smi`).
+VRAM gate uses `torch.cuda.get_device_properties(0).total_memory` (no `nvidia-smi`). Dense/Mesh also require AliceVision sidecar + CUDA.
+
+### AliceVision sidecar
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\fetch_alicevision.ps1
+$env:ALICEVISION_ROOT = (Resolve-Path ".\sidecars\alicevision\windows-x64").Path
+```
+
+VC++ Redistributable x64 required. Depth maps need NVIDIA CUDA (no CPU fallback).
 
 ### CLI (optional)
 

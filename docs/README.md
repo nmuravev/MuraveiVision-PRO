@@ -17,7 +17,9 @@
 | [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) | Инженеры / ML | 11 таблиц SQLite, индексы, миграции |
 | [CONFIGURATION.md](CONFIGURATION.md) | Инженеры | SQLite settings, константы YOLO/SAHI/валидатор, сеть, классы, env |
 | [DETECTION_AND_TRAINING.md](DETECTION_AND_TRAINING.md) | ML / оператор обучения | YOLO/YOLOE, классы 238, дообучение, CUDA |
-| [RECON_3D.md](RECON_3D.md) | Инженеры / оператор | COLMAP/gsplat, реконструкция, Flight3D, raycast |
+| [RECON_3D.md](RECON_3D.md) | Инженеры / оператор | COLMAP/gsplat/AliceVision, реконструкция, Flight3D, raycast |
+| [ALICEVISION.md](ALICEVISION.md) | Инженеры / оператор | Dense MVS / mesh sidecar, пресеты, CUDA, portable |
+| [ATTRIBUTION.md](ATTRIBUTION.md) | Юристы / релиз | AliceVision MPL-2.0 и сторонние лицензии |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Сборка / поле | Развёртывание с нуля, portable, troubleshooting |
 | [PORTABLE.md](PORTABLE.md) | Сборка / поле | Portable ZIP, embeddable Python, состав комплекта |
 | [FEATURES.md](FEATURES.md) | Все | Что реализовано (с примерами использования) |

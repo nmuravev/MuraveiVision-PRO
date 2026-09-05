@@ -26,7 +26,12 @@
 - **`cacert.pem` vanishes mid-pip:** staged `python -m pip` self-upgrade deletes vendor CA while `SSL_CERT_FILE` still points at it. Fix: host `pip --python <staged>`; stable `portable/cache/cacert.pem` + env pins.
 - **AV breaking staged pip (`INSTALLER*.tmp`):** prefer offline `portable/cache/wheels` (`scripts/cache_portable_wheels.ps1`); robocopy host site-packages only as fallback / `MURAVEI_PORTABLE_MIRROR=1`. See [PORTABLE.md](PORTABLE.md).
 
-## Не поддерживается (осознанно)
+## AliceVision / Dense-Mesh (v3.2 branch)
+
+- **Optional sidecar:** Dense/Mesh presets disable with clear Russian `disabled_reason` when `sidecars/alicevision` missing or CUDA unavailable (no CPU depth-map fallback).
+- **Binaries not in git:** fetch via `scripts/fetch_alicevision.ps1`; FullKit may bundle with `-IncludeAliceVision`.
+- **macOS AliceVision:** not in this RC — placeholder `macos-arm64/.gitkeep` only (do not conflate with `feature/macos-mps`).
+- **Field smoke** of full Dense/Mesh on production footage: pending after RC tag.
 
 - **Intel Arc/XPU** — не тестируется, провайдеры ORT могут отсутствовать. Только CUDA и CPU.
 - **Native multi-monitor windows** — только in-app floating panels; нативных окон на отдельные мониторы нет.

@@ -61,7 +61,7 @@
 
 В Inspector «Показать в 3D» открывает Flight3D, строит луч из COLMAP intrinsics, использует splat pick → sparse fallback. Если пересечения нет — `Пересечение не найдено`.
 
-**Гео 3D / Сцена:** после COLMAP видите облако точек (не фотореализм); строка статуса **`sparse COLMAP · нужен train для splat`** — ожидаемо. На canvas во время «Построить 3D» / обучения — **модалка шагов** (извлечение → COLMAP → позы / или train → model.ply → splat); **Свернуть в фон** — чип. После успеха модалка закрывается; на idle sparse остаётся карточка «Sparse COLMAP… → Balanced». Если кнопки Balanced/High серые («Нужен MSVC…») — Bootstrap или инженер. При ошибке — «Повторить» / `train.log`.
+**Гео 3D / Сцена:** после COLMAP видите облако точек (не фотореализм); строка статуса **`sparse COLMAP · нужен train для splat`** — ожидаемо. Иерархия пресетов: **Sparse → Dense → Mesh → Splat** (алиасы Bootstrap/Balanced/High сохранены). Dense/Mesh требуют AliceVision sidecar + NVIDIA CUDA; иначе кнопка серая с причиной. На canvas во время «Построить 3D» / обучения — **модалка шагов** (извлечение → COLMAP → позы / или AliceVision steps / gsplat → загрузка сцены); **Свернуть в фон** — чип. Селектор «Показать» переключает sparse/dense/mesh/splat. Если Splat серый («Нужен MSVC…») — Bootstrap или инженер. При ошибке AliceVision sparse остаётся; см. `alicevision_warning` / `train.log`.
 
 ## Сеть баз
 
