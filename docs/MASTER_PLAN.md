@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** (pending) — AV meshing soft-fail + long-clip tests
+- **Commit:** `58033ec` — AV meshing soft-fail + long-clip tests
 - **Unit tests:** 262 OK (incl. 9-min field clip + AV soft-fail gates)
 - **E2E specs:** 6+
 - **Status:** v3.2 field clip matched_views=20 on 60s segment — Dense preflight OK; **do not merge to main**
