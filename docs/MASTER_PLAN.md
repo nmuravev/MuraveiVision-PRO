@@ -4,12 +4,12 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** `2e39e4c` — AliceVision dense/mesh RC (tag `v3.2.0-rc.1`)
+- **Commit:** *(pending this docs commit)* — FullKit `-IncludeAliceVision` via `npm run portable:full`
 - **Unit tests:** 250 OK
 - **E2E specs:** 6+
-- **Status:** v3.2.0-rc.1 on branch only — **do not merge to main** until field smoke; macOS AV pending
-- **Last updated by:** docs: Meta tip after v3.2.0-rc.1 tag (2e39e4c)
-- **Portable artifacts:** Mini unchanged; FullKit may include AliceVision when staged (~+3 GB extracted)
+- **Status:** v3.2.0-rc.1 + FullKit AV ZIP smoke (layout/presets); field clip e2e still operator Step 2 — **do not merge to main**
+- **Last updated by:** feat: portable:full IncludeAliceVision + PORTABLE.md size note
+- **Portable artifacts:** Mini ~0.54 GB (no AV); FullKit+AV ~17.8 GB (`MuraveiVision_PRO_FullKit.zip`)
 
 ## Major Changes in This Release
 

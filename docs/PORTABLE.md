@@ -30,7 +30,7 @@
 |-------|------------|------------|-----|
 | **Lite** | `npm run portable` | UI + backend + embed Python + **detect YOLO `.pt`** (без seg/SAM/yoloe) | `MuraveiVision_PRO_Portable.zip` |
 | **Mini** | `npm run portable:mini` (`-NoDetectWeights`) | как Lite **без** detect `.pt` / mobileclip (YOLO → 503 до USB-import) | `MuraveiVision_PRO_Mini.zip` |
-| **Full** | `npm run portable:full` (`-FullKit`) | Lite + Ollama `qwen2.5vl:7b` + torch **cu128** + **`sidecars/colmap`** + **`sidecars/gsplat_examples`** + optional **`sidecars/alicevision`** (when staged; `-IncludeAliceVision` / `-NoAliceVision`) | `MuraveiVision_PRO_FullKit.zip` |
+| **Full** | `npm run portable:full` (`-FullKit -IncludeAliceVision`) | Lite + Ollama `qwen2.5vl:7b` + torch **cu128** + **`sidecars/colmap`** + **`sidecars/gsplat_examples`** + **`sidecars/alicevision`** (~2.8 GB; `-NoAliceVision` to skip) | `MuraveiVision_PRO_FullKit.zip` |
 
 **Не путать:** «Mini без AI» ≠ Lite. Lite уже с YOLO detect. Настоящий лёгкий кит — **Mini** (`-NoDetectWeights`).
 
@@ -61,18 +61,18 @@ ollama pull qwen2.5vl:7b
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\build_portable.ps1 -FetchEmbeddablePython -FullKit
+powershell -ExecutionPolicy Bypass -File scripts\build_portable.ps1 -FetchEmbeddablePython -FullKit -IncludeAliceVision
 # или
 npm run portable:full
 ```
 
-Опционально: `-OllamaZipPath`, `-OllamaVersion v0.11.4`, `-OllamaModelsRoot` (папка с `blobs\` + `manifests\`; build-time candidates: `OLLAMA_MODELS`, `%USERPROFILE%\.ollama` / `.ollama\models` — **не** runtime-пути в ZIP), `-SkipNpmBuild`, `-SkipZip`.
+Опционально: `-OllamaZipPath`, `-OllamaVersion v0.11.4`, `-OllamaModelsRoot` (папка с `blobs\` + `manifests\`; build-time candidates: `OLLAMA_MODELS`, `%USERPROFILE%\.ollama` / `.ollama\models` — **не** runtime-пути в ZIP), `-SkipNpmBuild`, `-SkipZip`, `-NoAliceVision`.
 
 В FullKit копируется **только** `qwen2.5vl:7b` (~6 GB blobs), не весь локальный store Ollama.
 3D: `sidecars/colmap` + `sidecars/gsplat_examples` (если есть в репо; иначе WARNING).
-AliceVision Dense/Mesh: копируется в FullKit если `sidecars/alicevision/windows-x64/bin` уже staged (~3 GB extracted). Флаги: `-IncludeAliceVision` (force) / `-NoAliceVision` (skip). Mini никогда не бандлит AliceVision.
+AliceVision Dense/Mesh: `npm run portable:full` передаёт `-IncludeAliceVision` (копирует `sidecars/alicevision/windows-x64` ~2.8 GB extracted; WARNING если bins нет). Без флага FullKit всё равно включает AV, если bins уже staged. `-NoAliceVision` — пропуск. Mini никогда не бандлит AliceVision.
 
-Ожидаемый размер Full ZIP порядка **12–18 GB**.
+Ожидаемый размер Full ZIP с AliceVision порядка **17–20 GB** (без AV ~12–17 GB).
 
 ## Что кладётся (Lite)
 
