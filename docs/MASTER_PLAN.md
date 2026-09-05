@@ -4,11 +4,12 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/network-replication-3.1`
-- **Commit:** `2f7673b` — portable build hardening
+- **Commit:** _(updated after RC commit)_
 - **Unit tests:** 227 OK
 - **E2E specs:** 6+
-- **Status:** Ready for merge to main
-- **Last updated by:** fix: harden portable build (2f7673b)
+- **Status:** v3.1 release candidate — Mini/Full portable verified; ready for squash merge to main
+- **Last updated by:** docs: v3.1 release candidate gate
+- **Portable artifacts:** `MuraveiVision_PRO_Mini.zip` (~540 MB), `MuraveiVision_PRO_FullKit.zip` (~16.6 GB)
 
 ## Major Changes in This Release
 

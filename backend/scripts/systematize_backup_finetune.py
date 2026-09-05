@@ -20,7 +20,7 @@ from pathlib import Path
 import httpx
 import yaml
 
-ROOT = Path(r"d:\LLM\MuraveiVision-PRO")
+ROOT = Path(__file__).resolve().parents[2]
 BACKUP_DS = ROOT / ".backup" / "MuraveiVision" / "dataset"
 MIL_YAML = ROOT / "military_classes.yaml"
 OUT_DIR = ROOT / "cache" / "backup_finetune_ds"

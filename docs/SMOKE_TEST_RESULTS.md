@@ -4,7 +4,7 @@ Date: 2026-09-02
 Method: **Playwright ephemeral** (`tests/smoke_real_video.test.ts`, deleted after run — not committed)  
 File: `archive/video_2026-08-25_09-17-15.mp4` (~202 MB)  
 Resolved: `1280×774`, duration **543.3 s**, H.264  
-Source path used: `D:/LLM/MuraveiVision-PRO/archive/video_2026-08-25_09-17-15.mp4`
+Source path used: `archive/video_2026-08-25_09-17-15.mp4` (repo-relative)
 
 ## Honesty note
 

@@ -11,8 +11,23 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Vcvars = "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 $CudaHome = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8"
-$PyInc = "C:\Users\MECHREVO\AppData\Local\Programs\Python\Python312\Include"
 $Py = Join-Path $RepoRoot "muravei_env\Scripts\python.exe"
+# Headers for CUDA JIT: prefer env, else sysconfig / Program Files (never a user home path)
+$PyInc = $env:MURAVEI_PYTHON_INCLUDE
+if (-not $PyInc) {
+  $PyInc = (& $Py -c "import sysconfig; print(sysconfig.get_path('include'))" 2>$null)
+}
+if (-not $PyInc -or -not (Test-Path -LiteralPath $PyInc)) {
+  foreach ($c in @(
+    "C:\Program Files\Python312\Include",
+    "C:\Program Files (x86)\Python312\Include"
+  )) {
+    if (Test-Path -LiteralPath $c) { $PyInc = $c; break }
+  }
+}
+if (-not $PyInc -or -not (Test-Path -LiteralPath $PyInc)) {
+  throw "Python Include dir not found — set MURAVEI_PYTHON_INCLUDE or install Python 3.12 headers"
+}
 
 if (-not (Test-Path $Vcvars)) { throw "vcvars not found: $Vcvars" }
 if (-not (Test-Path $Py)) { throw "python not found: $Py" }

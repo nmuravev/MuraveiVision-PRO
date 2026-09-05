@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 const SOURCE =
   process.env.MURAVEI_TEST_SOURCE ??
-  'D:\\LLM\\MuraveiVision-PRO\\archive\\video_2026-08-25_09-17-15.mp4';
+  'archive/video_2026-08-25_09-17-15.mp4';
 
 test('scoped detections, playback rate and dead Live status remain consistent', async ({
   page,

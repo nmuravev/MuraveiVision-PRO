@@ -73,7 +73,7 @@ SYSTEM → Сеть (`mode` off / server / client):
 Один backend не доказывает репликацию. Ручной тест — **две копии папки** (у каждой свой `muravei.db`):
 
 ```
-xcopy D:\LLM\MuraveiVision-PRO D:\LLM\MuraveiVision-PRO-Base2 /E /I
+xcopy .\MuraveiVision-PRO .\MuraveiVision-PRO-Base2 /E /I
 ```
 
 ```
@@ -81,7 +81,7 @@ xcopy D:\LLM\MuraveiVision-PRO D:\LLM\MuraveiVision-PRO-Base2 /E /I
 .\muravei_env\Scripts\python.exe -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000
 
 # Terminal 2 — клиент (копия). Не npm run backend: там порт 8000 зашит.
-cd D:\LLM\MuraveiVision-PRO-Base2
+cd ..\MuraveiVision-PRO-Base2
 .\muravei_env\Scripts\python.exe -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8001
 ```
 
