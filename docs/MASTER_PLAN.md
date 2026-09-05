@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** (pending push) — offline muravei_env_pack (wheels)
+- **Commit:** `7be38f7` — offline muravei_env_pack (wheels)
 - **Unit tests:** 267 OK
 - **E2E specs:** 6+
 - **Status:** v3.2 Dense OK; separate offline env wheels pack (`make_env_pack` / `setup_env`); **do not merge to main**
