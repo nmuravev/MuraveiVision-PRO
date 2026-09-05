@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** (pending) — AliceVision visibility UX (ops subtitle + Dense CTA)
+- **Commit:** `18bc8f7` — AliceVision visibility UX (ops subtitle + Dense CTA)
 - **Unit tests:** 250 OK
 - **E2E specs:** 6+
 - **Status:** v3.2.0-rc.1; job `d93931cbdc5a` colmap_done — ready for Dense; **do not merge to main**
