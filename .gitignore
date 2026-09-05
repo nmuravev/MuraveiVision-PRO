@@ -91,3 +91,7 @@ sidecars/alicevision/downloads/
 # Runtime log dumps (keep directory placeholder)
 logs/*
 !logs/.gitkeep
+
+# Isolated v3.2.0 full tree (local only — do not commit)
+MuraveiVision-Pro-3.2.0/
+
