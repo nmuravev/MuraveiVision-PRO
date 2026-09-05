@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** (pending push) — Windows CPU+DirectML field edition
+- **Commit:** `b7ae5aa` — Windows CPU+DirectML field edition
 - **Unit tests:** 280 OK
 - **E2E specs:** 6+
 - **Status:** CPU profile + DirectML YOLO + win_cpu/win_cuda packs; **do not merge to main**
