@@ -92,6 +92,7 @@ sidecars/alicevision/downloads/
 logs/*
 !logs/.gitkeep
 
-# Isolated v3.2.0 full tree (local only — do not commit)
+# Isolated full tree copies (local only — never commit)
+MuraveiVision-Pro-*/
 MuraveiVision-Pro-3.2.0/
 
