@@ -375,7 +375,11 @@ export const Flight3D: React.FC = () => {
   });
 
   const runBalanced = () => {
-    void startTrain('balanced', () => {
+    const preferred =
+      trainPresets.find((p) => p.id === 'splat' && !p.disabled)?.id ||
+      trainPresets.find((p) => p.id === 'balanced' && !p.disabled)?.id ||
+      'splat';
+    void startTrain(preferred, () => {
       framedKeyRef.current = '';
       loadManifestRef.current();
     });
@@ -1292,12 +1296,12 @@ export const Flight3D: React.FC = () => {
         <div className="px-2 py-1 border-b border-[var(--dv-border)] flex flex-col gap-1 text-[10px] flex-shrink-0">
           {needsTrainBanner && (
             <div className="text-amber-300 bg-amber-950/40 border border-amber-700/50 rounded-sm px-2 py-1">
-              Облако COLMAP — не фотореализм. Выберите Balanced (5–10 мин) или High Quality.
+              Sparse COLMAP готов. Дальше: Dense / Mesh (AliceVision) или Splat (gsplat).
             </div>
           )}
           {sceneKind === 'splat' && splatKind === 'bootstrap' && !training && (
             <div className="text-amber-300 bg-amber-950/40 border border-amber-700/50 rounded-sm px-2 py-1">
-              Bootstrap загружен (минимальный splat). Для фотореализма запустите Balanced / High.
+              Bootstrap загружен (минимальный splat). Для фотореализма — Splat / Balanced / High.
             </div>
           )}
           {presetsError && (
@@ -1332,7 +1336,28 @@ export const Flight3D: React.FC = () => {
                 return `train: ${statusLabel}${art}`;
               })()}
             </span>
-            {trainPresets.map((p) => (
+          </div>
+          <div className="flex flex-col gap-1">
+            <div className="text-[var(--dv-text-muted)] uppercase tracking-wide text-[9px]">
+              Иерархия · Sparse → Dense → Mesh → Splat
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(
+                (() => {
+                  const primary = ['sparse', 'dense', 'mesh', 'splat'];
+                  const primarySet = new Set(primary);
+                  const hasPrimary = trainPresets.some((p) => primarySet.has(p.id));
+                  const list = hasPrimary
+                    ? [
+                        ...primary
+                          .map((id) => trainPresets.find((p) => p.id === id))
+                          .filter(Boolean),
+                        ...trainPresets.filter((p) => !primarySet.has(p.id)),
+                      ]
+                    : trainPresets;
+                  return list as typeof trainPresets;
+                })()
+              ).map((p) => (
               <button
                 key={p.id}
                 type="button"
@@ -1360,16 +1385,30 @@ export const Flight3D: React.FC = () => {
               >
                 {p.label}
                 {p.eta ? ` (${p.eta})` : ''}
+                {p.disabled && p.disabled_reason ? ' · недоступно' : ''}
               </button>
-            ))}
-            {training && (
-              <button
-                type="button"
-                className="px-2 py-0.5 bg-[var(--dv-surface)] hover:bg-[var(--dv-hover)] rounded-sm"
-                onClick={() => void stopTrain()}
-              >
-                Стоп train
-              </button>
+              ))}
+              {training && (
+                <button
+                  type="button"
+                  className="px-2 py-0.5 bg-[var(--dv-surface)] hover:bg-[var(--dv-hover)] rounded-sm"
+                  onClick={() => void stopTrain()}
+                >
+                  Стоп train
+                </button>
+              )}
+            </div>
+            {trainPresets.some((p) => p.disabled && p.disabled_reason) && (
+              <div className="text-[var(--dv-text-muted)] font-mono leading-snug">
+                {trainPresets
+                  .filter((p) => p.disabled && p.disabled_reason)
+                  .slice(0, 4)
+                  .map((p) => (
+                    <div key={`reason-${p.id}`}>
+                      {p.label}: {p.disabled_reason}
+                    </div>
+                  ))}
+              </div>
             )}
           </div>
           {training && (
@@ -1463,8 +1502,8 @@ export const Flight3D: React.FC = () => {
                   точек, не Gaussian splat
                 </div>
                 <div className="mt-1 text-[var(--dv-text-muted)] text-[10px] leading-snug">
-                  Статус «sparse COLMAP · нужен train для splat» — норма после «Построить 3D».
-                  Фотореализм = Balanced (~5–10 мин) → model.ply.
+                  После «Построить 3D» доступны Dense / Mesh (AliceVision) или Splat (gsplat).
+                  Фотореализм splat ≈ 5–10 мин → model.ply.
                 </div>
                 <button
                   type="button"
@@ -1472,17 +1511,20 @@ export const Flight3D: React.FC = () => {
                   disabled={
                     trainBlocked ||
                     !isReconReady(manifest) ||
-                    trainPresets.some((p) => p.id === 'balanced' && p.disabled)
+                    (trainPresets.some((p) => p.id === 'splat')
+                      ? trainPresets.some((p) => p.id === 'splat' && p.disabled)
+                      : trainPresets.some((p) => p.id === 'balanced' && p.disabled))
                   }
                   onPointerDown={() => {
                   }}
                   onClick={() => runBalanced()}
                   title={
+                    trainPresets.find((p) => p.id === 'splat')?.disabled_reason ||
                     trainPresets.find((p) => p.id === 'balanced')?.disabled_reason ||
-                    'Запустить Balanced gsplat'
+                    'Запустить Splat / Balanced gsplat'
                   }
                 >
-                  Balanced → фотореализм
+                  Splat → фотореализм
                 </button>
               </div>
             </div>

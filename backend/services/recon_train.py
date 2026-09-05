@@ -12,7 +12,11 @@ from typing import Any
 
 from services import recon_scanner
 from services.alicevision import alicevision_available, alicevision_cuda_ready
-from services.alicevision_pipeline import patch_manifest_artifacts, run_dense_pipeline
+from services.alicevision_pipeline import (
+    normalize_artifacts,
+    patch_manifest_artifacts,
+    run_dense_pipeline,
+)
 from services.gsplat_msvc import (
     MSVC_NEED_MSG,
     build_gsplat_launch,
@@ -267,6 +271,47 @@ def _parse_line(line: str, max_steps: int) -> None:
         upd["vram_total_gb"] = round(total_vram_gb(), 2)
         _emit(upd)
 
+def _run_sparse_select_worker(job_id: str, preset_id: str) -> None:
+    """Mark sparse artifact selected — no dense/splat work."""
+    job_dir = _job_dir(job_id)
+    _emit(
+        {
+            "status": "training",
+            "job_id": job_id,
+            "preset": preset_id,
+            "steps": 0,
+            "max_steps": 1,
+            "message": "Выбор sparse COLMAP…",
+            "error": None,
+        }
+    )
+    man = _read_manifest(job_dir)
+    man = normalize_artifacts(man)
+    sparse_file = str(man.get("sparse_file") or "sparse_points.json")
+    if not (job_dir / sparse_file).is_file() and not (job_dir / "colmap" / "sparse" / "0").is_dir():
+        err = "Нет sparse COLMAP для этого job"
+        _emit({"status": "error", "error": err, "message": err})
+        return
+    arts = dict(man.get("artifacts") or {})
+    arts["sparse"] = {"file": sparse_file}
+    man["artifacts"] = arts
+    man["selected_artifact"] = "sparse"
+    man["artifact"] = None
+    man["status"] = "colmap_done"
+    man["next_action"] = "balanced_for_splat"
+    _write_manifest(job_dir, man)
+    _emit(
+        {
+            "status": "done",
+            "steps": 1,
+            "max_steps": 1,
+            "artifact": sparse_file,
+            "message": "Sparse COLMAP выбран",
+            "error": None,
+        }
+    )
+
+
 def _run_alicevision_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) -> None:
     """Dense / mesh via AliceVision; never wipe COLMAP sparse on failure."""
     job_dir = _job_dir(job_id)
@@ -335,6 +380,9 @@ def _run_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) -> None:
     job_dir = _job_dir(job_id)
     py = str(PY if PY.is_file() else Path(__import__("sys").executable))
     script = str(cfg.get("script") or "gsplat")
+    if script == "colmap_only":
+        _run_sparse_select_worker(job_id, preset_id)
+        return
     if script in _AV_SCRIPTS:
         _run_alicevision_worker(job_id, preset_id, cfg)
         return

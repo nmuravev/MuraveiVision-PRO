@@ -11,6 +11,8 @@ export type TrainPreset = {
   default?: boolean;
   disabled: boolean;
   disabled_reason: string;
+  alias_of?: string | null;
+  backend?: string | null;
 };
 
 export type TrainStatus = {

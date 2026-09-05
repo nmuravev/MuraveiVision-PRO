@@ -1,9 +1,39 @@
 {
+  "sparse": {
+    "label": "Sparse",
+    "script": "colmap_only",
+    "eta": "готово после COLMAP",
+    "backend": "colmap_only"
+  },
+  "dense": {
+    "label": "Dense",
+    "script": "alicevision_mvs",
+    "eta": "10–40 мин",
+    "min_vram_gb": 6,
+    "backend": "alicevision_mvs"
+  },
+  "mesh": {
+    "label": "Mesh",
+    "script": "alicevision_mesh",
+    "eta": "20–60 мин",
+    "min_vram_gb": 8,
+    "backend": "alicevision_mesh"
+  },
+  "splat": {
+    "label": "Splat",
+    "script": "gsplat",
+    "max_steps": 7000,
+    "data_factor": 4,
+    "eta": "5–10 мин",
+    "default": true,
+    "backend": "gsplat"
+  },
   "bootstrap": {
     "label": "Bootstrap",
     "script": "bootstrap",
     "max_points": 80000,
-    "eta": "≈30с"
+    "eta": "≈30с",
+    "alias_of": "sparse"
   },
   "balanced": {
     "label": "Balanced",
@@ -11,7 +41,7 @@
     "max_steps": 7000,
     "data_factor": 4,
     "eta": "5–10 мин",
-    "default": true
+    "alias_of": "splat"
   },
   "high": {
     "label": "High Quality",
@@ -19,6 +49,7 @@
     "max_steps": 30000,
     "data_factor": 4,
     "eta": "15–30 мин",
-    "min_vram_gb": 12
+    "min_vram_gb": 12,
+    "alias_of": "splat"
   }
 }
