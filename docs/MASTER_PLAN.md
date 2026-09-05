@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** `fb72c50` — AliceVision dense/mesh RC (tag `v3.2.0-rc.1`)
+- **Commit:** `2e39e4c` — AliceVision dense/mesh RC (tag `v3.2.0-rc.1`)
 - **Unit tests:** 250 OK
 - **E2E specs:** 6+
 - **Status:** v3.2.0-rc.1 on branch only — **do not merge to main** until field smoke; macOS AV pending
-- **Last updated by:** chore: tag v3.2.0-rc.1 AliceVision RC gate
+- **Last updated by:** docs: Meta tip after v3.2.0-rc.1 tag (2e39e4c)
 - **Portable artifacts:** Mini unchanged; FullKit may include AliceVision when staged (~+3 GB extracted)
 
 ## Major Changes in This Release
