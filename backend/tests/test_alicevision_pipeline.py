@@ -77,6 +77,33 @@ class TestPipelineFallback(unittest.TestCase):
         self.assertEqual(out["alicevision_warning"], "boom")
         self.assertEqual(out["artifacts"]["sparse"]["file"], "sparse_points.json")
 
+    def test_ensure_colmap_text_converts_bin(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            sparse = Path(td) / "sparse"
+            sparse.mkdir()
+            (sparse / "cameras.bin").write_bytes(b"bin")
+            (sparse / "images.bin").write_bytes(b"bin")
+
+            def _fake_convert(*_a, **_k):
+                (sparse / "cameras.txt").write_text("1 PINHOLE 10 10 5 5 5 5\n", encoding="utf-8")
+                (sparse / "images.txt").write_text(
+                    "1 0 0 0 1 0 0 0 1 1.jpg\n",
+                    encoding="utf-8",
+                )
+
+            with patch("services.recon_scanner._colmap_bin", return_value="colmap"):
+                with patch("services.runtime_log.logged_run", side_effect=_fake_convert):
+                    ok = avp.ensure_colmap_text_model(sparse)
+            self.assertTrue(ok)
+            self.assertTrue((sparse / "cameras.txt").is_file())
+
+    def test_ensure_colmap_text_already_present(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            sparse = Path(td)
+            (sparse / "cameras.txt").write_text("x", encoding="utf-8")
+            (sparse / "images.txt").write_text("y", encoding="utf-8")
+            self.assertTrue(avp.ensure_colmap_text_model(sparse))
+
 
 class TestInjectColmapPoses(unittest.TestCase):
     def test_inject_matches_by_basename(self) -> None:

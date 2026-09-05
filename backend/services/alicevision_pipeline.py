@@ -27,6 +27,53 @@ from services.runtime_log import write as runtime_write
 EmitFn = Callable[[dict[str, Any]], None]
 
 
+def ensure_colmap_text_model(sparse_dir: Path) -> bool:
+    """Ensure cameras.txt + images.txt exist (convert from .bin via COLMAP if needed).
+
+    COLMAP mapper often leaves only binary models; AliceVision inject needs text.
+    Returns True when text cameras/images are present.
+    """
+    sparse_dir = Path(sparse_dir)
+    cams_txt = sparse_dir / "cameras.txt"
+    imgs_txt = sparse_dir / "images.txt"
+    if cams_txt.is_file() and imgs_txt.is_file():
+        return True
+    has_bin = (sparse_dir / "cameras.bin").is_file() and (sparse_dir / "images.bin").is_file()
+    if not has_bin:
+        return False
+    # Lazy import: avoid circular import with recon_scanner at module load
+    from services.recon_scanner import _colmap_bin
+    from services import runtime_log
+
+    colmap = _colmap_bin()
+    if not colmap:
+        runtime_write(
+            "warn",
+            "alicevision",
+            f"COLMAP text missing and COLMAP binary not found for convert: {sparse_dir}",
+        )
+        return False
+    try:
+        runtime_log.logged_run(
+            [
+                colmap,
+                "model_converter",
+                "--input_path",
+                str(sparse_dir),
+                "--output_path",
+                str(sparse_dir),
+                "--output_type",
+                "TXT",
+            ],
+            "alicevision",
+            timeout=600,
+        )
+    except Exception as exc:  # noqa: BLE001
+        runtime_write("warn", "alicevision", f"model_converter failed: {exc}")
+        return cams_txt.is_file() and imgs_txt.is_file()
+    return cams_txt.is_file() and imgs_txt.is_file()
+
+
 def normalize_artifacts(man: dict[str, Any]) -> dict[str, Any]:
     """Back-compat: ensure ``artifacts`` / ``selected_artifact`` exist."""
     arts = man.get("artifacts")
@@ -319,8 +366,11 @@ def run_dense_pipeline(
     if not frames_dir.is_dir():
         result["error"] = f"frames missing: {frames_dir}"
         return result
-    if not (sparse_dir / "images.txt").is_file() or not (sparse_dir / "cameras.txt").is_file():
-        result["error"] = f"COLMAP text model missing in {sparse_dir}"
+    if not ensure_colmap_text_model(sparse_dir):
+        result["error"] = (
+            f"COLMAP text model missing in {sparse_dir} "
+            "(need cameras.txt/images.txt; bin→TXT convert failed or COLMAP unavailable)"
+        )
         return result
 
     try:

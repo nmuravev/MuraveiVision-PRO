@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** `18bc8f7` — AliceVision visibility UX (ops subtitle + Dense CTA)
+- **Commit:** (pending) — ensure COLMAP TXT before AliceVision Dense
 - **Unit tests:** 250 OK
 - **E2E specs:** 6+
 - **Status:** v3.2.0-rc.1; job `d93931cbdc5a` colmap_done — ready for Dense; **do not merge to main**
-- **Last updated by:** UX: surface AliceVision after COLMAP (ops modal + Scene CTA)
+- **Last updated by:** fix: auto model_converter for AliceVision Dense
 - **Portable artifacts:** Mini ~0.54 GB (no AV); FullKit+AV ~17.8 GB (`MuraveiVision_PRO_FullKit.zip`)
 - **Isolated test copy:** `MuraveiVision-Pro-3.2.0/` on :8001/:3001 (gitignored)
 
