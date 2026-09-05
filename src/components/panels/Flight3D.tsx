@@ -16,17 +16,22 @@ import {
 } from '../../lib/reconRaycast';
 import {
   classifyArtifact,
+  classifySlot,
   disposeSceneChildren,
   fetchAssetBlobUrl,
   frameObject,
   isPlaceholderBounds,
   isSparseClusterWeak,
+  loadObjWithMtl,
   loadPlyAsPoints,
   loadSplatDropIn,
+  normalizeArtifactsFromManifest,
   pointsFromSparse,
   probeSplatBounds,
+  type ArtifactSlot,
   type SplatHandle,
 } from '../../lib/reconSceneArtifact';
+import { downloadAuthorized } from '../../lib/download';
 import { OpsStatusBar } from '../OpsStatusBar';
 import { SILENT_API_ERROR_HEADER } from '../../lib/apiError';
 import { computeReconSegment, isReconReady, useReconBuild } from '../../hooks/useReconBuild';
@@ -128,8 +133,24 @@ export const Flight3D: React.FC = () => {
   const [scalePick, setScalePick] = useState<THREE.Vector3[]>([]);
   const [sceneLoading, setSceneLoading] = useState(false);
   const [sceneError, setSceneError] = useState<string | null>(null);
-  const [sceneKind, setSceneKind] = useState<'points' | 'splat' | 'empty'>('empty');
+  const [sceneKind, setSceneKind] = useState<'points' | 'dense' | 'mesh' | 'splat' | 'empty'>('empty');
   const [splatKind, setSplatKind] = useState<'train' | 'bootstrap' | null>(null);
+  const [viewSlot, setViewSlot] = useState<ArtifactSlot | null>(null);
+
+  const artifactInfo = useMemo(
+    () => normalizeArtifactsFromManifest(manifest || {}),
+    [manifest],
+  );
+  const activeSlot: ArtifactSlot | null = viewSlot || artifactInfo.selected;
+  const activeFile =
+    (activeSlot && artifactInfo.artifacts[activeSlot]?.file) ||
+    manifest?.artifact ||
+    null;
+
+  useEffect(() => {
+    // Reset manual selection when job changes
+    setViewSlot(null);
+  }, [manifest?.job_id]);
 
   const colmapBusy =
     reconRunning || (trainSeesColmap && !isReconReady(manifest));
@@ -677,9 +698,12 @@ export const Flight3D: React.FC = () => {
     if (!st) return;
 
     const jobId = manifest?.job_id;
-    const artifact = manifest?.artifact ?? null;
-    const artifactKind = classifyArtifact(artifact);
-    const frameKey = `${jobId ?? ''}:${artifact ?? 'sparse'}`;
+    const artifact = activeFile;
+    const artifactKind =
+      activeSlot != null
+        ? classifySlot(activeSlot, artifact)
+        : classifyArtifact(artifact);
+    const frameKey = `${jobId ?? ''}:${activeSlot ?? 'auto'}:${artifact ?? 'sparse'}`;
     const sparseNow = sparseRef.current;
 
     const clearScene = () => {
@@ -801,6 +825,59 @@ export const Flight3D: React.FC = () => {
           finishPoints(pointsFromSparse(sp));
           return true;
         };
+
+        if (artifactKind === 'mesh' && jobId && artifact) {
+          const objUrl = await fetchAssetBlobUrl(jobId, artifact);
+          const mtlName = artifact.replace(/\.obj$/i, '.mtl');
+          let mtlUrl: string | null = null;
+          try {
+            mtlUrl = await fetchAssetBlobUrl(jobId, mtlName);
+          } catch {
+            mtlUrl = null;
+          }
+          try {
+            const group = await loadObjWithMtl(objUrl, {
+              mtlBlobUrl: mtlUrl,
+              resourceUrl: undefined,
+            });
+            if (isStale()) {
+              disposeObject(group);
+              return;
+            }
+            st.sceneGroup.add(group);
+            const box = new THREE.Box3().setFromObject(group);
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+            const center = box.getCenter(new THREE.Vector3());
+            const grid = new THREE.GridHelper(maxDim * 2, 12, 0x334455, 0x223344);
+            grid.position.y = center.y - size.y * 0.5;
+            st.sceneGroup.add(grid);
+            if (manifest?.rotation_x) st.sceneGroup.rotation.x = manifest.rotation_x;
+            else st.sceneGroup.rotation.x = 0;
+            applyCamera(group);
+            setSceneKind('mesh');
+            setSceneLoading(false);
+          } finally {
+            URL.revokeObjectURL(objUrl);
+            if (mtlUrl) URL.revokeObjectURL(mtlUrl);
+          }
+          return;
+        }
+
+        if ((artifactKind === 'dense' || artifactKind === 'points') && jobId && artifact) {
+          const blobUrl = await fetchAssetBlobUrl(jobId, artifact);
+          try {
+            const pts = await loadPlyAsPoints(
+              blobUrl,
+              artifactKind === 'dense' ? { maxPoints: 1_000_000 } : undefined,
+            );
+            finishPoints(pts);
+            if (artifactKind === 'dense') setSceneKind('dense');
+          } finally {
+            URL.revokeObjectURL(blobUrl);
+          }
+          return;
+        }
 
         if (artifactKind === 'splat' && jobId && artifact) {
           splatLoadingRef.current = true;
@@ -1060,6 +1137,10 @@ export const Flight3D: React.FC = () => {
     manifest?.artifact,
     manifest?.status,
     manifest?.rotation_x,
+    manifest?.artifacts,
+    manifest?.selected_artifact,
+    activeSlot,
+    activeFile,
     // Intentionally NOT sparsePoints.length — sparse arrives async after manifest and
     // must not cancel / re-download a ~36MB model.ply mid DropIn load (uses sparseRef).
     training,
@@ -1294,6 +1375,59 @@ export const Flight3D: React.FC = () => {
       </div>
       {viewMode === 'scene' && manifest?.job_id && (
         <div className="px-2 py-1 border-b border-[var(--dv-border)] flex flex-col gap-1 text-[10px] flex-shrink-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <label className="text-[var(--dv-text-muted)]">
+              Показать:{' '}
+              <select
+                className="bg-[var(--dv-surface)] border border-[var(--dv-border)] rounded-sm px-1 py-0.5"
+                value={activeSlot || ''}
+                onChange={(e) => {
+                  const v = e.target.value as ArtifactSlot;
+                  setViewSlot(v || null);
+                  framedKeyRef.current = '';
+                }}
+              >
+                {(['mesh', 'dense', 'splat', 'sparse'] as ArtifactSlot[]).map((slot) => {
+                  const available = Boolean(artifactInfo.artifacts[slot]?.file) ||
+                    (slot === 'sparse' && Boolean(sparsePoints && sparsePoints.length >= 3)) ||
+                    (slot === 'splat' && classifyArtifact(manifest.artifact) === 'splat');
+                  const label =
+                    slot === 'mesh'
+                      ? 'Mesh'
+                      : slot === 'dense'
+                        ? 'Dense'
+                        : slot === 'splat'
+                          ? 'Splat'
+                          : 'Sparse';
+                  return (
+                    <option key={slot} value={slot} disabled={!available}>
+                      {label}
+                      {!available ? ' (нет)' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            {activeSlot && activeSlot !== 'sparse' && (
+              <button
+                type="button"
+                className="px-2 py-0.5 bg-[var(--dv-surface)] hover:bg-[var(--dv-hover)] rounded-sm"
+                onClick={() => {
+                  if (!manifest.job_id || !activeSlot) return;
+                  void downloadAuthorized(`/api/recon/export/${manifest.job_id}/${activeSlot}`, {
+                    filename:
+                      activeSlot === 'mesh'
+                        ? `${manifest.job_id}_mesh.zip`
+                        : artifactInfo.artifacts[activeSlot]?.file || `${activeSlot}.bin`,
+                  }).catch((err) =>
+                    setToast(err instanceof Error ? err.message : 'Ошибка экспорта'),
+                  );
+                }}
+              >
+                Скачать {activeSlot}
+              </button>
+            )}
+          </div>
           {needsTrainBanner && (
             <div className="text-amber-300 bg-amber-950/40 border border-amber-700/50 rounded-sm px-2 py-1">
               Sparse COLMAP готов. Дальше: Dense / Mesh (AliceVision) или Splat (gsplat).

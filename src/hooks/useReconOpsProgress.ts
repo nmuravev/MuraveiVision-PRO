@@ -84,7 +84,7 @@ export function useReconOpsProgress(opts: {
   sceneLoading: boolean;
   sceneError: string | null;
   /** After train: hold success chip until splat appears (or timeout). */
-  sceneKind?: 'empty' | 'points' | 'splat' | null;
+  sceneKind?: 'empty' | 'points' | 'dense' | 'mesh' | 'splat' | null;
   onRetryRecon?: () => void;
   onRetryTrain?: (preset?: string) => void;
 }) {
@@ -166,7 +166,7 @@ export function useReconOpsProgress(opts: {
 
   useEffect(() => {
     if (!open || busy || !wasBusyRef.current) return;
-    if (train.status === 'error' || reconPhase === 'error' || (sceneError && sceneKind !== 'splat')) {
+    if (train.status === 'error' || reconPhase === 'error' || (sceneError && sceneKind !== 'splat' && sceneKind !== 'mesh' && sceneKind !== 'dense')) {
       setPhaseUi('error');
       addEvent('modal', 'recon-ops error', {
         error: train.error || sceneError || lastReconMessage,

@@ -8,11 +8,16 @@ export type ReconManifest = {
   status: string;
   error?: string | null;
   artifact?: string | null;
+  artifacts?: Partial<
+    Record<'sparse' | 'dense' | 'mesh' | 'splat', { file: string; size_mb?: number; points?: number }>
+  >;
+  selected_artifact?: string | null;
   poses_file?: string;
   sparse_file?: string;
   scale_m_per_unit?: number | null;
   /** After Build3D sparse-only: prefer Balanced for photoreal splat */
   next_action?: string | null;
+  alicevision_warning?: string | null;
   scale_reference?: {
     point_a?: number[];
     point_b?: number[];

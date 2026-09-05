@@ -163,8 +163,85 @@ async def recon_asset(
         ".splat": "application/octet-stream",
         ".json": "application/json",
         ".jpg": "image/jpeg",
+        ".png": "image/png",
+        ".obj": "text/plain",
+        ".mtl": "text/plain",
     }
     return FileResponse(path, media_type=media.get(path.suffix.lower(), "application/octet-stream"))
+
+
+@router.get("/api/recon/export/{job_id}/{kind}")
+async def recon_export_artifact(
+    job_id: str,
+    kind: str,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+):
+    """Download a single artifact file, or ZIP for mesh (obj+mtl+textures)."""
+    import io
+    import zipfile
+
+    from services.job_ids import sanitize_job_id
+    from services.alicevision_pipeline import normalize_artifacts
+    from services.security import BASE_DIR
+
+    job_id = sanitize_job_id(job_id)
+    job_dir = BASE_DIR / "archive" / "recon" / job_id
+    man_path = job_dir / "manifest.json"
+    if not man_path.is_file():
+        raise HTTPException(status_code=404, detail="job not found")
+    try:
+        man = json.loads(man_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail="bad manifest") from exc
+    man = normalize_artifacts(man)
+    arts = man.get("artifacts") or {}
+    entry = arts.get(kind) if isinstance(arts, dict) else None
+    if not isinstance(entry, dict) or not entry.get("file"):
+        # Fallbacks
+        if kind == "splat" and (job_dir / "model.ply").is_file():
+            entry = {"file": "model.ply"}
+        elif kind == "dense" and (job_dir / "dense_point_cloud.ply").is_file():
+            entry = {"file": "dense_point_cloud.ply"}
+        elif kind == "mesh" and (job_dir / "textured_mesh.obj").is_file():
+            entry = {"file": "textured_mesh.obj"}
+        elif kind == "sparse":
+            entry = {"file": man.get("sparse_file") or "sparse_points.json"}
+        else:
+            raise HTTPException(status_code=404, detail=f"artifact {kind} missing")
+
+    fname = str(entry["file"])
+    if kind == "mesh" and fname.lower().endswith(".obj"):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            obj = job_dir / fname
+            if not obj.is_file():
+                raise HTTPException(status_code=404, detail=fname)
+            zf.write(obj, obj.name)
+            mtl = obj.with_suffix(".mtl")
+            if mtl.is_file():
+                zf.write(mtl, mtl.name)
+            for tex in sorted(job_dir.iterdir()):
+                if not tex.is_file():
+                    continue
+                low = tex.name.lower()
+                if low.endswith((".png", ".jpg", ".jpeg", ".tif")) and not low.startswith("000"):
+                    zf.write(tex, tex.name)
+        buf.seek(0)
+        return StreamingResponse(
+            buf,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{job_id}_{kind}.zip"'},
+        )
+
+    try:
+        path = recon_scanner.asset_path(job_id, fname)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        filename=path.name,
+    )
 
 
 @router.get("/api/recon/train/presets")

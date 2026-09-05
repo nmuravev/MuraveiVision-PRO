@@ -1,18 +1,71 @@
 /** Classify / load recon scene artifacts for Flight3D (C.3). */
 import * as THREE from 'three';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
 import { authHeaders, authToken } from '../store/useMuraveiStore';
 import { SILENT_API_ERROR_HEADER } from './apiError';
 
-export type SceneArtifactKind = 'points' | 'splat' | 'none';
+export type SceneArtifactKind = 'points' | 'dense' | 'mesh' | 'splat' | 'none';
+
+export type ArtifactSlot = 'sparse' | 'dense' | 'mesh' | 'splat';
+
+export type ArtifactEntry = { file: string; size_mb?: number; points?: number };
+
+export type ArtifactsMap = Partial<Record<ArtifactSlot, ArtifactEntry>>;
 
 export function classifyArtifact(artifact: string | null | undefined): SceneArtifactKind {
   if (!artifact) return 'none';
   const n = artifact.toLowerCase().trim();
+  if (n.endsWith('.obj')) return 'mesh';
+  if (n === 'dense_point_cloud.ply') return 'dense';
   if (n.endsWith('.splat') || n.endsWith('.ksplat') || n === 'model.ply') return 'splat';
-  if (n.endsWith('.ply')) return 'points'; // preview.ply — colored COLMAP cloud
+  if (n.endsWith('.ply')) return 'points'; // preview.ply / sparse cloud
   return 'none';
+}
+
+export function classifySlot(slot: ArtifactSlot | string | null | undefined, file?: string | null): SceneArtifactKind {
+  if (slot === 'mesh') return 'mesh';
+  if (slot === 'dense') return 'dense';
+  if (slot === 'splat') return 'splat';
+  if (slot === 'sparse') return 'points';
+  return classifyArtifact(file);
+}
+
+/** Default pick order: mesh → dense → splat → sparse */
+export function pickDefaultArtifactSlot(arts: ArtifactsMap | null | undefined): ArtifactSlot | null {
+  for (const key of ['mesh', 'dense', 'splat', 'sparse'] as ArtifactSlot[]) {
+    if (arts?.[key]?.file) return key;
+  }
+  return null;
+}
+
+export function normalizeArtifactsFromManifest(man: {
+  artifacts?: ArtifactsMap | null;
+  artifact?: string | null;
+  sparse_file?: string | null;
+  selected_artifact?: string | null;
+}): { artifacts: ArtifactsMap; selected: ArtifactSlot | null } {
+  const arts: ArtifactsMap = { ...(man.artifacts || {}) };
+  const sparse = man.sparse_file || 'sparse_points.json';
+  if (!arts.sparse?.file) arts.sparse = { file: sparse };
+  const art = man.artifact;
+  if (art) {
+    const kind = classifyArtifact(art);
+    if (kind === 'mesh' && !arts.mesh) arts.mesh = { file: art };
+    else if (kind === 'dense' && !arts.dense) arts.dense = { file: art };
+    else if (kind === 'splat' && !arts.splat) arts.splat = { file: art };
+    else if (kind === 'points' && art !== sparse && !arts.dense) {
+      /* preview.ply stays points via artifact path */
+    }
+  }
+  const selRaw = man.selected_artifact;
+  const selected =
+    selRaw && arts[selRaw as ArtifactSlot]?.file
+      ? (selRaw as ArtifactSlot)
+      : pickDefaultArtifactSlot(arts);
+  return { artifacts: arts, selected };
 }
 
 export function reconAssetUrl(jobId: string, name: string): string {
@@ -142,7 +195,10 @@ export function pointsFromSparse(sparse: Float32Array): THREE.Points {
 }
 
 /** Load ASCII/binary PLY as points, preserving COLMAP/source coordinates. */
-export async function loadPlyAsPoints(url: string): Promise<THREE.Points> {
+export async function loadPlyAsPoints(
+  url: string,
+  opts?: { maxPoints?: number },
+): Promise<THREE.Points> {
   const loader = new PLYLoader();
   const geo = await new Promise<THREE.BufferGeometry>((resolve, reject) => {
     loader.load(url, resolve, undefined, reject);
@@ -150,6 +206,51 @@ export async function loadPlyAsPoints(url: string): Promise<THREE.Points> {
   if (!geo.getAttribute('position')) {
     throw new Error('PLY без позиций');
   }
+  const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+  let arr = pos.array as Float32Array;
+  const maxPoints = opts?.maxPoints ?? 0;
+  if (maxPoints > 0 && pos.count > maxPoints) {
+    const step = Math.ceil(pos.count / maxPoints);
+    const outCount = Math.floor(pos.count / step);
+    const xyz = new Float32Array(outCount * 3);
+    const hasColor = Boolean(geo.getAttribute('color'));
+    const colAttr = geo.getAttribute('color') as THREE.BufferAttribute | undefined;
+    const colors = hasColor && colAttr ? new Float32Array(outCount * 3) : null;
+    let o = 0;
+    for (let i = 0; i < pos.count && o < outCount; i += step) {
+      xyz[o * 3] = pos.getX(i);
+      xyz[o * 3 + 1] = pos.getY(i);
+      xyz[o * 3 + 2] = pos.getZ(i);
+      if (colors && colAttr) {
+        colors[o * 3] = colAttr.getX(i);
+        colors[o * 3 + 1] = colAttr.getY(i);
+        colors[o * 3 + 2] = colAttr.getZ(i);
+      }
+      o += 1;
+    }
+    const down = new THREE.BufferGeometry();
+    down.setAttribute('position', new THREE.BufferAttribute(xyz, 3));
+    if (colors) down.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.dispose();
+    return pointsFromGeometry(down);
+  }
+  const xyz =
+    pos.itemSize === 3 && arr.length === pos.count * 3
+      ? arr
+      : (() => {
+          const out = new Float32Array(pos.count * 3);
+          for (let i = 0; i < pos.count; i++) {
+            out[i * 3] = pos.getX(i);
+            out[i * 3 + 1] = pos.getY(i);
+            out[i * 3 + 2] = pos.getZ(i);
+          }
+          return out;
+        })();
+  void xyz;
+  return pointsFromGeometry(geo);
+}
+
+function pointsFromGeometry(geo: THREE.BufferGeometry): THREE.Points {
   const pos = geo.getAttribute('position') as THREE.BufferAttribute;
   const arr = pos.array as Float32Array;
   const xyz =
@@ -177,6 +278,42 @@ export async function loadPlyAsPoints(url: string): Promise<THREE.Points> {
     alphaTest: 0.05,
   });
   return new THREE.Points(geo, mat);
+}
+
+/** Load textured OBJ (+ MTL) from blob URL of .obj; materials fetched via absolute asset URLs. */
+export async function loadObjWithMtl(
+  objBlobUrl: string,
+  opts?: {
+    mtlBlobUrl?: string | null;
+    /** Base URL for relative texture paths inside MTL (must end with / or be asset dir). */
+    resourceUrl?: string | null;
+  },
+): Promise<THREE.Group> {
+  let materials: MTLLoader.MaterialCreator | undefined;
+  if (opts?.mtlBlobUrl) {
+    const mtlLoader = new MTLLoader();
+    if (opts.resourceUrl) mtlLoader.setResourcePath(opts.resourceUrl);
+    materials = await new Promise<MTLLoader.MaterialCreator>((resolve, reject) => {
+      mtlLoader.load(opts.mtlBlobUrl!, resolve, undefined, reject);
+    });
+    materials.preload();
+  }
+  const objLoader = new OBJLoader();
+  if (materials) objLoader.setMaterials(materials);
+  const group = await new Promise<THREE.Group>((resolve, reject) => {
+    objLoader.load(objBlobUrl, resolve, undefined, reject);
+  });
+  group.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const mat = mesh.material;
+    const apply = (m: THREE.Material) => {
+      m.side = THREE.DoubleSide;
+    };
+    if (Array.isArray(mat)) mat.forEach(apply);
+    else if (mat) apply(mat);
+  });
+  return group;
 }
 
 export type SplatHandle = {
