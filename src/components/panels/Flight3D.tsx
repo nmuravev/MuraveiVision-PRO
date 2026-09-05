@@ -1429,8 +1429,14 @@ export const Flight3D: React.FC = () => {
             )}
           </div>
           {needsTrainBanner && (
-            <div className="text-amber-300 bg-amber-950/40 border border-amber-700/50 rounded-sm px-2 py-1">
-              Sparse COLMAP готов. Дальше: Dense / Mesh (AliceVision) или Splat (gsplat).
+            <div className="text-amber-100 bg-amber-950/50 border border-amber-500/60 rounded-sm px-2 py-1.5">
+              <div className="font-semibold text-amber-200">
+                AliceVision готов: Dense / Mesh
+              </div>
+              <div className="text-[10px] text-amber-100/80 mt-0.5 leading-snug">
+                Sparse COLMAP уже построен. Следующий шаг — Dense (облако) или Mesh (текстуры)
+                через AliceVision, либо Splat (gsplat) для фотореализма. Кнопки ниже.
+              </div>
             </div>
           )}
           {sceneKind === 'splat' && splatKind === 'bootstrap' && !training && (
@@ -1473,7 +1479,10 @@ export const Flight3D: React.FC = () => {
           </div>
           <div className="flex flex-col gap-1">
             <div className="text-[var(--dv-text-muted)] uppercase tracking-wide text-[9px]">
-              Иерархия · Sparse → Dense → Mesh → Splat
+              Иерархия · Sparse → Dense (AliceVision) → Mesh (AliceVision) → Splat
+            </div>
+            <div className="text-[9px] text-[var(--dv-text-muted)] leading-snug -mt-0.5 mb-0.5">
+              «Построить 3D» = только COLMAP. AliceVision запускается кнопками Dense / Mesh.
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {(
@@ -1585,6 +1594,7 @@ export const Flight3D: React.FC = () => {
           finishing={ops.finishing}
           isError={ops.isError}
           title={ops.title}
+          subtitle={ops.subtitle}
           jobId={ops.jobId}
           steps={ops.steps}
           progressPct={ops.progressPct}
@@ -1629,37 +1639,59 @@ export const Flight3D: React.FC = () => {
           !ops.visible &&
           classifyArtifact(manifest?.artifact) !== 'splat' && (
             <div className="absolute inset-x-0 bottom-3 z-20 flex justify-center pointer-events-none px-2">
-              <div className="pointer-events-auto w-[min(440px,94%)] rounded-sm border border-amber-700/50 bg-black/85 px-3 py-2 text-[11px] text-amber-50 shadow-lg">
+              <div className="pointer-events-auto w-[min(440px,94%)] rounded-sm border border-amber-500/60 bg-black/90 px-3 py-2 text-[11px] text-amber-50 shadow-lg">
                 <div className="font-semibold text-amber-200">
-                  Sparse COLMAP
-                  {sparsePoints ? ` (${Math.floor(sparsePoints.length / 3)} точек)` : ''} — облако
-                  точек, не Gaussian splat
+                  AliceVision готов · Sparse COLMAP
+                  {sparsePoints ? ` (${Math.floor(sparsePoints.length / 3)} точек)` : ''}
                 </div>
                 <div className="mt-1 text-[var(--dv-text-muted)] text-[10px] leading-snug">
-                  После «Построить 3D» доступны Dense / Mesh (AliceVision) или Splat (gsplat).
-                  Фотореализм splat ≈ 5–10 мин → model.ply.
+                  Это облако точек COLMAP, не AliceVision и не splat. Дальше: Dense / Mesh
+                  (AliceVision) или Splat (gsplat ≈ 5–10 мин → model.ply).
                 </div>
-                <button
-                  type="button"
-                  className="mt-2 w-full px-2 py-1 rounded-sm bg-[var(--dv-accent)] text-black font-medium disabled:opacity-40"
-                  disabled={
-                    trainBlocked ||
-                    !isReconReady(manifest) ||
-                    (trainPresets.some((p) => p.id === 'splat')
-                      ? trainPresets.some((p) => p.id === 'splat' && p.disabled)
-                      : trainPresets.some((p) => p.id === 'balanced' && p.disabled))
-                  }
-                  onPointerDown={() => {
-                  }}
-                  onClick={() => runBalanced()}
-                  title={
-                    trainPresets.find((p) => p.id === 'splat')?.disabled_reason ||
-                    trainPresets.find((p) => p.id === 'balanced')?.disabled_reason ||
-                    'Запустить Splat / Balanced gsplat'
-                  }
-                >
-                  Splat → фотореализм
-                </button>
+                <div className="mt-2 flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    className="w-full px-2 py-1 rounded-sm bg-amber-500 text-black font-medium disabled:opacity-40"
+                    disabled={
+                      trainBlocked ||
+                      !isReconReady(manifest) ||
+                      trainPresets.some((p) => p.id === 'dense' && p.disabled)
+                    }
+                    onClick={() =>
+                      void startTrain('dense', () => {
+                        framedKeyRef.current = '';
+                        void loadManifest();
+                      })
+                    }
+                    title={
+                      trainPresets.find((p) => p.id === 'dense')?.disabled_reason ||
+                      'Запустить Dense (AliceVision MVS)'
+                    }
+                  >
+                    Dense → AliceVision (облако)
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full px-2 py-1 rounded-sm bg-[var(--dv-accent)] text-black font-medium disabled:opacity-40"
+                    disabled={
+                      trainBlocked ||
+                      !isReconReady(manifest) ||
+                      (trainPresets.some((p) => p.id === 'splat')
+                        ? trainPresets.some((p) => p.id === 'splat' && p.disabled)
+                        : trainPresets.some((p) => p.id === 'balanced' && p.disabled))
+                    }
+                    onPointerDown={() => {
+                    }}
+                    onClick={() => runBalanced()}
+                    title={
+                      trainPresets.find((p) => p.id === 'splat')?.disabled_reason ||
+                      trainPresets.find((p) => p.id === 'balanced')?.disabled_reason ||
+                      'Запустить Splat / Balanced gsplat'
+                    }
+                  >
+                    Splat → фотореализм
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1671,8 +1703,8 @@ export const Flight3D: React.FC = () => {
           ops.visible && (
             <div className="absolute bottom-2 left-2 right-2 pointer-events-none z-10">
               <div className="px-2 py-1 rounded-sm bg-black/70 text-[10px] text-[var(--dv-text-muted)] border border-[var(--dv-border)] text-center">
-                Sparse COLMAP (точки) — не фотореализм. Дождитесь окончания операции или нажмите
-                Balanced.
+                Sparse COLMAP (точки) — не AliceVision. Дождитесь окончания или нажмите Dense /
+                Mesh / Splat.
               </div>
             </div>
           )}

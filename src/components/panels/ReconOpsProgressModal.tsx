@@ -8,6 +8,8 @@ type Props = {
   finishing: boolean;
   isError: boolean;
   title: string;
+  /** Optional hint under title (e.g. COLMAP → AliceVision). */
+  subtitle?: string | null;
   jobId: string | null;
   steps: OpsStep[];
   progressPct: number;
@@ -42,6 +44,7 @@ export function ReconOpsProgressModal(props: Props) {
     finishing,
     isError,
     title,
+    subtitle,
     jobId,
     steps,
     progressPct,
@@ -96,6 +99,9 @@ export function ReconOpsProgressModal(props: Props) {
             <div className="font-semibold text-[var(--dv-text)]">
               {finishing ? (title.startsWith('Готово') ? title : 'Готово') : title}
             </div>
+            {subtitle && !finishing && (
+              <div className="text-[10px] text-amber-200/90 mt-0.5 leading-snug">{subtitle}</div>
+            )}
             <div className="font-mono text-[var(--dv-text-muted)] mt-0.5">
               {jobId ? `job ${jobId}` : 'job —'} · {elapsedSec}с · {progressPct}%
             </div>

@@ -42,7 +42,7 @@ npm run backend
 3. In UI: open MP4 → **Flight3D** → **Построить 3D** (segment ≤120 s from playhead).
 4. After sparse: hierarchy **Sparse / Dense / Mesh / Splat** (Dense/Mesh need AliceVision+CUDA; Splat = gsplat). Artifact selector «Показать» + export.
 
-   **Product rule:** «Построить 3D» = **COLMAP sparse only** (`colmap_done`, `manifest.next_action=balanced_for_splat`). Ops modal steps: extracting → colmap → export_poses → load_scene — **no** inline «gsplat train (optional)». Photorealism = UI presets Balanced / Bootstrap / High.
+   **Product rule:** «Построить 3D» = **COLMAP sparse only** (`colmap_done`). Ops modal title stays «Построение 3D (COLMAP)» with subtitle that AliceVision is next — **AliceVision does not run inside Build 3D**. After `colmap_done`, Scene tab shows CTA **«AliceVision готов: Dense / Mesh»** and hierarchy buttons. Photorealism = **Splat** (aliases Balanced / High).
 
    **Matching (drone video):** frames use **sequential_matcher** (overlap ≈10–15 neighbors, env `COLMAP_SEQUENTIAL_OVERLAP`). Exhaustive matching is **not** the default — it is O(n²) and often crashes GPU (8 GB) mid «Exhaustive feature matching». Opt-in: `COLMAP_MATCHER=exhaustive` only for small sets (≤`COLMAP_EXHAUSTIVE_MAX_IMAGES`, default 80).
 

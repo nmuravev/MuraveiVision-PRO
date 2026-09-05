@@ -455,14 +455,32 @@ export function useReconOpsProgress(opts: {
 
   const current = steps.find((s) => s.status === 'running') || steps.find((s) => s.status === 'error');
 
+  const presetId = (lastPresetRef.current || '').toLowerCase();
+  const isAvTrain =
+    opKindRef.current === 'train' &&
+    (presetId === 'dense' ||
+      presetId === 'mesh' ||
+      presetId.includes('alicevision') ||
+      /alicevision/i.test(train.message || ''));
+
   const title =
     opKindRef.current === 'train'
-      ? phaseUi === 'success' && sceneKind !== 'splat'
+      ? phaseUi === 'success' && sceneKind !== 'splat' && sceneKind !== 'dense' && sceneKind !== 'mesh'
         ? `Готово · model.ply — загрузка splat…`
-        : `Обучение 3D${lastPresetRef.current ? ` · ${lastPresetRef.current}` : ''}`
+        : isAvTrain
+          ? `AliceVision${lastPresetRef.current ? ` · ${lastPresetRef.current}` : ''}`
+          : `Обучение 3D${lastPresetRef.current ? ` · ${lastPresetRef.current}` : ''}`
       : opKindRef.current === 'load'
         ? 'Загрузка 3D-сцены'
         : 'Построение 3D (COLMAP)';
+
+  /** Shown under modal title — clarifies COLMAP is SfM only; AliceVision is next. */
+  const subtitle =
+    opKindRef.current === 'train' && isAvTrain
+      ? 'Dense MVS / mesh · sidecar AliceVision (после COLMAP sparse)'
+      : opKindRef.current === 'recon'
+        ? 'SfM: COLMAP → далее Dense/Mesh = AliceVision (вкладка «Сцена»)'
+        : null;
 
   const minimize = useCallback(() => {
     setMinimized(true);
@@ -507,6 +525,7 @@ export function useReconOpsProgress(opts: {
     finishing: phaseUi === 'success',
     isError: phaseUi === 'error',
     title,
+    subtitle,
     jobId: liveJobId as string | null,
     steps,
     current,
