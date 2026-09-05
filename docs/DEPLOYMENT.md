@@ -17,9 +17,9 @@
 git clone <repo> MuraveiVision-PRO
 cd MuraveiVision-PRO
 
-# Python-окружение (3.12.10)
-python -m venv muravei_env          # или использовать существующее
-.\muravei_env\Scripts\pip.exe install --no-cache-dir -r backend\requirements.txt
+# Python-окружение (3.12.x) — предпочтительно:
+scripts\setup_env.bat
+# или вручную venv + pip (см. ENGINEER_GUIDE); офлайн-пак: DEPLOY_GUIDE.md
 
 # Фронт
 npm install

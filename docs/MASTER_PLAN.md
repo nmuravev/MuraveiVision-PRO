@@ -4,12 +4,13 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** `58033ec` — AV meshing soft-fail + long-clip tests
-- **Unit tests:** 262 OK (incl. 9-min field clip + AV soft-fail gates)
+- **Commit:** (pending push) — offline muravei_env_pack (wheels)
+- **Unit tests:** 267 OK
 - **E2E specs:** 6+
-- **Status:** v3.2 field clip matched_views=20 on 60s segment — Dense preflight OK; **do not merge to main**
-- **Last updated by:** fix AV 0xC0000409 gates + test_long_clip_field
+- **Status:** v3.2 Dense OK; separate offline env wheels pack (`make_env_pack` / `setup_env`); **do not merge to main**
+- **Last updated by:** feat offline muravei_env_pack.zip (wheels, not copied venv)
 - **Portable artifacts:** Mini ~0.54 GB (no AV); FullKit+AV ~17.8 GB (`MuraveiVision_PRO_FullKit.zip`)
+- **Env pack:** `dist/muravei_env_pack.zip` ~2.88 GB / sha256 `5c662a9e375ab199046c74a72973aca372a7ea4450baf5a843df054ee511b42f` (not in git) — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
 - **Isolated test copy:** `MuraveiVision-Pro-3.2.0/` on :8001/:3001 (gitignored)
 
 ## Major Changes in This Release

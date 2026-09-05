@@ -26,6 +26,10 @@ muravei_env/
 venv/
 env/
 *.egg-info/
+wheels/
+muravei_env.zip
+dist/muravei_env_pack.zip
+dist/_env_pack_stage/
 
 # IDE and editor files
 .idea/

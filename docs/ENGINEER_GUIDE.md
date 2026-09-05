@@ -4,11 +4,15 @@
 
 ## Установка
 
-См. [DEPLOYMENT.md](DEPLOYMENT.md). Кратко:
+См. [DEPLOYMENT.md](DEPLOYMENT.md) и офлайн-пак [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md). Кратко:
 ```powershell
+# Онлайн (dev):
 .\muravei_env\Scripts\pip.exe install --no-cache-dir -r backend\requirements.txt
 .\muravei_env\Scripts\pip.exe install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu128
 npm install
+
+# Поле без интернета: распаковать muravei_env_pack.zip → scripts\setup_env.bat
+# Сборка пака на dev: .\scripts\make_env_pack.ps1
 ```
 Правило: только `muravei_env\Scripts\python.exe` (3.12.10) — [.cursor/rules/muravei-python-env.mdc](../.cursor/rules/muravei-python-env.mdc). Bare `python`/`pip` использовать нельзя (PATH → 3.14).
 

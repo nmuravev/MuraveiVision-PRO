@@ -1,0 +1,8 @@
+{
+  "generated_at": null,
+  "python_hint": "3.12",
+  "requirements": "backend/requirements.txt",
+  "with_torch_cu128": true,
+  "wheels": [],
+  "_comment": "Template only. Real manifest is written inside muravei_env_pack.zip as scripts/wheels_manifest.json by make_env_pack.ps1"
+}
