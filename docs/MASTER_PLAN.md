@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** *(pending this docs commit)* — FullKit `-IncludeAliceVision` via `npm run portable:full`
+- **Commit:** `f936080` — FullKit `-IncludeAliceVision` via `npm run portable:full`
 - **Unit tests:** 250 OK
 - **E2E specs:** 6+
 - **Status:** v3.2.0-rc.1 + FullKit AV ZIP smoke (layout/presets); field clip e2e still operator Step 2 — **do not merge to main**
