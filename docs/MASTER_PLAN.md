@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-05
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** `914e65e` — AliceVision dense/mesh RC (tag `v3.2.0-rc.1`)
+- **Commit:** `fb72c50` — AliceVision dense/mesh RC (tag `v3.2.0-rc.1`)
 - **Unit tests:** 250 OK
 - **E2E specs:** 6+
 - **Status:** v3.2.0-rc.1 on branch only — **do not merge to main** until field smoke; macOS AV pending
