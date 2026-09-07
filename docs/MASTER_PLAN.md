@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-07
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** `2035921` — network chat MVP (messages sync + ChatPanel + GPS share)
+- **Commit:** `9619300` — network chat MVP (messages sync + ChatPanel + GPS share)
 - **Unit tests:** 302
 - **E2E specs:** 6+
 - **Status:** Network chat MVP (REST message sync, ChatPanel, LAN heartbeat IP); Ollama discovery; sparse points-primary; CPU+DirectML; **do not merge to main** (merge to main later with `--no-ff` — v3.3 stacks on this branch)
