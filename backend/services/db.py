@@ -157,7 +157,9 @@ def init_db() -> None:
                     created_at REAL NOT NULL,
                     direction TEXT NOT NULL,
                     sender TEXT NOT NULL,
-                    body TEXT NOT NULL
+                    body TEXT NOT NULL,
+                    expires_at REAL,
+                    synced_at REAL
                 );
                 CREATE INDEX IF NOT EXISTS idx_net_targets_created
                     ON network_targets(created_at DESC);
@@ -237,6 +239,16 @@ def init_db() -> None:
                 conn.execute("ALTER TABLE network_targets ADD COLUMN synced_at REAL")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_net_targets_synced ON network_targets(synced_at)"
+            )
+            network_message_cols = {
+                r[1] for r in conn.execute("PRAGMA table_info(network_messages)").fetchall()
+            }
+            if "synced_at" not in network_message_cols:
+                conn.execute("ALTER TABLE network_messages ADD COLUMN synced_at REAL")
+            if "expires_at" not in network_message_cols:
+                conn.execute("ALTER TABLE network_messages ADD COLUMN expires_at REAL")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_net_messages_synced ON network_messages(synced_at)"
             )
             network_config_cols = {
                 r[1] for r in conn.execute("PRAGMA table_info(network_config)").fetchall()

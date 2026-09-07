@@ -26,6 +26,15 @@ muravei_env/
 venv/
 env/
 *.egg-info/
+wheels/
+muravei_env.zip
+dist/muravei_env_pack.zip
+dist/muravei_env_pack_win_cpu.zip
+dist/muravei_env_pack_win_cuda.zip
+dist/_env_pack_stage/
+
+# Machine-local secrets / endpoints (never commit)
+config/local/
 
 # IDE and editor files
 .idea/
@@ -84,7 +93,16 @@ mobileclip2_b.ts
 *.pt.backup
 sidecars/colmap/bin/
 sidecars/colmap/lib/
+# AliceVision C++ sidecar (binaries + download staging; keep LICENSE/README)
+sidecars/alicevision/windows-x64/
+sidecars/alicevision/downloads/
 
 # Runtime log dumps (keep directory placeholder)
 logs/*
 !logs/.gitkeep
+
+# Isolated full tree copies (local only — never commit)
+MuraveiVision-Pro-*/
+archive/.test_cache/
+backend/tests/.cache/
+

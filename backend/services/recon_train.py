@@ -11,6 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from services import recon_scanner
+from services.alicevision import alicevision_available, alicevision_cuda_ready
+from services.alicevision_pipeline import (
+    normalize_artifacts,
+    patch_manifest_artifacts,
+    run_dense_pipeline,
+)
 from services.gsplat_msvc import (
     MSVC_NEED_MSG,
     build_gsplat_launch,
@@ -20,6 +26,8 @@ from services.job_ids import sanitize_job_id
 from services.runtime_log import write as runtime_write
 from services.security import BASE_DIR
 from services.train_presets import load_presets, total_vram_gb, used_vram_gb
+
+_AV_SCRIPTS = frozenset({"alicevision_mvs", "alicevision_mesh"})
 
 RECON_ROOT = BASE_DIR / "archive" / "recon"
 PY = BASE_DIR / "muravei_env" / "Scripts" / "python.exe"
@@ -263,11 +271,121 @@ def _parse_line(line: str, max_steps: int) -> None:
         upd["vram_total_gb"] = round(total_vram_gb(), 2)
         _emit(upd)
 
+def _run_sparse_select_worker(job_id: str, preset_id: str) -> None:
+    """Mark sparse artifact selected — no dense/splat work."""
+    job_dir = _job_dir(job_id)
+    _emit(
+        {
+            "status": "training",
+            "job_id": job_id,
+            "preset": preset_id,
+            "steps": 0,
+            "max_steps": 1,
+            "message": "Выбор sparse COLMAP…",
+            "error": None,
+        }
+    )
+    man = _read_manifest(job_dir)
+    man = normalize_artifacts(man)
+    sparse_file = str(man.get("sparse_file") or "sparse_points.json")
+    if not (job_dir / sparse_file).is_file() and not (job_dir / "colmap" / "sparse" / "0").is_dir():
+        err = "Нет sparse COLMAP для этого job"
+        _emit({"status": "error", "error": err, "message": err})
+        return
+    arts = dict(man.get("artifacts") or {})
+    arts["sparse"] = {"file": sparse_file}
+    man["artifacts"] = arts
+    man["selected_artifact"] = "sparse"
+    man["artifact"] = None
+    man["status"] = "colmap_done"
+    man["next_action"] = "balanced_for_splat"
+    _write_manifest(job_dir, man)
+    _emit(
+        {
+            "status": "done",
+            "steps": 1,
+            "max_steps": 1,
+            "artifact": sparse_file,
+            "message": "Sparse COLMAP выбран",
+            "error": None,
+        }
+    )
+
+
+def _run_alicevision_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) -> None:
+    """Dense / mesh via AliceVision; never wipe COLMAP sparse on failure."""
+    job_dir = _job_dir(job_id)
+    script = str(cfg.get("script") or "alicevision_mvs")
+    mode = "mesh" if script == "alicevision_mesh" else "dense"
+    _emit(
+        {
+            "status": "training",
+            "job_id": job_id,
+            "preset": preset_id,
+            "steps": 0,
+            "max_steps": 6 if mode == "mesh" else 5,
+            "loss": None,
+            "psnr": None,
+            "message": f"Старт AliceVision ({mode})…",
+            "error": None,
+            "vram_total_gb": round(total_vram_gb(), 2),
+            "vram_used_gb": round(used_vram_gb(), 2),
+        }
+    )
+    runtime_write("info", "recon_train", f"start alicevision mode={mode} job={job_id}")
+    step_i = 0
+
+    def emit_av(ev: dict[str, Any]) -> None:
+        nonlocal step_i
+        if ev.get("event") == "alicevision-step-done":
+            step_i += 1
+            ev = {**ev, "steps": step_i}
+        _emit(ev)
+
+    try:
+        result = run_dense_pipeline(job_dir, mode=mode, emit=emit_av)
+        man = _read_manifest(job_dir)
+        man = patch_manifest_artifacts(man, job_dir, result)
+        _write_manifest(job_dir, man)
+        if result.get("ok"):
+            art = man.get("artifact")
+            _emit(
+                {
+                    "status": "done",
+                    "artifact": art,
+                    "steps": step_i or 1,
+                    "max_steps": step_i or 1,
+                    "message": f"Готово · {art}",
+                    "error": None,
+                    "eta_seconds": 0,
+                }
+            )
+            runtime_write("info", "recon_train", f"done alicevision job={job_id} artifact={art}")
+            return
+        err = result.get("error") or result.get("warning") or "AliceVision не создал артефакты"
+        # Preserve sparse — surface as soft error on train channel
+        _emit({"status": "error", "error": err, "message": f"AliceVision: {err}"})
+        runtime_write("warn", "recon_train", f"alicevision soft-fail job={job_id}: {err}")
+    except Exception as exc:  # noqa: BLE001
+        err = str(exc)
+        man = _read_manifest(job_dir)
+        man["alicevision_warning"] = err
+        _write_manifest(job_dir, man)
+        _emit({"status": "error", "error": err, "message": f"AliceVision: {err}"})
+        runtime_write("error", "recon_train", f"alicevision exception job={job_id}: {err}")
+
+
 def _run_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) -> None:
     global _proc
     job_dir = _job_dir(job_id)
     py = str(PY if PY.is_file() else Path(__import__("sys").executable))
     script = str(cfg.get("script") or "gsplat")
+    if script == "colmap_only":
+        _run_sparse_select_worker(job_id, preset_id)
+        return
+    if script in _AV_SCRIPTS:
+        _run_alicevision_worker(job_id, preset_id, cfg)
+        return
     max_steps = int(cfg.get("max_steps") or 0)
     t0 = time.time()
     log_path = job_dir / "train.log"
@@ -450,6 +568,12 @@ def start(job_id: str, preset: str) -> dict[str, Any]:
         ok, reason = gsplat_train_ready()
         if not ok:
             raise RuntimeError(reason or MSVC_NEED_MSG)
+    if script in _AV_SCRIPTS:
+        if not alicevision_available():
+            raise RuntimeError("AliceVision не установлен (sidecar / ALICEVISION_ROOT)")
+        cuda_ok, cuda_reason = alicevision_cuda_ready()
+        if not cuda_ok:
+            raise RuntimeError(cuda_reason or "AliceVision требует CUDA")
     min_v = float(cfg.get("min_vram_gb") or 0)
     vram = total_vram_gb()
     if min_v and (vram <= 0 or vram < min_v):

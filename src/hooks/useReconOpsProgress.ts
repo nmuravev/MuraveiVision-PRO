@@ -84,7 +84,7 @@ export function useReconOpsProgress(opts: {
   sceneLoading: boolean;
   sceneError: string | null;
   /** After train: hold success chip until splat appears (or timeout). */
-  sceneKind?: 'empty' | 'points' | 'splat' | null;
+  sceneKind?: 'empty' | 'points' | 'dense' | 'mesh' | 'splat' | null;
   onRetryRecon?: () => void;
   onRetryTrain?: (preset?: string) => void;
 }) {
@@ -166,7 +166,7 @@ export function useReconOpsProgress(opts: {
 
   useEffect(() => {
     if (!open || busy || !wasBusyRef.current) return;
-    if (train.status === 'error' || reconPhase === 'error' || (sceneError && sceneKind !== 'splat')) {
+    if (train.status === 'error' || reconPhase === 'error' || (sceneError && sceneKind !== 'splat' && sceneKind !== 'mesh' && sceneKind !== 'dense')) {
       setPhaseUi('error');
       addEvent('modal', 'recon-ops error', {
         error: train.error || sceneError || lastReconMessage,
@@ -251,6 +251,61 @@ export function useReconOpsProgress(opts: {
       const doneAll = phaseUi === 'success';
       const trainingNow = training || train.status === 'training';
       const stepsDone = (train.steps ?? 0) > 0;
+      const preset = String(train.preset || lastPresetRef.current || '');
+      const isAv =
+        preset === 'dense' ||
+        preset === 'mesh' ||
+        /alicevision/i.test(train.message || '') ||
+        /AliceVision/i.test(train.message || '');
+
+      if (isAv) {
+        const avSteps = [
+          'cameraInit',
+          'prepareDenseScene',
+          'depthMapEstimation',
+          'depthMapFiltering',
+          'meshing',
+          ...(preset === 'mesh' ? ['meshFiltering', 'texturing'] : ['exportMeshlab']),
+        ];
+        const curStep = Math.max(0, train.steps ?? 0);
+        const rows: OpsStep[] = [
+          {
+            id: 'av_discover',
+            label: 'AliceVision discover',
+            status: err ? 'error' : trainingNow || doneAll ? 'done' : 'pending',
+            detail: train.message,
+          },
+          ...avSteps.map((id, i) => {
+            const idx = i + 1;
+            let status: OpsStepStatus = 'pending';
+            if (err && curStep === idx) status = 'error';
+            else if (doneAll || curStep > idx) status = 'done';
+            else if (trainingNow && curStep === idx) status = 'running';
+            else if (trainingNow && curStep + 1 === idx) status = 'running';
+            return {
+              id: `alicevision_${id}`,
+              label: id,
+              status,
+              detail: status === 'running' ? train.message : undefined,
+            } as OpsStep;
+          }),
+          {
+            id: 'load_scene',
+            label: 'Загрузка сцены',
+            status: err
+              ? 'pending'
+              : sceneLoading
+                ? 'running'
+                : doneAll || sceneKind === 'dense' || sceneKind === 'mesh' || sceneKind === 'splat'
+                  ? 'done'
+                  : train.status === 'done'
+                    ? 'running'
+                    : 'pending',
+          },
+        ];
+        return rows.map((r) => ({ ...r, durationMs: markDur(r.id, r.status) }));
+      }
+
       const prepDone =
         err ||
         doneAll ||
@@ -400,14 +455,32 @@ export function useReconOpsProgress(opts: {
 
   const current = steps.find((s) => s.status === 'running') || steps.find((s) => s.status === 'error');
 
+  const presetId = (lastPresetRef.current || '').toLowerCase();
+  const isAvTrain =
+    opKindRef.current === 'train' &&
+    (presetId === 'dense' ||
+      presetId === 'mesh' ||
+      presetId.includes('alicevision') ||
+      /alicevision/i.test(train.message || ''));
+
   const title =
     opKindRef.current === 'train'
-      ? phaseUi === 'success' && sceneKind !== 'splat'
+      ? phaseUi === 'success' && sceneKind !== 'splat' && sceneKind !== 'dense' && sceneKind !== 'mesh'
         ? `Готово · model.ply — загрузка splat…`
-        : `Обучение 3D${lastPresetRef.current ? ` · ${lastPresetRef.current}` : ''}`
+        : isAvTrain
+          ? `AliceVision${lastPresetRef.current ? ` · ${lastPresetRef.current}` : ''}`
+          : `Обучение 3D${lastPresetRef.current ? ` · ${lastPresetRef.current}` : ''}`
       : opKindRef.current === 'load'
         ? 'Загрузка 3D-сцены'
         : 'Построение 3D (COLMAP)';
+
+  /** Shown under modal title — clarifies COLMAP is SfM only; AliceVision is next. */
+  const subtitle =
+    opKindRef.current === 'train' && isAvTrain
+      ? 'Dense MVS / mesh · sidecar AliceVision (после COLMAP sparse)'
+      : opKindRef.current === 'recon'
+        ? 'SfM: COLMAP → далее Dense/Mesh = AliceVision (вкладка «Сцена»)'
+        : null;
 
   const minimize = useCallback(() => {
     setMinimized(true);
@@ -452,6 +525,7 @@ export function useReconOpsProgress(opts: {
     finishing: phaseUi === 'success',
     isError: phaseUi === 'error',
     title,
+    subtitle,
     jobId: liveJobId as string | null,
     steps,
     current,

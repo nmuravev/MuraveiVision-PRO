@@ -9,3 +9,5 @@ export type { ModalProps } from './Modal';
 export { Menu, MenuItem } from './Menu';
 export type { MenuProps, MenuItemProps } from './Menu';
 export { VramIndicator } from './VramIndicator';
+export { CpuProfileBanner } from './CpuProfileBanner';
+export { YoloBackendBadge } from './YoloBackendBadge';

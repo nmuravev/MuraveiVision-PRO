@@ -252,6 +252,7 @@ class YoloEngine:
     def __init__(self) -> None:
         self.model = None
         self.model_name = ""
+        self.model_path: Path | None = None
         self.mode = "offline"
         self.kind = "none"
         self._names: dict[int, str] = {}
@@ -313,6 +314,7 @@ class YoloEngine:
             if not self._try_load(weights):
                 return False
             self.model_name = weights.name
+            self.model_path = weights
             self.mode = "ready"
             sample = list(self._names.items())[:8]
             print(f"[YOLO] force_load ok: {weights} kind={self.kind} nc={len(self._names)} sample={sample}")
@@ -419,6 +421,7 @@ class YoloEngine:
                 if not self._try_load(weights):
                     continue
                 self.model_name = weights.name
+                self.model_path = weights
                 self.mode = "ready"
                 sample = list(self._names.items())[:8]
                 print(f"[YOLO] Model loaded successfully: {weights}")
@@ -433,7 +436,7 @@ class YoloEngine:
         self.mode = "error"
 
     def _detect_device(self) -> None:
-        """Sprint 2: CUDA → ORT GPU probe → CPU; tier from CPU brand + cores."""
+        """CUDA → optional DirectML (experimental) → CPU; tier from CPU brand + cores."""
         import os
         import platform
 
@@ -442,13 +445,19 @@ class YoloEngine:
         self._ort_providers: list[str] = []
         self._cuda_name = ""
         self._degraded = False
+        self._use_directml = False
+        self._yolo_label = "CPU"
+        self._onnx_path: Path | None = None
 
+        torch_cuda = False
         try:
             import torch
 
             if torch.cuda.is_available():
+                torch_cuda = True
                 self._device = "cuda:0"
                 self._device_backend = "torch-cuda"
+                self._yolo_label = "CUDA"
                 try:
                     self._cuda_name = torch.cuda.get_device_name(0)
                 except Exception:  # noqa: BLE001
@@ -456,19 +465,53 @@ class YoloEngine:
         except Exception:  # noqa: BLE001
             pass
 
+        dml_ok = False
         try:
-            import onnxruntime as ort
+            from services.yolo_directml import directml_available, list_ort_providers
 
-            self._ort_providers = list(ort.get_available_providers())
+            self._ort_providers = list_ort_providers()
+            dml_ok = directml_available()
             if self._device == "cpu":
                 if "CUDAExecutionProvider" in self._ort_providers:
                     self._device_backend = "ort-cuda-available"
-                elif "DmlExecutionProvider" in self._ort_providers:
+                elif dml_ok:
                     self._device_backend = "ort-dml-available"
                 elif "TensorrtExecutionProvider" in self._ort_providers:
                     self._device_backend = "ort-trt-available"
         except Exception:  # noqa: BLE001
             self._ort_providers = []
+
+        requested = "auto"
+        try:
+            from services.db import get_setting
+
+            requested = (get_setting("yolo_inference_backend") or "auto").strip().lower()
+        except Exception:  # noqa: BLE001
+            requested = (os.environ.get("MURAVEI_YOLO_BACKEND") or "auto").strip().lower()
+
+        try:
+            from services.yolo_directml import select_inference_backend
+
+            chosen = select_inference_backend(
+                requested, torch_cuda=torch_cuda, dml_ok=dml_ok
+            )
+        except Exception:  # noqa: BLE001
+            chosen = "torch-cuda" if torch_cuda else "cpu"
+
+        if chosen == "directml":
+            self._use_directml = True
+            self._device = "directml"
+            self._device_backend = "directml"
+            self._yolo_label = "DirectML"
+        elif chosen == "torch-cuda":
+            self._use_directml = False
+            self._yolo_label = "CUDA"
+        else:
+            self._use_directml = False
+            if not torch_cuda:
+                self._device = "cpu"
+                self._device_backend = "cpu"
+                self._yolo_label = "CPU"
 
         # Tier: brand hints (i3/i5/i7/i9) + core count
         brand = ""
@@ -481,7 +524,6 @@ class YoloEngine:
 
             if not brand:
                 brand = (psutil.cpu_freq() and "") or ""
-            # Windows often has empty processor(); try env / wmic-less brand from uname
             brand = (brand or platform.uname().processor or "").lower()
         except Exception:  # noqa: BLE001
             pass
@@ -504,12 +546,14 @@ class YoloEngine:
         self._imgsz = {"low": 640, "mid": 800, "high": 1024}.get(self._tier, IMGSZ)
         print(
             f"[YOLO] device={self._device} backend={self._device_backend} "
-            f"tier={self._tier} imgsz={self._imgsz} cuda={self._cuda_name or '—'} "
+            f"label={self._yolo_label} tier={self._tier} imgsz={self._imgsz} "
+            f"cuda={self._cuda_name or '—'} requested={requested} "
             f"ort={self._ort_providers[:3]}"
         )
 
     def status_snapshot(self) -> dict[str, Any]:
         qsize = self._queue.qsize() if self._queue is not None else 0
+        label = getattr(self, "_yolo_label", "CPU")
         return {
             "mode": self.mode,
             "model": self.model_name,
@@ -518,9 +562,12 @@ class YoloEngine:
             "nc": len(self._names),
             "device": self._device,
             "device_backend": getattr(self, "_device_backend", "cpu"),
+            "yolo_label": label,
+            "yolo_badge": f"YOLO: {label}",
             "cuda_name": getattr(self, "_cuda_name", ""),
             "ort_providers": getattr(self, "_ort_providers", []),
             "degraded": getattr(self, "_degraded", False),
+            "use_directml": bool(getattr(self, "_use_directml", False)),
             "tier": self._tier,
             "imgsz": getattr(self, "_imgsz", IMGSZ),
             "last_inference_ms": self._last_inference_ms,
@@ -633,6 +680,72 @@ class YoloEngine:
             configured_min if configured_min is not None else floor,
         )
         imgsz = int(getattr(self, "_imgsz", IMGSZ) or IMGSZ)
+
+        # Experimental DirectML path (optional) — any error → CPU torch, logged warning.
+        if getattr(self, "_use_directml", False):
+            try:
+                from services.yolo_directml import ensure_onnx_export, run_directml_onnx
+
+                weights = Path(getattr(self, "model_path", None) or "")
+                if not weights.is_file():
+                    # Resolve from loaded model name
+                    candidate = WEIGHTS_DIR / (self.model_name or "")
+                    if candidate.is_file():
+                        weights = candidate
+                    else:
+                        ft = BASE_DIR / "assets" / "models" / (self.model_name or "")
+                        weights = ft if ft.is_file() else weights
+                onnx_path = ensure_onnx_export(weights, imgsz=min(imgsz, 640))
+                self._onnx_path = onnx_path
+                raw = run_directml_onnx(
+                    onnx_path, img, conf=predict_conf, imgsz=min(imgsz, 640)
+                )
+                objects: list[dict[str, Any]] = []
+                for row in raw:
+                    cls_id = int(row.get("cls_id") or 0)
+                    name = self._names.get(cls_id) or str(cls_id)
+                    name = canonical_label(name) or name
+                    yaml_id = class_id_for_name(name)
+                    if yaml_id < 0:
+                        continue
+                    conf = float(row.get("confidence") or 0)
+                    bbox = row.get("bbox") or {}
+                    objects.append(
+                        {
+                            "id": str(uuid.uuid4()),
+                            "class_id": yaml_id,
+                            "class_en": name,
+                            "class_ru": name,
+                            "confidence": conf,
+                            "bbox": bbox,
+                            "color": _BOX_COLORS[max(cls_id, 0) % len(_BOX_COLORS)],
+                            "origin": "auto",
+                            "track_id": None,
+                        }
+                    )
+                return [
+                    o
+                    for o in objects
+                    if _keep_live_label(o["class_en"]) and not _is_osd_box(o["bbox"])
+                ]
+            except Exception as exc:  # noqa: BLE001
+                print(f"[YOLO] DirectML fail → CPU fallback (не молча): {exc}")
+                try:
+                    from services.runtime_log import write as runtime_write
+
+                    runtime_write(
+                        "warn",
+                        "yolo",
+                        f"DirectML fallback to CPU: {exc}",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                self._use_directml = False
+                self._device = "cpu"
+                self._device_backend = "cpu-fallback-directml"
+                self._yolo_label = "CPU"
+                self._degraded = True
+
         kwargs: dict[str, Any] = {
             "source": img,
             "imgsz": imgsz,
@@ -640,19 +753,20 @@ class YoloEngine:
             "iou": NMS_IOU,
             "agnostic_nms": False,
             "verbose": False,
-            "device": self._device,
+            "device": self._device if str(self._device).startswith("cuda") else "cpu",
         }
         try:
             # ByteTrack needs `lap`; Ultralytics tries to pip-install it (breaks air-gap).
             results = model.predict(**kwargs)
         except Exception as exc:  # noqa: BLE001
             msg = str(exc).lower()
-            if self._device.startswith("cuda") and (
+            if str(self._device).startswith("cuda") and (
                 "out of memory" in msg or "cuda" in msg and "memory" in msg
             ):
                 print(f"[YOLO] CUDA OOM/fail → CPU fallback: {exc}")
                 self._device = "cpu"
                 self._device_backend = "cpu-fallback-oom"
+                self._yolo_label = "CPU"
                 self._degraded = True
                 kwargs["device"] = "cpu"
                 results = model.predict(**kwargs)

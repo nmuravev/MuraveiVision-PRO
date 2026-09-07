@@ -21,7 +21,7 @@
     "test:yolo-scrub-gate": "playwright test yolo-scrub-gate.test.ts",
     "portable": "powershell -ExecutionPolicy Bypass -File scripts/build_portable.ps1 -FetchEmbeddablePython",
     "portable:mini": "powershell -ExecutionPolicy Bypass -File scripts/build_portable.ps1 -FetchEmbeddablePython -NoDetectWeights",
-    "portable:full": "powershell -ExecutionPolicy Bypass -File scripts/build_portable.ps1 -FetchEmbeddablePython -FullKit",
+    "portable:full": "powershell -ExecutionPolicy Bypass -File scripts/build_portable.ps1 -FetchEmbeddablePython -FullKit -IncludeAliceVision",
     "test:yolo-scrub": "playwright test yolo-scrub-gate.test.ts",
     "test:field": "playwright test yolo-scrub-gate.test.ts field-regression.test.ts recon-raycast.test.ts test_ui_toggles.test.ts test_hotkeys.test.ts test_event_timeline.test.ts",
     "test": "npm run test:all",

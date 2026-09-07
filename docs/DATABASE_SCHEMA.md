@@ -92,11 +92,13 @@
 ### `network_messages` — текстовые сообщения
 | Столбец | Тип | Описание |
 |---------|-----|----------|
-| `id` | TEXT PK | |
-| `created_at` | REAL | epoch |
-| `direction` | TEXT | |
-| `sender` | TEXT | |
+| `id` | TEXT PK | стабильный UUID между узлами |
+| `created_at` | REAL | epoch; newer-wins при upsert |
+| `direction` | TEXT | `in` / `out` |
+| `sender` | TEXT | имя базы |
 | `body` | TEXT | |
+| `expires_at` | REAL | TTL 24ч |
+| `synced_at` | REAL | NULL = ещё не push на хаб |
 
 Индекс: `idx_net_messages_created(created_at DESC)`.
 

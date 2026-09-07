@@ -2,22 +2,27 @@
 
 ## Meta
 
-- **Snapshot date:** 2026-09-05
-- **Branch:** `feature/network-replication-3.1`
-- **Commit:** `b358803` — v3.1 release candidate
-- **Unit tests:** 227 OK
+- **Snapshot date:** 2026-09-07
+- **Branch:** `feature/alicevision-v3.2` → merge to `main` as **v3.2.0** (`--no-ff`)
+- **Commit:** `12f998e` — dual-smoke gate + release prep
+- **Unit tests:** 302
 - **E2E specs:** 6+
-- **Status:** v3.1 release candidate — Mini/Full portable verified; ready for squash merge to main
-- **Last updated by:** docs: v3.1 RC (b358803)
-- **Portable artifacts:** `MuraveiVision_PRO_Mini.zip` (~540 MB), `MuraveiVision_PRO_FullKit.zip` (~16.6 GB)
+- **Status:** dual-smoke **7/7 PASS** (2026-09-07); network chat MVP + Ollama discovery + AliceVision + CPU/DirectML — releasing to main
+- **Last updated by:** release gate dual-smoke + merge prep
+- **Portable artifacts:** Mini ~0.54 GB; FullKit+AV CUDA; FullKit `-TorchFlavor cpu`
+- **Env pack:** win_cuda ~2952 MB; win_cpu ~439 MB — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md), [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md)
+- **Isolated test copy:** `MuraveiVision-Pro-3.2.0/` on :8001/:3001 (gitignored)
 
 ## Major Changes in This Release
 
+- AliceVision optional dense MVS + textured mesh after COLMAP sparse
+- Preset hierarchy Sparse / Dense / Mesh / Splat (+ aliases)
+- Flight3D multi-artifact viewer + export
+- FullKit `-IncludeAliceVision` portable bundling
 - 3D Reconstruction: COLMAP sequential matching + frame budget (stable on 8GB VRAM)
 - HUD Exclusion: Auto-detection + blur/crop for detect/CD/recon
 - Session Trace: Page-lifetime singleton + sessionStorage UUID
 - Media Paths: Canonical `archive/...` paths, no hardcoded `D:\` paths
-- 3D Train UI: Presets (Bootstrap/Balanced/High) with VRAM gate
 - CSP Security: `blob:` support for 3D splat
 - Zero-Hardcode Policy: Systematic scan + durable Cursor rule
 - Portable build hardening: unique `stage_*`, host-pip bake, offline wheels, stable CA bundle

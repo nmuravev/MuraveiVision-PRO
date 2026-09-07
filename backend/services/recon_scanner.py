@@ -224,41 +224,45 @@ def _finalize_dead_job_on_disk(job_id: str) -> None:
     man = _read_manifest(job_dir)
     if not man or str(man.get("status") or "") != "running":
         return
-    sparse0 = job_dir / "colmap" / "sparse" / "0"
+    sparse_model = get_best_sparse_dir(job_dir)
     sparse_path = job_dir / str(man.get("sparse_file") or "sparse_points.json")
     try:
-        has_bin = (sparse0 / "points3D.bin").is_file()
-        has_txt = (sparse0 / "points3D.txt").is_file()
-        if has_bin and not has_txt:
-            from services import runtime_log
+        if sparse_model is not None:
+            has_bin = (sparse_model / "points3D.bin").is_file()
+            has_txt = (sparse_model / "points3D.txt").is_file()
+            if has_bin and not has_txt:
+                from services import runtime_log
 
-            colmap = _colmap_bin()
-            if colmap:
-                runtime_log.logged_run(
-                    [
-                        colmap,
-                        "model_converter",
-                        "--input_path",
-                        str(sparse0),
-                        "--output_path",
-                        str(sparse0),
-                        "--output_type",
-                        "TXT",
-                    ],
-                    "recon",
-                    timeout=600,
-                )
-                has_txt = (sparse0 / "points3D.txt").is_file()
-        if has_txt or (sparse0 / "points3D.txt").is_file():
-            n = export_sparse_points(sparse0, sparse_path)
-            if n > 0:
-                man["status"] = "colmap_done"
-                man["error"] = None
-                man["finished_at"] = time.time()
-                man["next_action"] = "balanced_for_splat"
-                _write_manifest(job_dir, man)
-                _log(f"salvaged dead job={job_id} → colmap_done sparse={n}")
-                return
+                colmap = _colmap_bin()
+                if colmap:
+                    runtime_log.logged_run(
+                        [
+                            colmap,
+                            "model_converter",
+                            "--input_path",
+                            str(sparse_model),
+                            "--output_path",
+                            str(sparse_model),
+                            "--output_type",
+                            "TXT",
+                        ],
+                        "recon",
+                        timeout=600,
+                    )
+                    has_txt = (sparse_model / "points3D.txt").is_file()
+            if has_txt or (sparse_model / "points3D.txt").is_file():
+                n = export_sparse_points(sparse_model, sparse_path)
+                if n > 0:
+                    man["status"] = "colmap_done"
+                    man["error"] = None
+                    man["finished_at"] = time.time()
+                    man["next_action"] = "balanced_for_splat"
+                    _write_manifest(job_dir, man)
+                    _log(
+                        f"salvaged dead job={job_id} → colmap_done "
+                        f"sparse={n} model={sparse_model.name}"
+                    )
+                    return
     except Exception as exc:  # noqa: BLE001
         _log(f"salvage failed job={job_id}: {exc}")
     man["status"] = "error"
@@ -664,9 +668,19 @@ def _run_colmap(job_dir: Path, frames_dir: Path) -> Path:
 
         rl.debug("recon", "exit 0")
 
+    from services.accelerator import colmap_use_gpu, is_cpu_profile, log_profile_once
+
+    log_profile_once()
+    sift_gpu = colmap_use_gpu()
+    if is_cpu_profile():
+        _log(
+            f"CPU-профиль COLMAP: use_gpu=0 max_image_size={img_size} "
+            f"frames≈{n_frames} (ETA: десятки минут–часы на длинном клипе)"
+        )
+
     emit_stage("feature_extractor")
     run(
-        feature_extractor_args(db, frames_dir, use_gpu=True, image_size=img_size),
+        feature_extractor_args(db, frames_dir, use_gpu=sift_gpu, image_size=img_size),
         stage="feature_extractor",
     )
 
@@ -678,10 +692,12 @@ def _run_colmap(job_dir: Path, frames_dir: Path) -> Path:
         )
 
     try:
-        run_matcher(use_gpu=True)
+        run_matcher(use_gpu=sift_gpu)
     except RuntimeError as gpu_exc:
         from services.trace_middleware import pipeline_trace
 
+        if not sift_gpu:
+            raise
         msg = (
             f"GPU matching failed — retry once with CPU "
             f"({matcher}, frames={n_frames}): {gpu_exc}"

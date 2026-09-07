@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  AlertTriangle,
   Brain,
   Bug,
   Clapperboard,
@@ -23,10 +22,11 @@ import {
 } from '../layout/initialLayout';
 import { usePanelLayoutStore } from '../store/usePanelLayoutStore';
 import { useMuraveiStore } from '../store/useMuraveiStore';
+import { useNetworkStore } from '../store/useNetworkStore';
 import { useViewerStore } from '../store/useViewerStore';
 import { downloadAuthorized } from '../lib/download';
 import { logger } from '../services/logger';
-import { Button, Menu, MenuItem, Modal, VramIndicator } from './ui';
+import { Button, Menu, MenuItem, Modal, VramIndicator, YoloBackendBadge } from './ui';
 
 interface TopBarProps {
   activeTab: string;
@@ -69,7 +69,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [reportBusy, setReportBusy] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
-  const [ollamaOk, setOllamaOk] = useState<boolean | null>(null);
+  const [ollamaState, setOllamaState] = useState<string>('disconnected');
   const [yoloMode, setYoloMode] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -84,6 +84,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const hydrateDetections = useMuraveiStore((s) => s.hydrateDetections);
   const loadClassCatalog = useMuraveiStore((s) => s.loadClassCatalog);
   const resetSession = useMuraveiStore((s) => s.resetSession);
+  const chatUnreadBadge = useNetworkStore((s) => s.unreadCount);
 
   useEffect(() => {
     const token = localStorage.getItem('muravei-token');
@@ -118,32 +119,31 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   useEffect(() => {
     if (!isAuthenticated) {
-      setOllamaOk(null);
+      setOllamaState('disconnected');
       return;
     }
     let cancelled = false;
     const poll = () => {
       const token = localStorage.getItem('muravei-token');
-      void fetch('/api/ai/models', {
+      void fetch('/api/ai/ollama/status', {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
         .then((res) => (res.ok ? res.json() : Promise.reject()))
-        .then((data: { available?: boolean; models?: unknown[] }) => {
-          if (cancelled) return;
-          const models = Array.isArray(data.models) ? data.models : [];
-          setOllamaOk(Boolean(data.available) && models.length > 0);
+        .then((data: { state?: string }) => {
+          if (!cancelled) setOllamaState(String(data.state || 'disconnected'));
         })
         .catch(() => {
-          if (!cancelled) setOllamaOk(false);
+          if (!cancelled) setOllamaState('disconnected');
         });
     };
     poll();
-    const t = window.setInterval(poll, 15000);
+    const connected = ollamaState === 'connected' || ollamaState === 'degraded';
+    const t = window.setInterval(poll, connected ? 30000 : 60000);
     return () => {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, ollamaState]);
 
   useEffect(() => {
     let cancelled = false;
@@ -332,12 +332,6 @@ export const TopBar: React.FC<TopBarProps> = ({
             >
               {TAB_ICONS[tab]}
               <span className="hidden md:inline">{tab}</span>
-              {tab === 'AI-анализ' && ollamaOk === false && (
-                <AlertTriangle
-                  size={11}
-                  className={activeTab === tab ? 'text-amber-900' : 'text-amber-400'}
-                />
-              )}
             </button>
           ))}
 
@@ -437,6 +431,11 @@ export const TopBar: React.FC<TopBarProps> = ({
                       }`}
                     />
                     {VIEW_TITLES[id]}
+                    {id === 'chat' && chatUnreadBadge > 0 ? (
+                      <span className="ml-auto text-[10px] text-amber-400">
+                        {chatUnreadBadge > 99 ? '99+' : chatUnreadBadge}
+                      </span>
+                    ) : null}
                   </MenuItem>
                 );
               })}
@@ -503,6 +502,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
+          {isAuthenticated && <YoloBackendBadge />}
           {isAuthenticated && <VramIndicator />}
 
           <div className="relative">
@@ -544,15 +544,24 @@ export const TopBar: React.FC<TopBarProps> = ({
                 <div className="flex items-center gap-1.5 font-mono">
                   <span
                     className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                      ollamaOk === true
+                      ollamaState === 'connected'
                         ? 'bg-dv-success'
-                        : ollamaOk === false
+                        : ollamaState === 'degraded'
                           ? 'bg-amber-400'
-                          : 'bg-dv-muted'
+                          : ollamaState === 'searching'
+                            ? 'bg-sky-400'
+                            : 'bg-dv-muted'
                     }`}
                   />
                   <span className="text-dv-text">
-                    Ollama {ollamaOk === true ? 'ок' : ollamaOk === false ? 'нет' : '—'}
+                    Ollama{' '}
+                    {ollamaState === 'connected'
+                      ? 'подключена'
+                      : ollamaState === 'degraded'
+                        ? 'деградация'
+                        : ollamaState === 'searching'
+                          ? 'поиск'
+                          : 'отключена'}
                   </span>
                 </div>
               </div>

@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { authHeaders } from './useMuraveiStore';
 import { logger } from '../services/logger';
 
+const CHAT_SEEN_KEY = 'muravei_chat_last_seen_at';
+
 export interface NetworkConfig {
   mode: 'off' | 'server' | 'client';
   server_ip: string;
@@ -18,6 +20,8 @@ export interface NetworkStatus {
   last_error: string | null;
   hub_reachable: boolean;
   worker_alive: boolean;
+  advertise_ip?: string;
+  sync_interval_sec?: number;
 }
 
 export interface NetworkBase {
@@ -48,6 +52,7 @@ export interface NetworkMessage {
   direction: string;
   sender: string;
   body: string;
+  synced_at?: number | null;
 }
 
 interface NetworkState {
@@ -56,6 +61,8 @@ interface NetworkState {
   bases: NetworkBase[];
   targets: NetworkTarget[];
   messages: NetworkMessage[];
+  unreadCount: number;
+  lastChatSeenAt: number;
   error: string | null;
   loadConfig: () => Promise<void>;
   saveConfig: (patch: Partial<NetworkConfig> & { hub_pin?: string }) => Promise<void>;
@@ -63,14 +70,28 @@ interface NetworkState {
   fetchBases: () => Promise<void>;
   fetchTargets: () => Promise<void>;
   fetchMessages: () => Promise<void>;
+  refreshUnread: () => Promise<void>;
+  markChatSeen: () => void;
   sendTarget: (payload: {
     class_name: string;
     confidence?: number;
     notes?: string;
     crop_path?: string;
     source_video?: string;
+    gps_lat?: number | null;
+    gps_lon?: number | null;
   }) => Promise<void>;
   sendMessage: (body: string) => Promise<void>;
+}
+
+function readLastSeen(): number {
+  try {
+    const raw = localStorage.getItem(CHAT_SEEN_KEY);
+    const n = raw != null ? Number(raw) : 0;
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
 }
 
 const defaultConfig: NetworkConfig = {
@@ -86,6 +107,8 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   bases: [],
   targets: [],
   messages: [],
+  unreadCount: 0,
+  lastChatSeenAt: readLastSeen(),
   error: null,
 
   loadConfig: async () => {
@@ -153,6 +176,8 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
         last_error: data.last_error ?? null,
         hub_reachable: Boolean(data.hub_reachable),
         worker_alive: Boolean(data.worker_alive),
+        advertise_ip: data.advertise_ip || '',
+        sync_interval_sec: data.sync_interval_sec,
       },
     });
   },
@@ -176,6 +201,35 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     if (!res.ok) return;
     const data = await res.json();
     set({ messages: Array.isArray(data.messages) ? data.messages : [] });
+    await get().refreshUnread();
+  },
+
+  refreshUnread: async () => {
+    const since = get().lastChatSeenAt;
+    const res = await fetch(
+      `/api/network/messages/unread?since=${encodeURIComponent(String(since))}`,
+      { headers: authHeaders() },
+    );
+    if (!res.ok) {
+      // Fallback: local count
+      const n = get().messages.filter(
+        (m) => m.direction === 'in' && Number(m.created_at) > since,
+      ).length;
+      set({ unreadCount: n });
+      return;
+    }
+    const data = await res.json();
+    set({ unreadCount: Number(data.count) || 0 });
+  },
+
+  markChatSeen: () => {
+    const now = Date.now() / 1000;
+    try {
+      localStorage.setItem(CHAT_SEEN_KEY, String(now));
+    } catch {
+      /* ignore */
+    }
+    set({ lastChatSeenAt: now, unreadCount: 0 });
   },
 
   sendTarget: async (payload) => {

@@ -1,7 +1,8 @@
-"""Load 3D gsplat train presets from config/train_presets.json (repo root)."""
+"""Load 3D recon train presets from config/train_presets.json (repo root)."""
 from __future__ import annotations
 
 import json
+import sys
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -11,12 +12,45 @@ from services.security import BASE_DIR
 
 PRESETS_PATH = BASE_DIR / "config" / "train_presets.json"
 
+_PRIMARY_ORDER = ("sparse", "dense", "mesh", "splat")
+_ALIAS_ORDER = ("bootstrap", "balanced", "high")
+
 _BUILTIN: dict[str, dict[str, Any]] = {
+    "sparse": {
+        "label": "Sparse",
+        "script": "colmap_only",
+        "eta": "готово после COLMAP",
+        "backend": "colmap_only",
+    },
+    "dense": {
+        "label": "Dense",
+        "script": "alicevision_mvs",
+        "eta": "10–40 мин",
+        "min_vram_gb": 6,
+        "backend": "alicevision_mvs",
+    },
+    "mesh": {
+        "label": "Mesh",
+        "script": "alicevision_mesh",
+        "eta": "20–60 мин",
+        "min_vram_gb": 8,
+        "backend": "alicevision_mesh",
+    },
+    "splat": {
+        "label": "Splat",
+        "script": "gsplat",
+        "max_steps": 7000,
+        "data_factor": 4,
+        "eta": "5–10 мин",
+        "default": True,
+        "backend": "gsplat",
+    },
     "bootstrap": {
         "label": "Bootstrap",
         "script": "bootstrap",
         "max_points": 80000,
         "eta": "≈30с",
+        "alias_of": "sparse",
     },
     "balanced": {
         "label": "Balanced",
@@ -24,7 +58,7 @@ _BUILTIN: dict[str, dict[str, Any]] = {
         "max_steps": 7000,
         "data_factor": 4,
         "eta": "5–10 мин",
-        "default": True,
+        "alias_of": "splat",
     },
     "high": {
         "label": "High Quality",
@@ -33,6 +67,7 @@ _BUILTIN: dict[str, dict[str, Any]] = {
         "data_factor": 4,
         "eta": "15–30 мин",
         "min_vram_gb": 12,
+        "alias_of": "splat",
     },
 }
 
@@ -45,7 +80,7 @@ def _validate(raw: dict[str, Any]) -> dict[str, dict[str, Any]] | None:
         if not isinstance(key, str) or not isinstance(val, dict):
             return None
         script = str(val.get("script") or "")
-        if script not in ("bootstrap", "gsplat"):
+        if script not in ("bootstrap", "gsplat", "alicevision_mvs", "alicevision_mesh", "colmap_only"):
             return None
         entry = dict(val)
         entry["label"] = str(val.get("label") or key)
@@ -56,20 +91,24 @@ def _validate(raw: dict[str, Any]) -> dict[str, dict[str, Any]] | None:
                 return None
             entry["max_steps"] = steps
             entry["data_factor"] = int(val.get("data_factor") or 4)
-        else:
+        elif script == "bootstrap":
             entry["max_points"] = int(val.get("max_points") or 80_000)
+        elif script in ("alicevision_mvs", "alicevision_mesh", "colmap_only"):
+            entry["backend"] = script
         if "min_vram_gb" in val:
             entry["min_vram_gb"] = float(val["min_vram_gb"])
         if val.get("default"):
             entry["default"] = True
+        if val.get("alias_of"):
+            entry["alias_of"] = str(val["alias_of"])
         out[key] = entry
-    if "balanced" not in out and "bootstrap" not in out:
+    if not any(k in out for k in ("balanced", "bootstrap", "sparse", "splat")):
         return None
     return out
 
 
 def load_presets() -> tuple[dict[str, dict[str, Any]], bool]:
-    """Return (presets, from_file). Falls back to built-in Balanced set."""
+    """Return (presets, from_file). Falls back to built-in hierarchy."""
     if PRESETS_PATH.is_file():
         try:
             raw = json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
@@ -79,19 +118,19 @@ def load_presets() -> tuple[dict[str, dict[str, Any]], bool]:
             runtime_write(
                 "warn",
                 "recon_train",
-                f"Invalid train presets at {PRESETS_PATH.name} — using built-in Balanced",
+                f"Invalid train presets at {PRESETS_PATH.name} — using built-in hierarchy",
             )
         except (OSError, json.JSONDecodeError) as exc:
             runtime_write(
                 "warn",
                 "recon_train",
-                f"Failed to read train presets: {exc} — using built-in Balanced",
+                f"Failed to read train presets: {exc} — using built-in hierarchy",
             )
     else:
         runtime_write(
             "warn",
             "recon_train",
-            "config/train_presets.json missing — using built-in Balanced",
+            "config/train_presets.json missing — using built-in hierarchy",
         )
     return deepcopy(_BUILTIN), False
 
@@ -120,36 +159,89 @@ def used_vram_gb() -> float:
 
 
 def presets_for_client() -> list[dict[str, Any]]:
+    from services.accelerator import (
+        CPU_DENSE_DISABLED_RU,
+        CPU_DENSE_ETA_RU,
+        GSPLAT_CUDA_REASON_RU,
+        cpu_dense_mesh_disabled,
+        is_cpu_profile,
+        log_profile_once,
+    )
+    from services.alicevision import alicevision_available, alicevision_cuda_ready
     from services.gsplat_msvc import gsplat_train_ready
 
+    log_profile_once()
     presets, _ = load_presets()
     vram = total_vram_gb()
     msvc_ok, msvc_reason = gsplat_train_ready()
+    av_ok = alicevision_available()
+    cuda_ok, cuda_reason = alicevision_cuda_ready()
+    cpu = is_cpu_profile()
     items: list[dict[str, Any]] = []
     for pid, cfg in presets.items():
         min_v = float(cfg.get("min_vram_gb") or 0)
         script = str(cfg.get("script") or "")
-        disabled = bool(min_v and vram > 0 and vram < min_v)
+        disabled = False
         reason = ""
-        if disabled:
+        eta = str(cfg.get("eta") or "")
+        if script in ("alicevision_mvs", "alicevision_mesh"):
+            if cpu and cpu_dense_mesh_disabled():
+                disabled = True
+                reason = CPU_DENSE_DISABLED_RU
+                eta = CPU_DENSE_ETA_RU
+            elif not sys.platform.startswith("win") and not av_ok:
+                disabled = True
+                reason = "AliceVision пока только Windows (macOS — позже)"
+            elif not av_ok:
+                disabled = True
+                reason = "AliceVision не установлен (sidecar / ALICEVISION_ROOT)"
+            elif not cuda_ok:
+                disabled = True
+                reason = cuda_reason or "AliceVision dense/mesh требует NVIDIA CUDA"
+                if cpu:
+                    eta = CPU_DENSE_ETA_RU
+                    reason = f"{reason}. {CPU_DENSE_ETA_RU}"
+            elif min_v and (vram <= 0 or vram < min_v):
+                disabled = True
+                reason = (
+                    f"Нужно ≥{min_v:g} ГБ VRAM (сейчас {vram:.1f} ГБ)"
+                    if vram > 0
+                    else f"Нужно ≥{min_v:g} ГБ VRAM (CUDA недоступна)"
+                )
+            elif cpu:
+                eta = CPU_DENSE_ETA_RU
+        elif script == "gsplat":
+            if cpu or not cuda_ok:
+                disabled = True
+                reason = GSPLAT_CUDA_REASON_RU
+            elif min_v and vram > 0 and vram < min_v:
+                disabled = True
+                reason = f"Нужно ≥{min_v:g} ГБ VRAM (сейчас {vram:.1f} ГБ)"
+            elif min_v and vram <= 0:
+                disabled = True
+                reason = GSPLAT_CUDA_REASON_RU
+            elif not msvc_ok:
+                disabled = True
+                reason = msvc_reason or "Нужен MSVC 14.44 (см. ENGINEER_GUIDE) или пресет Bootstrap"
+        elif min_v and vram > 0 and vram < min_v:
+            disabled = True
             reason = f"Нужно ≥{min_v:g} ГБ VRAM (сейчас {vram:.1f} ГБ)"
-        elif vram <= 0 and min_v:
+        elif min_v and vram <= 0:
+            disabled = True
             reason = f"Нужно ≥{min_v:g} ГБ VRAM (CUDA недоступна)"
-            disabled = True
-        elif script == "gsplat" and not msvc_ok:
-            disabled = True
-            reason = msvc_reason or "Нужен MSVC 14.44 (см. ENGINEER_GUIDE) или пресет Bootstrap"
+
         items.append(
             {
                 "id": pid,
                 "label": cfg.get("label") or pid,
-                "eta": cfg.get("eta") or "",
+                "eta": eta,
                 "default": bool(cfg.get("default")),
                 "disabled": disabled,
                 "disabled_reason": reason,
+                "alias_of": cfg.get("alias_of"),
+                "backend": cfg.get("backend") or script,
             }
         )
-    # Stable order: bootstrap, balanced, high, then others
-    order = {"bootstrap": 0, "balanced": 1, "high": 2}
+    order = {pid: i for i, pid in enumerate((*_PRIMARY_ORDER, *_ALIAS_ORDER))}
     items.sort(key=lambda x: (order.get(x["id"], 99), x["id"]))
     return items

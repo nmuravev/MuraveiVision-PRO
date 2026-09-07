@@ -69,6 +69,7 @@ def _parse_images_txt(path: Path) -> list[dict[str, Any]]:
     images: list[dict[str, Any]] = []
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     i = 0
+    _img_ext = (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp")
     while i < len(lines):
         line = lines[i].strip()
         i += 1
@@ -77,10 +78,13 @@ def _parse_images_txt(path: Path) -> list[dict[str, Any]]:
         parts = line.split()
         if len(parts) < 10:
             continue
+        name = parts[9]
+        # POINTS2D lines also have ≥10 floats — require a real image basename
+        if not name.lower().endswith(_img_ext):
+            continue
         qw, qx, qy, qz = (float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4]))
         tx, ty, tz = float(parts[5]), float(parts[6]), float(parts[7])
         cam_id = int(parts[8])
-        name = parts[9]
         R = _quat_to_rot(qw, qx, qy, qz)
         images.append(
             {

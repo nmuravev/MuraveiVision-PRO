@@ -10,7 +10,7 @@ import jwt
 
 from services import network as net
 
-SYNC_INTERVAL_SEC = 30.0
+SYNC_INTERVAL_SEC = 15.0
 HTTP_TIMEOUT_SEC = 10.0
 TOKEN_REFRESH_SKEW_SEC = 60.0
 
@@ -39,9 +39,11 @@ class NetworkSyncWorker:
         self.hub_token: str | None = None
         self.hub_token_expires: float | None = None
         self.cursor: float | None = None
+        self.message_cursor: float | None = None
         self.last_error: str | None = None
         self.last_sync_ts: float | None = None
         self.hub_reachable: bool = False
+        self.advertise_ip: str = ""
         self.running: bool = False
         self.lock: asyncio.Lock = asyncio.Lock()
         self.task: asyncio.Task[None] | None = None
@@ -152,13 +154,14 @@ class NetworkSyncWorker:
         return resp
 
     async def send_heartbeat(self) -> bool:
+        self.advertise_ip = net.resolve_lan_ipv4()
         resp = await self._authed_request(
             "POST",
             "/api/network/heartbeat",
             json={
                 "base_id": self.base_id,
                 "base_name": self.base_name or "База",
-                "ip": "127.0.0.1",
+                "ip": self.advertise_ip,
             },
         )
         if resp is None:
@@ -250,6 +253,78 @@ class NetworkSyncWorker:
             self.cursor = newest
         return upserted
 
+    async def push_local_messages(self) -> int:
+        rows = net.list_unsynced_out_messages()
+        pushed = 0
+        for row in rows:
+            mid = str(row.get("id") or "")
+            if not mid:
+                continue
+            resp = await self._authed_request(
+                "POST",
+                "/api/network/messages",
+                json={
+                    "id": mid,
+                    "body": row.get("body") or "",
+                    "sender": row.get("sender") or self.base_name,
+                    "created_at": row.get("created_at"),
+                },
+            )
+            if resp is None or resp.status_code >= 400:
+                code = resp.status_code if resp is not None else "offline"
+                print(f"[NETWORK] message push failed id={mid}: {code}")
+                continue
+            net.mark_message_synced(mid)
+            pushed += 1
+        return pushed
+
+    async def pull_remote_messages(self) -> int:
+        since = float(self.message_cursor) if self.message_cursor is not None else 0.0
+        resp = await self._authed_request(
+            "GET",
+            "/api/network/messages",
+            params={"since": since},
+        )
+        if resp is None or resp.status_code >= 400:
+            if resp is not None:
+                self.last_error = f"message pull HTTP {resp.status_code}"
+                print(f"[NETWORK] message pull failed: HTTP {resp.status_code}")
+            return 0
+        items = (resp.json() or {}).get("messages") or []
+        if not isinstance(items, list):
+            return 0
+        upserted = 0
+        newest = self.message_cursor
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            created = item.get("created_at")
+            if created is not None:
+                created_f = float(created)
+                newest = created_f if newest is None else max(newest, created_f)
+            sender = str(item.get("sender") or "").strip()
+            if self._is_self_source(sender):
+                continue
+            mid = str(item.get("id") or "").strip()
+            body = str(item.get("body") or "")
+            if not mid or not body.strip():
+                continue
+            # Already have this row locally (e.g. our own out mirrored on hub) — skip dup
+            existing = net.get_message(mid)
+            if existing is not None and str(existing.get("direction")) == "out":
+                continue
+            net.upsert_message(
+                message_id=mid,
+                sender=sender or "База",
+                body=body,
+                created_at=float(created) if created is not None else None,
+                expires_at=item.get("expires_at"),
+            )
+            upserted += 1
+        if newest is not None:
+            self.message_cursor = newest
+        return upserted
+
     async def sync_tick(self) -> None:
         try:
             cfg = self._reload_identity()
@@ -260,6 +335,8 @@ class NetworkSyncWorker:
             await self.send_heartbeat()
             await self.push_local_targets()
             await self.pull_remote_targets()
+            await self.push_local_messages()
+            await self.pull_remote_messages()
             self.last_sync_ts = time.time()
             if self.hub_reachable:
                 self.last_error = None
@@ -314,6 +391,8 @@ def status_dict() -> dict[str, Any]:
         "last_error": worker.last_error if worker else None,
         "hub_reachable": bool(worker.hub_reachable) if worker else False,
         "worker_alive": worker_alive(),
+        "advertise_ip": (worker.advertise_ip if worker else "") or net.resolve_lan_ipv4(),
+        "sync_interval_sec": SYNC_INTERVAL_SEC,
     }
 
 

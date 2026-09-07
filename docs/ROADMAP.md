@@ -11,6 +11,7 @@
 - Quick train + backup finetune CUDA → `yolo26n-ft.pt`  
 - Ollama proxy, HTML-отчёт, portable Lite  
 - Force-load ft, smoke LBS
+- **v3.2 recon (branch only):** COLMAP multi-model best sparse (`points3D` primary), AliceVision Dense/Mesh, Windows CPU+DirectML / `win_cpu` pack — на `feature/alicevision-v3.2`, **не смержено в main**. См. [ALICEVISION.md](ALICEVISION.md), [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md).
 
 ## P0 — операторский конвейер
 
@@ -79,7 +80,8 @@
 |---|-----|--------|-----------|---------|
 | 1 | Perf | Profiling batch seg / propagate / dual-viewer на edge GPU | P2 | Полевой smoke + метрики ms/VRAM |
 | 2 | Export | GeoTIFF/KML масок batch/propagate | по запросу | Не блокирует Phase 3 |
-| 3 | — | Новые фичи | по запросу пользователя | Placeholder |
+| 3 | Merge | Merge `feature/alicevision-v3.2` → main после явного OK | P2 | Dense + CPU/AMD track |
+| 4 | — | Новые фичи | по запросу пользователя | Placeholder |
 
 Чеклисты: [TODO.md](TODO.md).
 

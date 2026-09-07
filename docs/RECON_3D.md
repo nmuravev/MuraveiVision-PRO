@@ -1,8 +1,10 @@
-# 3D Reconstruction (COLMAP + gsplat)
+# 3D Reconstruction (COLMAP + AliceVision + gsplat)
 
 Visual-only photogrammetry for archive MP4 **without GPS**. Designed for EW/jammed environments where SRT telemetry is unavailable.
 
 **Paths:** recon `video_path` and media assets resolve through dynamic `archive_root()` / `assert_in_archive` — never bake host absolute paths into manifests or client state. Prefer `archive/...` from the Media API.
+
+**v3.2:** optional AliceVision dense MVS / textured mesh after COLMAP — see [ALICEVISION.md](ALICEVISION.md).
 
 ## Requirements
 
@@ -10,6 +12,7 @@ Visual-only photogrammetry for archive MP4 **without GPS**. Designed for EW/jamm
 |-----------|--------|
 | Python 3.12.10 | `muravei_env\Scripts\python.exe` only |
 | COLMAP | Sidecar `sidecars/colmap` — auto-detect или `COLMAP_ROOT` |
+| AliceVision (Dense/Mesh) | `sidecars/alicevision/windows-x64` or `ALICEVISION_ROOT` + NVIDIA CUDA |
 | gsplat (train) | Prebuilt wheel on build machine + NVIDIA CUDA |
 | ffmpeg/ffprobe | `assets/ffmpeg.exe` or PATH |
 
@@ -37,8 +40,9 @@ npm run backend
 ```
 
 3. In UI: open MP4 → **Flight3D** → **Построить 3D** (segment ≤120 s from playhead).
+4. After sparse: hierarchy **Sparse / Dense / Mesh / Splat** (Dense/Mesh need AliceVision+CUDA; Splat = gsplat). Artifact selector «Показать» + export.
 
-   **Product rule:** «Построить 3D» = **COLMAP sparse only** (`colmap_done`, `manifest.next_action=balanced_for_splat`). Ops modal steps: extracting → colmap → export_poses → load_scene — **no** inline «gsplat train (optional)». Photorealism = UI presets Balanced / Bootstrap / High.
+   **Product rule:** «Построить 3D» = **COLMAP sparse only** (`colmap_done`). Ops modal title stays «Построение 3D (COLMAP)» with subtitle that AliceVision is next — **AliceVision does not run inside Build 3D**. After `colmap_done`, Scene tab shows CTA **«AliceVision готов: Dense / Mesh»** and hierarchy buttons. Photorealism = **Splat** (aliases Balanced / High).
 
    **Matching (drone video):** frames use **sequential_matcher** (overlap ≈10–15 neighbors, env `COLMAP_SEQUENTIAL_OVERLAP`). Exhaustive matching is **not** the default — it is O(n²) and often crashes GPU (8 GB) mid «Exhaustive feature matching». Opt-in: `COLMAP_MATCHER=exhaustive` only for small sets (≤`COLMAP_EXHAUSTIVE_MAX_IMAGES`, default 80).
 
@@ -158,7 +162,7 @@ PyPI `gsplat` is **JIT-only** (no `csrc`). First CUDA call compiles kernels. On 
 
 Expect `model.ply` **≫ 1 MB** and `gsplat_meta.json` with `"gsplat": true`. Tiny ply (~KB) with `"gsplat": true` means train ran but COLMAP gave almost no Gaussians (weak scene).
 
-**Multi-model COLMAP:** if mapper writes several `sparse/N` folders, diagnose / train / bootstrap / in-app recon pick the **largest valid** points cloud (`get_best_sparse_dir`). Trainer staging still copies that model into `gsplat_data/sparse/0/` for gsplat examples.
+**Multi-model COLMAP:** if mapper writes several `sparse/N` folders, diagnose / train / bootstrap / in-app recon / **AliceVision Dense** pick the **best** model via `get_best_sparse_dir` — **largest `points3D.*` primary** (cameras present), then exact registered-view count from `images.txt` secondary. Never `images.bin` size heuristics; never hardcode `sparse/0`. Trainer staging still copies that model into `gsplat_data/sparse/0/` for gsplat examples. See also [ALICEVISION.md](ALICEVISION.md).
 
 ### Install / stage
 

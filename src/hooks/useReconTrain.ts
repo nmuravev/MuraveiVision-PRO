@@ -11,6 +11,8 @@ export type TrainPreset = {
   default?: boolean;
   disabled: boolean;
   disabled_reason: string;
+  alias_of?: string | null;
+  backend?: string | null;
 };
 
 export type TrainStatus = {
@@ -95,8 +97,31 @@ export function useReconTrain(jobId: string | null | undefined, isAuthenticated:
       streamAbortRef.current = abort;
 
       const apply = (data: Record<string, unknown>) => {
-        const st = data as unknown as TrainStatus;
+        const st = data as unknown as TrainStatus & {
+          event?: string;
+          alicevision_step?: string;
+        };
         setTrain(st);
+        const evName = typeof data.event === 'string' ? data.event : '';
+        if (
+          evName.startsWith('alicevision') ||
+          evName === 'dense-artifact-ready' ||
+          evName === 'mesh-artifact-ready'
+        ) {
+          void import('../debug/sessionTrace').then(({ addEvent }) => {
+            addEvent(
+              'note',
+              `${evName}${st.alicevision_step ? ` · ${st.alicevision_step}` : ''}`,
+              {
+                event: evName,
+                step: st.alicevision_step,
+                preset: st.preset,
+                job_id: st.job_id,
+                message: st.message,
+              },
+            );
+          });
+        }
         if (st.status === 'done' || st.status === 'error' || st.status === 'idle') {
           abort.abort();
           clearPoll();

@@ -5,6 +5,7 @@ import { useMuraveiStore } from '../../store/useMuraveiStore';
 import { useTimelineStore } from '../../store/timeline-store';
 import { useViewerStore } from '../../store/useViewerStore';
 import { RulesPanel } from './RulesPanel';
+import { OllamaSettingsCard } from './OllamaSettingsCard';
 
 interface OllamaModel {
   name: string;
@@ -23,7 +24,7 @@ interface HistoryItem {
 }
 
 const AI_UNAVAILABLE =
-  'Локальная ИИ-модель недоступна. Запустите Ollama на этом компьютере.';
+  'Ollama не подключена. Нажмите «Подключить» выше или задайте адрес вручную.';
 const HISTORY_KEY = 'muravei-ai-analysis-history';
 const SMOKE_PROMPT = 'Ответь одним словом: ok';
 
@@ -116,7 +117,8 @@ export const AiAnalysisPanel: React.FC = () => {
 
   useEffect(() => {
     void refreshModels();
-    const t = window.setInterval(() => void refreshModels(), 20000);
+    // Refresh models less often when offline — connection is explicit via Ollama card
+    const t = window.setInterval(() => void refreshModels(), 45000);
     return () => window.clearInterval(t);
   }, [refreshModels]);
 
@@ -280,6 +282,7 @@ export const AiAnalysisPanel: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-auto p-3 space-y-3">
+        {isAuthenticated ? <OllamaSettingsCard /> : null}
         <RulesPanel />
         {!isAuthenticated && (
           <div className="flex gap-2 items-start rounded-sm border border-amber-700/60 bg-amber-950/40 px-2 py-1.5 text-amber-200">
@@ -289,8 +292,7 @@ export const AiAnalysisPanel: React.FC = () => {
         )}
 
         {!available && isAuthenticated && (
-          <div className="flex gap-2 items-start rounded-sm border border-amber-700/60 bg-amber-950/40 px-2 py-1.5 text-amber-200">
-            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+          <div className="flex gap-2 items-start rounded-sm border border-dv-border/60 bg-dv-deep/40 px-2 py-1.5 text-dv-muted">
             <span>{statusMsg || AI_UNAVAILABLE}</span>
           </div>
         )}

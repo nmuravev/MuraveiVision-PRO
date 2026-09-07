@@ -1,0 +1,17 @@
+<#
+  Template: isolated 3.2 launcher pattern.
+  Copy to a standalone tree as run_3.2.ps1 and run from that tree.
+  Ports: MURAVEI_PORT=8001 (API), VITE_PORT=3001 (Vite UI with proxy).
+  Paths: only $PSScriptRoot — never absolute machine paths.
+#>
+$Root = $PSScriptRoot
+Set-Location $Root
+$BackendPort = if ($env:MURAVEI_PORT) { [int]$env:MURAVEI_PORT } else { 8001 }
+$FrontendPort = if ($env:VITE_PORT) { [int]$env:VITE_PORT } else { 3001 }
+$Py = Join-Path $Root "muravei_env\Scripts\python.exe"
+$env:COLMAP_ROOT = Join-Path $Root "sidecars\colmap"
+$av = Join-Path $Root "sidecars\alicevision\windows-x64\bin\aliceVision_featureExtraction.exe"
+if (Test-Path $av) { $env:ALICEVISION_ROOT = Join-Path $Root "sidecars\alicevision\windows-x64" }
+# Start: & $Py -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port $BackendPort
+# UI: npx vite --port $FrontendPort  (proxy to $BackendPort in that tree's vite.config)
+Write-Host "API http://127.0.0.1:$BackendPort  UI http://127.0.0.1:$FrontendPort"

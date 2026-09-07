@@ -4,11 +4,16 @@
 
 ## Установка
 
-См. [DEPLOYMENT.md](DEPLOYMENT.md). Кратко:
+См. [DEPLOYMENT.md](DEPLOYMENT.md) и офлайн-пак [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md). Кратко:
 ```powershell
+# Онлайн (dev):
 .\muravei_env\Scripts\pip.exe install --no-cache-dir -r backend\requirements.txt
 .\muravei_env\Scripts\pip.exe install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu128
 npm install
+
+# Поле без интернета: распаковать muravei_env_pack_win_cpu|cuda.zip → scripts\setup_env.bat
+# Сборка пака: .\scripts\make_env_pack.ps1 -TorchFlavor cpu|cuda
+# AMD field: docs\SPEC_FIELD_MACBOOK.md
 ```
 Правило: только `muravei_env\Scripts\python.exe` (3.12.10) — [.cursor/rules/muravei-python-env.mdc](../.cursor/rules/muravei-python-env.mdc). Bare `python`/`pip` использовать нельзя (PATH → 3.14).
 
@@ -65,10 +70,10 @@ Air-gap: Система → панель «Импорт с USB» (engineer, PIN 
 SYSTEM → Сеть (`mode` off / server / client):
 
 - **server** — этот инстанс хаб (остальные клиенты бьют в его `server_ip`:`port`).
-- **client** — фоновый worker каждые ~30 с: login JWT по `hub_pin` (PIN оператора хаба), heartbeat, push несинхронизированных исходящих, pull `GET /api/network/targets?since=`.
+- **client** — фоновый worker каждые ~**15 с**: login JWT по `hub_pin`, heartbeat (LAN IPv4), push/pull targets, push/pull **messages**.
 - PIN хаба в UI write-only (пустое поле при сохранении не стирает уже записанный).
-- Цели несут `source_video` и GPS. TTL 24 ч. Входящие появляются как `direction=in` (не локальное зеркало).
-- Статус: `GET /api/network/status` — `hub_reachable`, `last_sync_ts`, `last_error`, `worker_alive`.
+- Цели несут `source_video` и GPS. TTL 24 ч. Чат — отдельное окно ViewId `chat`. См. [NETWORK_REPLICATION.md](NETWORK_REPLICATION.md).
+- Статус: `GET /api/network/status` — `hub_reachable`, `advertise_ip`, `last_sync_ts`, `last_error`, `worker_alive`.
 
 Один backend не доказывает репликацию. Ручной тест — **две копии папки** (у каждой свой `muravei.db`):
 
@@ -92,6 +97,14 @@ cd ..\MuraveiVision-PRO-Base2
 3. На Base-1 отправить цель. На Base-2 в «Входящие» через ~30 с та же `id`, GPS, `source_video`, `direction=in`.
 4. Остановить Base-1: Base-2 UI живой, статус `hub_reachable=false`.
 
+Автоматический gate (hub :8000 + Base2 :8001, свои `muravei.db`):
+
+```
+.\muravei_env\Scripts\python.exe backend\scripts\dual_network_smoke.py
+```
+
+Ожидается 7/7 PASS (bases LAN IP, chat both ways, unread, GPS target, no-dup, targets regression).
+
 ## Диагностика
 
 - `GET /api/detect/status` — mode, model, device, last ms, queue.
@@ -107,8 +120,8 @@ cd ..\MuraveiVision-PRO-Base2
 ### Build3D vs train presets
 
 - **«Построить 3D»** runs COLMAP → poses → sparse only. Does **not** call inline gsplat unless `GSPLAT_INLINE=1`.
-- Photoreal `model.ply` = Flight3D presets (Balanced / Bootstrap / High) or CLI wrappers below.
-- After sparse: `manifest.next_action = "balanced_for_splat"` drives the yellow CTA. Successful Balanced (`_patch_artifact` → `model.ply`) **clears** `next_action`; FE also hides the CTA when `classifyArtifact(artifact)==='splat'`.
+- Photoreal / dense / mesh = Flight3D hierarchy (**Sparse / Dense / Mesh / Splat**) or aliases Bootstrap / Balanced / High. See [ALICEVISION.md](ALICEVISION.md).
+- After sparse: `manifest.next_action = "balanced_for_splat"` drives the yellow CTA. Successful Splat (`_patch_artifact` → `model.ply`) **clears** `next_action`; FE also hides the CTA when `classifyArtifact(artifact)==='splat'`.
 
 ```powershell
 # Rare: re-enable short inline train after COLMAP (not recommended for field UX)
@@ -117,9 +130,18 @@ $env:GSPLAT_INLINE = "1"
 
 ### UI presets (`config/train_presets.json`)
 
-Repo-root JSON controls Flight3D **Сцена** buttons (Bootstrap / Balanced / High). Example keys: `script` (`bootstrap`|`gsplat`), `max_steps`, `data_factor`, `max_points`, `min_vram_gb`, `eta`, `default`. Missing/invalid file → built-in Balanced defaults.
+Repo-root JSON controls Flight3D **Сцена** buttons. Canonical: `sparse` / `dense` / `mesh` / `splat`; aliases `bootstrap` / `balanced` / `high`. Scripts: `colmap_only` | `alicevision_mvs` | `alicevision_mesh` | `bootstrap` | `gsplat`. Missing/invalid file → built-in hierarchy.
 
-VRAM gate for High uses `torch.cuda.get_device_properties(0).total_memory` (no `nvidia-smi`).
+VRAM gate uses `torch.cuda.get_device_properties(0).total_memory` (no `nvidia-smi`). Dense/Mesh also require AliceVision sidecar + CUDA.
+
+### AliceVision sidecar
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\fetch_alicevision.ps1
+$env:ALICEVISION_ROOT = (Resolve-Path ".\sidecars\alicevision\windows-x64").Path
+```
+
+VC++ Redistributable x64 required. Depth maps need NVIDIA CUDA (no CPU fallback).
 
 ### CLI (optional)
 

@@ -33,7 +33,10 @@ class TargetBody(BaseModel):
 
 
 class MessageBody(BaseModel):
+    id: str | None = None
     body: str = Field(..., min_length=1, max_length=2000)
+    sender: str | None = None
+    created_at: float | None = None
 
 
 class HeartbeatBody(BaseModel):
@@ -116,8 +119,11 @@ async def post_target(
 
 
 @router.get("/messages")
-async def get_messages(_user: dict[str, Any] = Depends(require_role("operator"))) -> dict[str, Any]:
-    return {"messages": net.list_messages()}
+async def get_messages(
+    since: float | None = None,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    return {"messages": net.list_messages(since=since)}
 
 
 @router.post("/messages")
@@ -128,6 +134,21 @@ async def post_message(
     cfg = net.get_config()
     if cfg.get("mode") == "off":
         raise HTTPException(status_code=400, detail="Сеть выключена (mode=off)")
-    sender = cfg.get("base_name") or str(user.get("role"))
-    msg = net.add_message(direction="out", sender=str(sender), body=body.body)
+    sender = (body.sender or "").strip() or cfg.get("base_name") or str(user.get("role"))
+    msg = net.add_message(
+        direction="out",
+        sender=str(sender),
+        body=body.body,
+        message_id=body.id,
+        created_at=body.created_at,
+    )
     return {"ok": True, "message": msg}
+
+
+@router.get("/messages/unread")
+async def get_unread(
+    since: float = 0.0,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    return {"count": net.count_incoming_messages_since(since)}
+

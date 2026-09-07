@@ -50,18 +50,34 @@ def sequential_overlap() -> int:
 
 
 def max_image_size() -> int:
+    default = DEFAULT_MAX_IMAGE_SIZE
+    try:
+        from services.accelerator import CPU_COLMAP_MAX_IMAGE_SIZE, is_cpu_profile
+
+        if is_cpu_profile():
+            default = CPU_COLMAP_MAX_IMAGE_SIZE
+    except Exception:  # noqa: BLE001
+        pass
     return env_int(
         "COLMAP_MAX_IMAGE_SIZE",
-        DEFAULT_MAX_IMAGE_SIZE,
+        default,
         lo=640,
         hi=3200,
     )
 
 
 def max_frames() -> int:
+    default = DEFAULT_MAX_FRAMES
+    try:
+        from services.accelerator import CPU_COLMAP_MAX_FRAMES, is_cpu_profile
+
+        if is_cpu_profile():
+            default = CPU_COLMAP_MAX_FRAMES
+    except Exception:  # noqa: BLE001
+        pass
     return env_int(
         "COLMAP_MAX_FRAMES",
-        DEFAULT_MAX_FRAMES,
+        default,
         lo=50,
         hi=2000,
     )

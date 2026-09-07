@@ -136,9 +136,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onDone, force }) => 
           } else {
             patch('ollama', {
               status: 'ok',
-              detail: data.message || 'Ollama offline (не критично)',
+              detail: 'не подключена (опционально)',
             });
-            logger.warn('splash', 'Ollama недоступна');
           }
         } else {
           patch('ollama', { status: 'ok', detail: 'Пропуск (не критично)' });

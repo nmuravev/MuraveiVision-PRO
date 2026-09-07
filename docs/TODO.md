@@ -112,3 +112,6 @@
   - Batch + SAM3 3a/3b — см. таблицу выше и [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md).
 - **Change detection (P3.15)** — DONE:
   - v1 analyze + v2 sync/export/heatmap — см. коммиты в [ROADMAP.md](ROADMAP.md).
+- **AliceVision / 3D v3.2 (branch `feature/alicevision-v3.2`)** — DONE (не в main):
+  - Dense/Mesh sidecar + soft-fail gates; multi-model `get_best_sparse_dir` (**points3D size primary**, views secondary).
+  - Offline env packs `win_cpu` / `win_cuda`; CPU profile + YOLO DirectML (AMD/Intel). См. [ALICEVISION.md](ALICEVISION.md), [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md), [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md).

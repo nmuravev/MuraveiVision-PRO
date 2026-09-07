@@ -16,17 +16,22 @@ import {
 } from '../../lib/reconRaycast';
 import {
   classifyArtifact,
+  classifySlot,
   disposeSceneChildren,
   fetchAssetBlobUrl,
   frameObject,
   isPlaceholderBounds,
   isSparseClusterWeak,
+  loadObjWithMtl,
   loadPlyAsPoints,
   loadSplatDropIn,
+  normalizeArtifactsFromManifest,
   pointsFromSparse,
   probeSplatBounds,
+  type ArtifactSlot,
   type SplatHandle,
 } from '../../lib/reconSceneArtifact';
+import { downloadAuthorized } from '../../lib/download';
 import { OpsStatusBar } from '../OpsStatusBar';
 import { SILENT_API_ERROR_HEADER } from '../../lib/apiError';
 import { computeReconSegment, isReconReady, useReconBuild } from '../../hooks/useReconBuild';
@@ -128,8 +133,24 @@ export const Flight3D: React.FC = () => {
   const [scalePick, setScalePick] = useState<THREE.Vector3[]>([]);
   const [sceneLoading, setSceneLoading] = useState(false);
   const [sceneError, setSceneError] = useState<string | null>(null);
-  const [sceneKind, setSceneKind] = useState<'points' | 'splat' | 'empty'>('empty');
+  const [sceneKind, setSceneKind] = useState<'points' | 'dense' | 'mesh' | 'splat' | 'empty'>('empty');
   const [splatKind, setSplatKind] = useState<'train' | 'bootstrap' | null>(null);
+  const [viewSlot, setViewSlot] = useState<ArtifactSlot | null>(null);
+
+  const artifactInfo = useMemo(
+    () => normalizeArtifactsFromManifest(manifest || {}),
+    [manifest],
+  );
+  const activeSlot: ArtifactSlot | null = viewSlot || artifactInfo.selected;
+  const activeFile =
+    (activeSlot && artifactInfo.artifacts[activeSlot]?.file) ||
+    manifest?.artifact ||
+    null;
+
+  useEffect(() => {
+    // Reset manual selection when job changes
+    setViewSlot(null);
+  }, [manifest?.job_id]);
 
   const colmapBusy =
     reconRunning || (trainSeesColmap && !isReconReady(manifest));
@@ -375,7 +396,11 @@ export const Flight3D: React.FC = () => {
   });
 
   const runBalanced = () => {
-    void startTrain('balanced', () => {
+    const preferred =
+      trainPresets.find((p) => p.id === 'splat' && !p.disabled)?.id ||
+      trainPresets.find((p) => p.id === 'balanced' && !p.disabled)?.id ||
+      'splat';
+    void startTrain(preferred, () => {
       framedKeyRef.current = '';
       loadManifestRef.current();
     });
@@ -673,9 +698,12 @@ export const Flight3D: React.FC = () => {
     if (!st) return;
 
     const jobId = manifest?.job_id;
-    const artifact = manifest?.artifact ?? null;
-    const artifactKind = classifyArtifact(artifact);
-    const frameKey = `${jobId ?? ''}:${artifact ?? 'sparse'}`;
+    const artifact = activeFile;
+    const artifactKind =
+      activeSlot != null
+        ? classifySlot(activeSlot, artifact)
+        : classifyArtifact(artifact);
+    const frameKey = `${jobId ?? ''}:${activeSlot ?? 'auto'}:${artifact ?? 'sparse'}`;
     const sparseNow = sparseRef.current;
 
     const clearScene = () => {
@@ -797,6 +825,59 @@ export const Flight3D: React.FC = () => {
           finishPoints(pointsFromSparse(sp));
           return true;
         };
+
+        if (artifactKind === 'mesh' && jobId && artifact) {
+          const objUrl = await fetchAssetBlobUrl(jobId, artifact);
+          const mtlName = artifact.replace(/\.obj$/i, '.mtl');
+          let mtlUrl: string | null = null;
+          try {
+            mtlUrl = await fetchAssetBlobUrl(jobId, mtlName);
+          } catch {
+            mtlUrl = null;
+          }
+          try {
+            const group = await loadObjWithMtl(objUrl, {
+              mtlBlobUrl: mtlUrl,
+              resourceUrl: undefined,
+            });
+            if (isStale()) {
+              disposeObject(group);
+              return;
+            }
+            st.sceneGroup.add(group);
+            const box = new THREE.Box3().setFromObject(group);
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+            const center = box.getCenter(new THREE.Vector3());
+            const grid = new THREE.GridHelper(maxDim * 2, 12, 0x334455, 0x223344);
+            grid.position.y = center.y - size.y * 0.5;
+            st.sceneGroup.add(grid);
+            if (manifest?.rotation_x) st.sceneGroup.rotation.x = manifest.rotation_x;
+            else st.sceneGroup.rotation.x = 0;
+            applyCamera(group);
+            setSceneKind('mesh');
+            setSceneLoading(false);
+          } finally {
+            URL.revokeObjectURL(objUrl);
+            if (mtlUrl) URL.revokeObjectURL(mtlUrl);
+          }
+          return;
+        }
+
+        if ((artifactKind === 'dense' || artifactKind === 'points') && jobId && artifact) {
+          const blobUrl = await fetchAssetBlobUrl(jobId, artifact);
+          try {
+            const pts = await loadPlyAsPoints(
+              blobUrl,
+              artifactKind === 'dense' ? { maxPoints: 1_000_000 } : undefined,
+            );
+            finishPoints(pts);
+            if (artifactKind === 'dense') setSceneKind('dense');
+          } finally {
+            URL.revokeObjectURL(blobUrl);
+          }
+          return;
+        }
 
         if (artifactKind === 'splat' && jobId && artifact) {
           splatLoadingRef.current = true;
@@ -1056,6 +1137,10 @@ export const Flight3D: React.FC = () => {
     manifest?.artifact,
     manifest?.status,
     manifest?.rotation_x,
+    manifest?.artifacts,
+    manifest?.selected_artifact,
+    activeSlot,
+    activeFile,
     // Intentionally NOT sparsePoints.length — sparse arrives async after manifest and
     // must not cancel / re-download a ~36MB model.ply mid DropIn load (uses sparseRef).
     training,
@@ -1290,14 +1375,73 @@ export const Flight3D: React.FC = () => {
       </div>
       {viewMode === 'scene' && manifest?.job_id && (
         <div className="px-2 py-1 border-b border-[var(--dv-border)] flex flex-col gap-1 text-[10px] flex-shrink-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <label className="text-[var(--dv-text-muted)]">
+              Показать:{' '}
+              <select
+                className="bg-[var(--dv-surface)] border border-[var(--dv-border)] rounded-sm px-1 py-0.5"
+                value={activeSlot || ''}
+                onChange={(e) => {
+                  const v = e.target.value as ArtifactSlot;
+                  setViewSlot(v || null);
+                  framedKeyRef.current = '';
+                }}
+              >
+                {(['mesh', 'dense', 'splat', 'sparse'] as ArtifactSlot[]).map((slot) => {
+                  const available = Boolean(artifactInfo.artifacts[slot]?.file) ||
+                    (slot === 'sparse' && Boolean(sparsePoints && sparsePoints.length >= 3)) ||
+                    (slot === 'splat' && classifyArtifact(manifest.artifact) === 'splat');
+                  const label =
+                    slot === 'mesh'
+                      ? 'Mesh'
+                      : slot === 'dense'
+                        ? 'Dense'
+                        : slot === 'splat'
+                          ? 'Splat'
+                          : 'Sparse';
+                  return (
+                    <option key={slot} value={slot} disabled={!available}>
+                      {label}
+                      {!available ? ' (нет)' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            {activeSlot && activeSlot !== 'sparse' && (
+              <button
+                type="button"
+                className="px-2 py-0.5 bg-[var(--dv-surface)] hover:bg-[var(--dv-hover)] rounded-sm"
+                onClick={() => {
+                  if (!manifest.job_id || !activeSlot) return;
+                  void downloadAuthorized(`/api/recon/export/${manifest.job_id}/${activeSlot}`, {
+                    filename:
+                      activeSlot === 'mesh'
+                        ? `${manifest.job_id}_mesh.zip`
+                        : artifactInfo.artifacts[activeSlot]?.file || `${activeSlot}.bin`,
+                  }).catch((err) =>
+                    setToast(err instanceof Error ? err.message : 'Ошибка экспорта'),
+                  );
+                }}
+              >
+                Скачать {activeSlot}
+              </button>
+            )}
+          </div>
           {needsTrainBanner && (
-            <div className="text-amber-300 bg-amber-950/40 border border-amber-700/50 rounded-sm px-2 py-1">
-              Облако COLMAP — не фотореализм. Выберите Balanced (5–10 мин) или High Quality.
+            <div className="text-amber-100 bg-amber-950/50 border border-amber-500/60 rounded-sm px-2 py-1.5">
+              <div className="font-semibold text-amber-200">
+                AliceVision готов: Dense / Mesh
+              </div>
+              <div className="text-[10px] text-amber-100/80 mt-0.5 leading-snug">
+                Sparse COLMAP уже построен. Следующий шаг — Dense (облако) или Mesh (текстуры)
+                через AliceVision, либо Splat (gsplat) для фотореализма. Кнопки ниже.
+              </div>
             </div>
           )}
           {sceneKind === 'splat' && splatKind === 'bootstrap' && !training && (
             <div className="text-amber-300 bg-amber-950/40 border border-amber-700/50 rounded-sm px-2 py-1">
-              Bootstrap загружен (минимальный splat). Для фотореализма запустите Balanced / High.
+              Bootstrap загружен (минимальный splat). Для фотореализма — Splat / Balanced / High.
             </div>
           )}
           {presetsError && (
@@ -1332,7 +1476,31 @@ export const Flight3D: React.FC = () => {
                 return `train: ${statusLabel}${art}`;
               })()}
             </span>
-            {trainPresets.map((p) => (
+          </div>
+          <div className="flex flex-col gap-1">
+            <div className="text-[var(--dv-text-muted)] uppercase tracking-wide text-[9px]">
+              Иерархия · Sparse → Dense (AliceVision) → Mesh (AliceVision) → Splat
+            </div>
+            <div className="text-[9px] text-[var(--dv-text-muted)] leading-snug -mt-0.5 mb-0.5">
+              «Построить 3D» = только COLMAP. AliceVision запускается кнопками Dense / Mesh.
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(
+                (() => {
+                  const primary = ['sparse', 'dense', 'mesh', 'splat'];
+                  const primarySet = new Set(primary);
+                  const hasPrimary = trainPresets.some((p) => primarySet.has(p.id));
+                  const list = hasPrimary
+                    ? [
+                        ...primary
+                          .map((id) => trainPresets.find((p) => p.id === id))
+                          .filter(Boolean),
+                        ...trainPresets.filter((p) => !primarySet.has(p.id)),
+                      ]
+                    : trainPresets;
+                  return list as typeof trainPresets;
+                })()
+              ).map((p) => (
               <button
                 key={p.id}
                 type="button"
@@ -1360,16 +1528,30 @@ export const Flight3D: React.FC = () => {
               >
                 {p.label}
                 {p.eta ? ` (${p.eta})` : ''}
+                {p.disabled && p.disabled_reason ? ' · недоступно' : ''}
               </button>
-            ))}
-            {training && (
-              <button
-                type="button"
-                className="px-2 py-0.5 bg-[var(--dv-surface)] hover:bg-[var(--dv-hover)] rounded-sm"
-                onClick={() => void stopTrain()}
-              >
-                Стоп train
-              </button>
+              ))}
+              {training && (
+                <button
+                  type="button"
+                  className="px-2 py-0.5 bg-[var(--dv-surface)] hover:bg-[var(--dv-hover)] rounded-sm"
+                  onClick={() => void stopTrain()}
+                >
+                  Стоп train
+                </button>
+              )}
+            </div>
+            {trainPresets.some((p) => p.disabled && p.disabled_reason) && (
+              <div className="text-[var(--dv-text-muted)] font-mono leading-snug">
+                {trainPresets
+                  .filter((p) => p.disabled && p.disabled_reason)
+                  .slice(0, 4)
+                  .map((p) => (
+                    <div key={`reason-${p.id}`}>
+                      {p.label}: {p.disabled_reason}
+                    </div>
+                  ))}
+              </div>
             )}
           </div>
           {training && (
@@ -1412,6 +1594,7 @@ export const Flight3D: React.FC = () => {
           finishing={ops.finishing}
           isError={ops.isError}
           title={ops.title}
+          subtitle={ops.subtitle}
           jobId={ops.jobId}
           steps={ops.steps}
           progressPct={ops.progressPct}
@@ -1456,34 +1639,59 @@ export const Flight3D: React.FC = () => {
           !ops.visible &&
           classifyArtifact(manifest?.artifact) !== 'splat' && (
             <div className="absolute inset-x-0 bottom-3 z-20 flex justify-center pointer-events-none px-2">
-              <div className="pointer-events-auto w-[min(440px,94%)] rounded-sm border border-amber-700/50 bg-black/85 px-3 py-2 text-[11px] text-amber-50 shadow-lg">
+              <div className="pointer-events-auto w-[min(440px,94%)] rounded-sm border border-amber-500/60 bg-black/90 px-3 py-2 text-[11px] text-amber-50 shadow-lg">
                 <div className="font-semibold text-amber-200">
-                  Sparse COLMAP
-                  {sparsePoints ? ` (${Math.floor(sparsePoints.length / 3)} точек)` : ''} — облако
-                  точек, не Gaussian splat
+                  AliceVision готов · Sparse COLMAP
+                  {sparsePoints ? ` (${Math.floor(sparsePoints.length / 3)} точек)` : ''}
                 </div>
                 <div className="mt-1 text-[var(--dv-text-muted)] text-[10px] leading-snug">
-                  Статус «sparse COLMAP · нужен train для splat» — норма после «Построить 3D».
-                  Фотореализм = Balanced (~5–10 мин) → model.ply.
+                  Это облако точек COLMAP, не AliceVision и не splat. Дальше: Dense / Mesh
+                  (AliceVision) или Splat (gsplat ≈ 5–10 мин → model.ply).
                 </div>
-                <button
-                  type="button"
-                  className="mt-2 w-full px-2 py-1 rounded-sm bg-[var(--dv-accent)] text-black font-medium disabled:opacity-40"
-                  disabled={
-                    trainBlocked ||
-                    !isReconReady(manifest) ||
-                    trainPresets.some((p) => p.id === 'balanced' && p.disabled)
-                  }
-                  onPointerDown={() => {
-                  }}
-                  onClick={() => runBalanced()}
-                  title={
-                    trainPresets.find((p) => p.id === 'balanced')?.disabled_reason ||
-                    'Запустить Balanced gsplat'
-                  }
-                >
-                  Balanced → фотореализм
-                </button>
+                <div className="mt-2 flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    className="w-full px-2 py-1 rounded-sm bg-amber-500 text-black font-medium disabled:opacity-40"
+                    disabled={
+                      trainBlocked ||
+                      !isReconReady(manifest) ||
+                      trainPresets.some((p) => p.id === 'dense' && p.disabled)
+                    }
+                    onClick={() =>
+                      void startTrain('dense', () => {
+                        framedKeyRef.current = '';
+                        void loadManifest();
+                      })
+                    }
+                    title={
+                      trainPresets.find((p) => p.id === 'dense')?.disabled_reason ||
+                      'Запустить Dense (AliceVision MVS)'
+                    }
+                  >
+                    Dense → точечное облако (локальный AliceVision)
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full px-2 py-1 rounded-sm bg-[var(--dv-accent)] text-black font-medium disabled:opacity-40"
+                    disabled={
+                      trainBlocked ||
+                      !isReconReady(manifest) ||
+                      (trainPresets.some((p) => p.id === 'splat')
+                        ? trainPresets.some((p) => p.id === 'splat' && p.disabled)
+                        : trainPresets.some((p) => p.id === 'balanced' && p.disabled))
+                    }
+                    onPointerDown={() => {
+                    }}
+                    onClick={() => runBalanced()}
+                    title={
+                      trainPresets.find((p) => p.id === 'splat')?.disabled_reason ||
+                      trainPresets.find((p) => p.id === 'balanced')?.disabled_reason ||
+                      'Запустить Splat / Balanced gsplat'
+                    }
+                  >
+                    Splat → фотореализм
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1495,8 +1703,8 @@ export const Flight3D: React.FC = () => {
           ops.visible && (
             <div className="absolute bottom-2 left-2 right-2 pointer-events-none z-10">
               <div className="px-2 py-1 rounded-sm bg-black/70 text-[10px] text-[var(--dv-text-muted)] border border-[var(--dv-border)] text-center">
-                Sparse COLMAP (точки) — не фотореализм. Дождитесь окончания операции или нажмите
-                Balanced.
+                Sparse COLMAP (точки) — не AliceVision. Дождитесь окончания или нажмите Dense /
+                Mesh / Splat.
               </div>
             </div>
           )}

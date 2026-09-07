@@ -15,9 +15,10 @@
   - ZIP: portable\MuraveiVision_PRO_Mini.zip
 
   FullKit (-FullKit):
-  - то же + ollama + qwen2.5vl:7b + torch cu128
+  - то же + ollama + qwen2.5vl:7b + torch cu128 (или -TorchFlavor cpu)
   - sidecars\colmap + sidecars\gsplat_examples (3D)
   - ZIP: portable\MuraveiVision_PRO_FullKit.zip (Zip64)
+    CPU flavor: MuraveiVision_PRO_FullKit_win_cpu.zip
 
   Только muravei_env / embed 3.12.10 — никогда host Python 3.14.
   Build-time downloads need network (or offline wheels/); field ZIP is air-gap.
@@ -32,6 +33,10 @@ param(
   [switch]$SkipZip,
   [switch]$FullKit,
   [switch]$NoDetectWeights,
+  [switch]$IncludeAliceVision,
+  [switch]$NoAliceVision,
+  [ValidateSet("cuda", "cpu")]
+  [string]$TorchFlavor = "cuda",
   [string]$OllamaZipPath = "",
   [string]$OllamaVersion = "v0.11.4",
   [string]$OllamaModelsRoot = ""
@@ -47,9 +52,13 @@ $HostPip = Join-Path $Repo "muravei_env\Scripts\pip.exe"
 $Stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 
 if ($FullKit) {
-  $KitTag = "FullKit"
-  $ZipPath = Join-Path $OutRoot "MuraveiVision_PRO_FullKit.zip"
-  $KitKind = "FULL KIT"
+  $KitTag = if ($TorchFlavor -eq "cpu") { "FullKitCpu" } else { "FullKit" }
+  $ZipPath = if ($TorchFlavor -eq "cpu") {
+    Join-Path $OutRoot "MuraveiVision_PRO_FullKit_win_cpu.zip"
+  } else {
+    Join-Path $OutRoot "MuraveiVision_PRO_FullKit.zip"
+  }
+  $KitKind = if ($TorchFlavor -eq "cpu") { "FULL KIT (CPU / no CUDA torch)" } else { "FULL KIT" }
 } elseif ($NoDetectWeights) {
   $KitTag = "Mini"
   $ZipPath = Join-Path $OutRoot "MuraveiVision_PRO_Mini.zip"
@@ -445,27 +454,54 @@ if ($FetchEmbeddablePython) {
   }
 
   if ($FullKit -and -not $mirrorHost) {
-    Write-Host "FullKit: forcing torch+cu128 in staged muravei_env..." -ForegroundColor Yellow
-    $prevEap = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    & $HostPy -m pip --python $pyExe uninstall -y torch torchvision 2>&1 | Out-Host
-    $ErrorActionPreference = $prevEap
-    $torchArgs = @("--python", $pyExe, "install", "--force-reinstall", "--no-warn-script-location", "torch", "torchvision")
-    if ($hasWheels) {
-      $torchArgs = @("--python", $pyExe, "install", "--no-index", "--find-links", $wheelDir, "--force-reinstall", "--no-warn-script-location", "torch", "torchvision")
-      Write-Host "FullKit torch from wheel cache (expect cu128 wheels present)" -ForegroundColor Yellow
+    if ($TorchFlavor -eq "cpu") {
+      Write-Host "FullKit CPU: forcing torch CPU wheels in staged muravei_env..." -ForegroundColor Yellow
+      $prevEap = $ErrorActionPreference
+      $ErrorActionPreference = "Continue"
+      & $HostPy -m pip --python $pyExe uninstall -y torch torchvision onnxruntime-gpu 2>&1 | Out-Host
+      $ErrorActionPreference = $prevEap
+      $torchArgs = @("--python", $pyExe, "install", "--force-reinstall", "--no-warn-script-location", "torch", "torchvision")
+      if ($hasWheels) {
+        $torchArgs = @("--python", $pyExe, "install", "--no-index", "--find-links", $wheelDir, "--force-reinstall", "--no-warn-script-location", "torch", "torchvision")
+        Write-Host "FullKit CPU torch from wheel cache" -ForegroundColor Yellow
+      } else {
+        $torchArgs += @("--no-cache-dir", "--index-url", "https://download.pytorch.org/whl/cpu")
+      }
+      & $HostPy -m pip @torchArgs
+      if ($LASTEXITCODE -ne 0) { throw "torch CPU install failed" }
+      if (-not $hasWheels) {
+        & $HostPy -m pip --python $pyExe install --force-reinstall --no-warn-script-location --no-cache-dir "onnxruntime-directml>=1.16.0"
+      }
+      & $pyExe -c "import torch; assert not torch.version.cuda, 'expected CPU torch'; print('STAGE_TORCH', torch.__version__, 'cpu')"
+      if ($LASTEXITCODE -ne 0) { throw "staged torch CPU wheel check failed" }
     } else {
-      $torchArgs += @("--no-cache-dir", "--index-url", "https://download.pytorch.org/whl/cu128")
+      Write-Host "FullKit: forcing torch+cu128 in staged muravei_env..." -ForegroundColor Yellow
+      $prevEap = $ErrorActionPreference
+      $ErrorActionPreference = "Continue"
+      & $HostPy -m pip --python $pyExe uninstall -y torch torchvision 2>&1 | Out-Host
+      $ErrorActionPreference = $prevEap
+      $torchArgs = @("--python", $pyExe, "install", "--force-reinstall", "--no-warn-script-location", "torch", "torchvision")
+      if ($hasWheels) {
+        $torchArgs = @("--python", $pyExe, "install", "--no-index", "--find-links", $wheelDir, "--force-reinstall", "--no-warn-script-location", "torch", "torchvision")
+        Write-Host "FullKit torch from wheel cache (expect cu128 wheels present)" -ForegroundColor Yellow
+      } else {
+        $torchArgs += @("--no-cache-dir", "--index-url", "https://download.pytorch.org/whl/cu128")
+      }
+      & $HostPy -m pip @torchArgs
+      $bakeEc = $LASTEXITCODE
+      if ($bakeEc -ne 0) { throw "torch cu128 install failed" }
+      & $pyExe -c "import torch; assert torch.version.cuda, 'expected CUDA wheel'; print('STAGE_TORCH', torch.__version__, torch.version.cuda)"
+      if ($LASTEXITCODE -ne 0) { throw "staged torch CUDA wheel check failed" }
     }
-    & $HostPy -m pip @torchArgs
-    $bakeEc = $LASTEXITCODE
-    if ($bakeEc -ne 0) { throw "torch cu128 install failed" }
-    & $pyExe -c "import torch; assert torch.version.cuda, 'expected CUDA wheel'; print('STAGE_TORCH', torch.__version__, torch.version.cuda)"
-    if ($LASTEXITCODE -ne 0) { throw "staged torch CUDA wheel check failed" }
   } elseif ($FullKit -and $mirrorHost) {
-    Write-Host "FullKit: host mirror already includes torch — verifying CUDA..." -ForegroundColor Yellow
-    & $pyExe -c "import torch; assert torch.version.cuda, 'expected CUDA wheel'; print('STAGE_TORCH', torch.__version__, torch.version.cuda)"
-    if ($LASTEXITCODE -ne 0) { throw "staged torch CUDA wheel check failed" }
+    if ($TorchFlavor -eq "cpu") {
+      Write-Host "FullKit CPU: host mirror — verifying torch..." -ForegroundColor Yellow
+      & $pyExe -c "import torch; print('STAGE_TORCH', torch.__version__, getattr(torch.version,'cuda',None))"
+    } else {
+      Write-Host "FullKit: host mirror already includes torch — verifying CUDA..." -ForegroundColor Yellow
+      & $pyExe -c "import torch; assert torch.version.cuda, 'expected CUDA wheel'; print('STAGE_TORCH', torch.__version__, torch.version.cuda)"
+      if ($LASTEXITCODE -ne 0) { throw "staged torch CUDA wheel check failed" }
+    }
   }
 
   & $pyExe -c "import sys,fastapi,uvicorn,ultralytics,cv2,jwt; assert sys.version.startswith('3.12'); print('BAKE_OK', sys.version.split()[0], fastapi.__version__)"
@@ -559,6 +595,38 @@ Or pass -OllamaModelsRoot path\to\store (folder with blobs\ + manifests\).
   } else {
     Write-Host "WARNING: sidecars\gsplat_examples missing — gsplat train may be unavailable." -ForegroundColor Yellow
   }
+
+  # AliceVision dense/mesh (optional; large). Default ON for FullKit when staged bins exist.
+  $avBinProbe = Join-Path $Repo "sidecars\alicevision\windows-x64\bin\aliceVision_featureExtraction.exe"
+  $wantAv = $false
+  if ($NoAliceVision) {
+    $wantAv = $false
+  } elseif ($IncludeAliceVision) {
+    $wantAv = $true
+  } else {
+    # Default: include when FullKit and binaries already staged
+    $wantAv = (Test-Path -LiteralPath $avBinProbe)
+  }
+  if ($wantAv) {
+    $avSrc = Join-Path $Repo "sidecars\alicevision"
+    if (Test-Path -LiteralPath $avBinProbe) {
+      $avDest = Join-Path $sidecarDest "alicevision"
+      New-Item -ItemType Directory -Force -Path $avDest | Out-Null
+      foreach ($name in @("LICENSE.MPL-2.0", "README.txt")) {
+        $f = Join-Path $avSrc $name
+        if (Test-Path -LiteralPath $f) { Copy-Item -LiteralPath $f -Destination (Join-Path $avDest $name) -Force }
+      }
+      Copy-Item -LiteralPath (Join-Path $avSrc "windows-x64") -Destination (Join-Path $avDest "windows-x64") -Recurse -Force
+      if (Test-Path -LiteralPath (Join-Path $avSrc "macos-arm64")) {
+        Copy-Item -LiteralPath (Join-Path $avSrc "macos-arm64") -Destination (Join-Path $avDest "macos-arm64") -Recurse -Force
+      }
+      Write-Host "  sidecars\alicevision copied (-IncludeAliceVision / FullKit default when staged)"
+    } else {
+      Write-Host "WARNING: -IncludeAliceVision requested but windows-x64 bins missing — skip." -ForegroundColor Yellow
+    }
+  } else {
+    Write-Host "  AliceVision sidecar skipped (Mini never bundles; FullKit use -IncludeAliceVision or stage bins)"
+  }
 }
 
 $kitLabel = if ($FullKit) { "Full Field Kit" } elseif ($NoDetectWeights) { "Mini (no detect weights)" } else { "Portable Lite" }
@@ -568,7 +636,7 @@ $modelsLine = if ($NoDetectWeights) {
   "assets\models\        (detect .pt; no seg/SAM in Lite copy filter)"
 }
 $sidecarLine = if ($FullKit) {
-  "sidecars\colmap\      (COLMAP)`nsidecars\gsplat_examples\  (trainer)`nollama\               (ollama.exe + models/qwen2.5vl)`nPORTABLE_README.md"
+  "sidecars\colmap\      (COLMAP)`nsidecars\gsplat_examples\  (trainer)`nsidecars\alicevision\  (optional Dense/Mesh)`nollama\               (ollama.exe + models/qwen2.5vl)`nPORTABLE_README.md"
 } else {
   "README.md"
 }

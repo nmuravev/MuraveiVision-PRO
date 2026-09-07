@@ -1,6 +1,9 @@
 """Network bases: config, targets exchange, chat."""
 from __future__ import annotations
 
+import ipaddress
+import os
+import socket
 import time
 import uuid
 from typing import Any
@@ -8,6 +11,50 @@ from typing import Any
 from services.db import _connect, init_db
 
 TARGET_TTL_SEC = 24 * 3600
+
+
+def resolve_lan_ipv4() -> str:
+    """Best-effort LAN IPv4 for heartbeat advertise (no external probes).
+
+    Order: MURAVEI_NETWORK_ADVERTISE_IP → first non-loopback RFC1918/psutil → 127.0.0.1.
+    """
+    env = (os.environ.get("MURAVEI_NETWORK_ADVERTISE_IP") or "").strip()
+    if env:
+        try:
+            ipaddress.IPv4Address(env)
+            return env
+        except ValueError:
+            pass
+    candidates: list[str] = []
+    try:
+        import psutil
+
+        for _name, addrs in psutil.net_if_addrs().items():
+            for a in addrs:
+                if getattr(a, "family", None) != socket.AF_INET:
+                    continue
+                ip = str(a.address or "").strip()
+                if not ip or ip.startswith("127.") or ip.startswith("169.254."):
+                    continue
+                candidates.append(ip)
+    except Exception:  # noqa: BLE001
+        candidates = []
+    private: list[str] = []
+    other: list[str] = []
+    for ip in candidates:
+        try:
+            addr = ipaddress.IPv4Address(ip)
+        except ValueError:
+            continue
+        if addr.is_private:
+            private.append(ip)
+        elif not addr.is_loopback and not addr.is_link_local:
+            other.append(ip)
+    if private:
+        return private[0]
+    if other:
+        return other[0]
+    return "127.0.0.1"
 
 
 def ensure_base_id() -> str:
@@ -162,6 +209,8 @@ def purge_stale() -> None:
     try:
         conn.execute("DELETE FROM network_targets WHERE expires_at IS NOT NULL AND expires_at < ?", (cutoff,))
         conn.execute("DELETE FROM network_targets WHERE created_at < ?", (cutoff,))
+        conn.execute("DELETE FROM network_messages WHERE expires_at IS NOT NULL AND expires_at < ?", (cutoff,))
+        conn.execute("DELETE FROM network_messages WHERE created_at < ?", (cutoff,))
         conn.execute("DELETE FROM network_bases WHERE last_seen < ?", (time.time() - 7 * 86400,))
         conn.commit()
     finally:
@@ -360,39 +409,157 @@ def list_recent_incoming_targets(since: float, limit: int = 100) -> list[dict[st
         conn.close()
 
 
-def add_message(*, direction: str, sender: str, body: str) -> dict[str, Any]:
+def add_message(
+    *,
+    direction: str,
+    sender: str,
+    body: str,
+    message_id: str | None = None,
+    created_at: float | None = None,
+) -> dict[str, Any]:
+    """Insert outgoing (or hub-received) message. Duplicate id is idempotent (no overwrite)."""
     init_db()
-    mid = str(uuid.uuid4())
-    now = time.time()
+    mid = (message_id or "").strip() or str(uuid.uuid4())
+    now = float(created_at) if created_at is not None else time.time()
     conn = _connect()
     try:
         conn.execute(
             """
-            INSERT INTO network_messages (id, created_at, direction, sender, body)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO network_messages (
+                id, created_at, direction, sender, body, expires_at, synced_at
+            ) VALUES (?, ?, ?, ?, ?, ?, NULL)
+            ON CONFLICT(id) DO NOTHING
             """,
-            (mid, now, direction, sender, body.strip()),
+            (mid, now, direction, sender, body.strip(), now + TARGET_TTL_SEC),
         )
         conn.commit()
     finally:
         conn.close()
-    return {
+    return get_message(mid) or {
         "id": mid,
         "created_at": now,
         "direction": direction,
         "sender": sender,
         "body": body.strip(),
+        "expires_at": now + TARGET_TTL_SEC,
+        "synced_at": None,
     }
 
 
-def list_messages(limit: int = 100) -> list[dict[str, Any]]:
+def get_message(mid: str) -> dict[str, Any] | None:
+    init_db()
+    conn = _connect()
+    try:
+        r = conn.execute("SELECT * FROM network_messages WHERE id = ?", (mid,)).fetchone()
+        return dict(r) if r else None
+    finally:
+        conn.close()
+
+
+def upsert_message(
+    *,
+    sender: str,
+    body: str,
+    message_id: str | None = None,
+    created_at: float | None = None,
+    expires_at: float | None = None,
+) -> dict[str, Any]:
+    """Insert incoming replica as direction=in, or update if incoming created_at is newer."""
+    init_db()
+    mid = (message_id or "").strip() or str(uuid.uuid4())
+    ts = float(created_at) if created_at is not None else time.time()
+    exp = float(expires_at) if expires_at is not None else ts + TARGET_TTL_SEC
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO network_messages (
+                id, created_at, direction, sender, body, expires_at, synced_at
+            ) VALUES (?, ?, 'in', ?, ?, ?, NULL)
+            ON CONFLICT(id) DO UPDATE SET
+                created_at = excluded.created_at,
+                direction = excluded.direction,
+                sender = excluded.sender,
+                body = excluded.body,
+                expires_at = excluded.expires_at
+            WHERE excluded.created_at > network_messages.created_at
+            """,
+            (mid, ts, sender, body.strip(), exp),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_message(mid) or {"id": mid}
+
+
+def list_messages(limit: int = 100, since: float | None = None) -> list[dict[str, Any]]:
+    init_db()
+    purge_stale()
+    conn = _connect()
+    try:
+        limit_n = max(1, min(limit, 500))
+        if since is not None:
+            rows = conn.execute(
+                """
+                SELECT * FROM network_messages
+                WHERE created_at > ?
+                ORDER BY created_at DESC LIMIT ?
+                """,
+                (float(since), limit_n),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM network_messages ORDER BY created_at DESC LIMIT ?",
+                (limit_n,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def list_unsynced_out_messages(limit: int = 100) -> list[dict[str, Any]]:
     init_db()
     conn = _connect()
     try:
         rows = conn.execute(
-            "SELECT * FROM network_messages ORDER BY created_at DESC LIMIT ?",
-            (max(1, min(limit, 500)),),
+            """
+            SELECT * FROM network_messages
+            WHERE direction = 'out' AND synced_at IS NULL
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (max(1, min(limit, 200)),),
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def mark_message_synced(mid: str, ts: float | None = None) -> None:
+    init_db()
+    conn = _connect()
+    try:
+        conn.execute(
+            "UPDATE network_messages SET synced_at = ? WHERE id = ?",
+            (float(ts if ts is not None else time.time()), mid),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def count_incoming_messages_since(since: float) -> int:
+    """Unread helper: count direction=in with created_at > since."""
+    init_db()
+    conn = _connect()
+    try:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM network_messages
+            WHERE direction = 'in' AND created_at > ?
+            """,
+            (float(since),),
+        ).fetchone()
+        return int(row["n"] if row else 0)
     finally:
         conn.close()

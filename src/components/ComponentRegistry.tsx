@@ -24,6 +24,9 @@ const DebugPanel = lazy(() =>
 const NetworkPanel = lazy(() =>
   import('./panels/NetworkPanel').then((m) => ({ default: m.NetworkPanel })),
 );
+const ChatPanel = lazy(() =>
+  import('./panels/ChatPanel').then((m) => ({ default: m.ChatPanel })),
+);
 const Flight3D = lazy(() =>
   import('./panels/Flight3D').then((m) => ({ default: m.Flight3D })),
 );
@@ -53,6 +56,7 @@ const registry: Record<ViewId, React.FC> = {
   aiAnalysis: AiAnalysisPanel,
   debug: DebugPanel,
   network: NetworkPanel,
+  chat: ChatPanel,
   flight3d: Flight3D,
   events: EventTimeline,
 };
