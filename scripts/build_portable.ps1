@@ -214,7 +214,18 @@ New-Item -ItemType Directory -Path $Stage | Out-Null
 
 Write-Host "Copy backend + dist ..."
 Copy-Item -LiteralPath (Join-Path $Repo "backend") -Destination (Join-Path $Stage "backend") -Recurse -Force
-Copy-Item -LiteralPath (Join-Path $Repo "dist") -Destination (Join-Path $Stage "dist") -Recurse -Force
+# Copy UI dist only (never env-pack ZIPs / _env_pack_stage pollution)
+$distSrc = Join-Path $Repo "dist"
+$distDst = Join-Path $Stage "dist"
+New-Item -ItemType Directory -Force -Path $distDst | Out-Null
+Get-ChildItem -LiteralPath $distSrc -Force -ErrorAction SilentlyContinue |
+  Where-Object {
+    $n = $_.Name.ToLowerInvariant()
+    ($n -ne "_env_pack_stage") -and ($n -notlike "muravei_env_pack*") -and ($n -notlike "_unittest*") -and ($n -notlike "_make_*")
+  } |
+  ForEach-Object {
+    Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $distDst $_.Name) -Recurse -Force
+  }
 Remove-Pycache (Join-Path $Stage "backend")
 
 foreach ($rel in @(
@@ -686,6 +697,9 @@ function Assert-SlimStageHygiene {
   }
   $rootClip = Join-Path $Stage "mobileclip2_b.ts"
   if (Test-Path $rootClip) { throw "HYGIENE: root mobileclip duplicate — keep only under assets/models" }
+  $packJunk = Get-ChildItem (Join-Path $Stage "dist") -Force -EA SilentlyContinue |
+    Where-Object { $_.Name -like "muravei_env_pack*" -or $_.Name -eq "_env_pack_stage" }
+  if ($packJunk) { throw "HYGIENE: dist contains env-pack junk: $($packJunk.Name -join ', ')" }
   Write-Host "Hygiene asserts OK" -ForegroundColor Green
 }
 Assert-SlimStageHygiene
