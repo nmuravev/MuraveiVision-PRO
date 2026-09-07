@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from config import BASE_DIR
+from config import APP_VERSION, BASE_DIR
 from services.hardware import hardware_spec
 from services.security import require_role
 from services.db import get_setting, set_setting
@@ -14,6 +14,12 @@ from services.db import get_setting, set_setting
 router = APIRouter(prefix="/api/system", tags=["system"])
 
 _sim: dict[str, Any] = {"active": None}
+
+
+@router.get("/version")
+async def app_version(_user: dict[str, Any] = Depends(require_role("operator"))) -> dict[str, Any]:
+    """Same APP_VERSION as VERSION file / health (leaf config)."""
+    return {"version": APP_VERSION, "base_dir": str(BASE_DIR)}
 
 
 @router.get("/hardware")

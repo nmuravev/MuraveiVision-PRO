@@ -103,12 +103,12 @@ AliceVision Dense/Mesh: `npm run portable:full` передаёт `-IncludeAliceV
 
 ## Лаунчер `Запустить.bat`
 
-ASCII + CRLF. Calls `scripts\bootstrap_portable.ps1` (venv audit / offline-first) before start — see [PORTABLE_GUIDE.md](PORTABLE_GUIDE.md). `COLMAP_ROOT=%~dp0sidecars\colmap` выставляется **только если** sidecar присутствует. `ALICEVISION_ROOT=%~dp0sidecars\alicevision\windows-x64` — если есть `aliceVision_*.exe`. `MURAVEI_SESSION_TRACE=1` по умолчанию.
+ASCII + CRLF. Banner читает корневой `VERSION` (`MuraveiVision PRO v%VER%`, missing → `unknown`). Backend: **module mode** (`python -m uvicorn main:app --app-dir backend`), не `python backend\main.py`. Calls `scripts\bootstrap_portable.ps1` (venv audit / offline-first) before start — see [PORTABLE_GUIDE.md](PORTABLE_GUIDE.md). `COLMAP_ROOT=%~dp0sidecars\colmap` выставляется **только если** sidecar присутствует. `ALICEVISION_ROOT=%~dp0sidecars\alicevision\windows-x64` — если есть `aliceVision_*.exe`. `MURAVEI_SESSION_TRACE=1` по умолчанию. Smoke/CI: `MURAVEI_NO_PAUSE=1` `MURAVEI_NO_BROWSER=1`.
 
 ## Проверка комплекта
 
 1. Распаковать на чистую машину / другую папку.  
 2. `Запустить.bat` (bootstrap сам доустановит неполный env / пересоберёт битый).  
 3. Lite: YOLO ready; Mini: detect 503 до USB-import; Full: ollama + COLMAP_ROOT.  
-4. Smoke: `powershell -File scripts\smoke_portable.ps1` (Mini); `-Full` только локально.  
+4. Smoke (operator path): `powershell -File scripts\smoke_portable.ps1` (Mini); `-Full` только локально — fails on Traceback/ImportError/circular import, banner≠VERSION, health≠200.  
 5. Layout: `.\muravei_env\Scripts\python.exe backend\scripts\smoke_fullkit_layout.py`

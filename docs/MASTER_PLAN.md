@@ -3,12 +3,12 @@
 ## Meta
 
 - **Snapshot date:** 2026-09-08
-- **Branch:** `main` @ circular-import BASE_DIR fix
-- **Commit:** `8cf0b5a` — leaf config.BASE_DIR (circular import fix)
-- **Unit tests:** 318
-- **Status:** Leaf `backend/config.py` for `BASE_DIR` (portable Mini start fixed); GitHub releases = changelog only; packs local-only
-- **Last updated by:** fix circular import main ↔ yolo_engine via config.py
-- **Portable local:** Mini 540 MB / FullKit 7.51 GB (sha256 `775c14e3…`) — internal channel only
+- **Branch:** `main` @ portable one-entry + VERSION
+- **Commit:** _(pending Phase 0 portable fix)_
+- **Unit tests:** 319
+- **Status:** Leaf config + VERSION stamp + operator-path smoke; packs rebuild next
+- **Last updated by:** fix(portable) one entry path + dynamic version + operator smoke
+- **Portable local:** rebuild pending (stale Mini/Full purged)
 - **Env pack:** win_cuda / win_cpu — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
 
 ## Major Changes in This Release

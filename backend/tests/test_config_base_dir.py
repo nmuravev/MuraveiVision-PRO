@@ -22,6 +22,18 @@ class ConfigBaseDirTests(unittest.TestCase):
         self.assertNotIn("from main import BASE_DIR", src)
         self.assertIn("from config import BASE_DIR", src)
 
+    def test_app_version_from_version_file(self) -> None:
+        from config import APP_VERSION, BASE_DIR
+
+        self.assertTrue(APP_VERSION)
+        self.assertNotEqual(APP_VERSION, "")
+        ver = BASE_DIR / "VERSION"
+        if ver.is_file():
+            want = ver.read_text(encoding="utf-8").strip().splitlines()[0].strip().lstrip("vV")
+            self.assertEqual(APP_VERSION, want)
+        else:
+            self.assertNotEqual(APP_VERSION.lower(), "v3.0")
+
     def test_detect_router_imports_clean(self) -> None:
         """api.detect → yolo_engine must load without initializing main routers."""
         detect = importlib.import_module("api.detect")

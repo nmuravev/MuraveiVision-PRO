@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from config import BASE_DIR, DIST_DIR
+from config import APP_VERSION, BASE_DIR, DIST_DIR
 
 # 1. Air-Gapped: block user site-packages
 site.USER_SITE = None
@@ -192,7 +192,7 @@ async def health_check():
         yolo_mode = "offline"
     return {
         "status": "ok",
-        "version": "1.0.0",
+        "version": APP_VERSION,
         "base_dir": str(BASE_DIR),
         "static": DIST_DIR.is_dir(),
         "mode": "production" if DIST_DIR.is_dir() else "api-only",

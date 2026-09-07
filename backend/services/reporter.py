@@ -10,12 +10,11 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from config import BASE_DIR
+from config import APP_VERSION, BASE_DIR
 from services.db import CROPS_DIR, list_detections
 from services.hardware import hardware_spec
 
 REPORTS_DIR = BASE_DIR / "reports"
-APP_VERSION = "3.0"
 
 _PLACEHOLDER = (
     "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"

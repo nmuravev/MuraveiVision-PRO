@@ -3,8 +3,17 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 if not defined MURAVEI_LOG_DIR set "MURAVEI_LOG_DIR=%~dp0logs"
 if not exist "%MURAVEI_LOG_DIR%" mkdir "%MURAVEI_LOG_DIR%"
+
+REM --- Dynamic version from VERSION file (never hardcode product version) ---
+set "VER=unknown"
+if exist "%~dp0VERSION" (
+  set /p VER=<"%~dp0VERSION"
+)
+if not defined VER set "VER=unknown"
+if "!VER!"=="" set "VER=unknown"
+
 echo ============================================
-echo   MuraveiVision PRO v3.2
+echo   MuraveiVision PRO v!VER!
 echo   Starting...
 echo ============================================
 echo.
@@ -22,7 +31,7 @@ if exist "%~dp0ollama\ollama.exe" (
 )
 
 REM --- Portable bootstrap (Z2/Z3): stamp missing/stale → audit + offline-first ---
-set "MURAVEI_BOOTSTRAP_YES=1"
+if not defined MURAVEI_BOOTSTRAP_YES set "MURAVEI_BOOTSTRAP_YES=1"
 if exist "%~dp0scripts\bootstrap_portable.ps1" (
     echo Checking portable bootstrap...
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\bootstrap_portable.ps1" >> "%MURAVEI_LOG_DIR%\bootstrap.log" 2>&1
@@ -30,7 +39,7 @@ if exist "%~dp0scripts\bootstrap_portable.ps1" (
         echo [ОШИБКА] bootstrap_portable failed. See logs\bootstrap.log
         echo Offline: place wheels/ and sidecars/ next to the project.
         echo See docs\PORTABLE_GUIDE.md
-        pause
+        if not defined MURAVEI_NO_PAUSE pause
         exit /b 1
     )
 ) else if not exist "%~dp0muravei_env\Scripts\python.exe" (
@@ -42,7 +51,7 @@ if exist "%~dp0scripts\bootstrap_portable.ps1" (
             echo Распакуйте dist\muravei_env_pack.zip в корень проекта и снова Запустить.bat
             echo Либо при наличии интернета: scripts\setup_env.bat поставит пакеты с PyPI.
             echo Подробнее: docs\DEPLOY_GUIDE.md
-            pause
+            if not defined MURAVEI_NO_PAUSE pause
             exit /b 1
         )
     )
@@ -58,7 +67,7 @@ if not defined PYTHON (
     echo Ожидается muravei_env\Scripts\python.exe ^(3.12.x^).
     echo Поле:  распакуйте muravei_env_pack.zip → scripts\setup_env.bat
     echo Portable: scripts\build_portable.ps1 -FetchEmbeddablePython
-    pause
+    if not defined MURAVEI_NO_PAUSE pause
     exit /b 1
 )
 
@@ -84,23 +93,30 @@ if defined ALICEVISION_ROOT (
 ) else (
     echo AliceVision sidecar not in kit - Dense/Mesh presets will stay disabled.
 )
+
+REM --- One entry path: MODULE mode (never script-mode python backend\main.py) ---
 echo Starting backend on http://127.0.0.1:8000 ...
 start "MuraveiVision Backend" cmd /c "set COLMAP_ROOT=!COLMAP_ROOT!&& set ALICEVISION_ROOT=!ALICEVISION_ROOT!&& set MURAVEI_SESSION_TRACE=1&& set MURAVEI_LOG_DIR=!MURAVEI_LOG_DIR!&& \"!PYTHON!\" -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000 >> \"!MURAVEI_LOG_DIR!\uvicorn.log\" 2>&1"
 
 echo Waiting for backend...
-timeout /t 4 /nobreak >nul
-
+set /a _tries=0
+:wait_health
 "!PYTHON!" -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)" 2>nul
-if errorlevel 1 (
-    echo [ERROR] Backend failed to start. Check logs and port 8000.
-    pause
+if not errorlevel 1 goto health_ok
+set /a _tries+=1
+if !_tries! geq 60 (
+    echo [ERROR] Backend failed to start. Check logs\uvicorn.log and port 8000.
+    if not defined MURAVEI_NO_PAUSE pause
     exit /b 1
 )
+timeout /t 2 /nobreak >nul
+goto wait_health
 
+:health_ok
 echo Backend ready. Opening UI...
-start "" "http://127.0.0.1:8000"
+if not defined MURAVEI_NO_BROWSER start "" "http://127.0.0.1:8000"
 echo.
 echo System started.
 echo Close the "MuraveiVision Backend" window to stop the API.
 if exist "%~dp0ollama\ollama.exe" echo Ollama runs in background - end ollama.exe if needed.
-pause
+if not defined MURAVEI_NO_PAUSE pause

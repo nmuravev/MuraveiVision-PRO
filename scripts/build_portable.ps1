@@ -75,9 +75,29 @@ if ($FullKit) {
 $StageName = "stage_${KitTag}_$Stamp"
 $Stage = Join-Path $OutRoot $StageName
 
-Write-Host "== MuraveiVision PRO v3.1 portable $KitKind ==" -ForegroundColor Cyan
+Write-Host "== MuraveiVision PRO portable $KitKind ==" -ForegroundColor Cyan
 Write-Host "Repo:  $Repo"
 Write-Host "Stage: $Stage"
+
+function Get-AppVersionString {
+  $desc = ""
+  try {
+    Push-Location $Repo
+    $desc = (& git describe --tags --always 2>$null | Out-String).Trim()
+  } catch { $desc = "" } finally { Pop-Location }
+  if (-not $desc) {
+    $pkg = Join-Path $Repo "package.json"
+    if (Test-Path -LiteralPath $pkg) {
+      $m = Select-String -Path $pkg -Pattern '"version"\s*:\s*"([^"]+)"' | Select-Object -First 1
+      if ($m) { $desc = $m.Matches[0].Groups[1].Value }
+    }
+  }
+  if (-not $desc) { $desc = "unknown" }
+  return ($desc -replace '^[vV]', '')
+}
+
+$AppVersion = Get-AppVersionString
+Write-Host "VERSION: $AppVersion"
 
 function Assert-File([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path)) { throw "Missing: $Path" }
@@ -299,7 +319,12 @@ if (-not $NoDetectWeights) {
 }
 
 Copy-Item (Join-Path $Repo "Запустить.bat") $Stage -Force
+$shLaunch = Join-Path $Repo "Запустить.sh"
+if (Test-Path -LiteralPath $shLaunch) { Copy-Item $shLaunch $Stage -Force }
 Copy-Item (Join-Path $Repo "README.md") $Stage -Force
+# Stamp VERSION at pack root (single source for banner + /api/health)
+Set-Content -LiteralPath (Join-Path $Stage "VERSION") -Value $AppVersion -Encoding ascii -NoNewline
+Set-Content -LiteralPath (Join-Path $Repo "VERSION") -Value $AppVersion -Encoding ascii -NoNewline
 
 foreach ($bad in @(
   (Join-Path $Stage "muravei.db"),
@@ -653,9 +678,10 @@ $sidecarLine = if ($FullKit) {
   "README.md"
 }
 $note = @"
-MuraveiVision PRO v3.2 — $kitLabel
+MuraveiVision PRO v$AppVersion — $kitLabel
 =================================
 Запустить.bat
+VERSION               ($AppVersion)
 muravei_env\          (embeddable Python 3.12.10 + packages$(if ($FullKit) { ' + torch cu128' }))
 dist\                 (UI + CSP)
 backend\              (FastAPI)
@@ -700,7 +726,11 @@ function Assert-SlimStageHygiene {
   $packJunk = Get-ChildItem (Join-Path $Stage "dist") -Force -EA SilentlyContinue |
     Where-Object { $_.Name -like "muravei_env_pack*" -or $_.Name -eq "_env_pack_stage" }
   if ($packJunk) { throw "HYGIENE: dist contains env-pack junk: $($packJunk.Name -join ', ')" }
-  Write-Host "Hygiene asserts OK" -ForegroundColor Green
+  $verPath = Join-Path $Stage "VERSION"
+  if (-not (Test-Path -LiteralPath $verPath)) { throw "HYGIENE: VERSION file missing at pack root" }
+  $verText = (Get-Content -LiteralPath $verPath -Raw -ErrorAction SilentlyContinue).Trim()
+  if (-not $verText -or $verText -eq "unknown") { throw "HYGIENE: VERSION empty/unknown — refuse to ship" }
+  Write-Host "Hygiene asserts OK (VERSION=$verText)" -ForegroundColor Green
 }
 Assert-SlimStageHygiene
 

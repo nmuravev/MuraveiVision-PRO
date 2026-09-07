@@ -23,6 +23,7 @@
 ## Portable runtime (RESOLVED 2026-09-08)
 
 - **Circular import `main` ↔ `yolo_engine`:** `from main import BASE_DIR` на уровне модуля ломало старт Mini (`ImportError: cannot import name 'router' from partially initialized module 'api.detect'`). Fix: leaf `backend/config.py`; все сервисы/API → `from config import BASE_DIR`. Регрессия: `backend/tests/test_config_base_dir.py`.
+- **One entry path + VERSION:** `Запустить.bat` → `-m uvicorn` only; pack root `VERSION` (git describe) drives banner + `/api/health`/`/api/system/version`; `smoke_portable.ps1` = operator path with negative asserts (Traceback/ImportError/circular import).
 
 ## Portable build (RESOLVED 2026-09-05)
 

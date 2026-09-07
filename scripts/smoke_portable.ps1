@@ -1,20 +1,25 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Portable smoke: Mini (CI-required) + Full (local-only, Z4).
+  Portable operator-path smoke: unpack → Запустить.bat (same as field).
 
 .DESCRIPTION
-  Mini: unpack ZIP to temp, bootstrap with MURAVEI_BOOTSTRAP_YES=1, hit /api/health + UI.
-  Full: same when -Full or when Full ZIP present; CI must NOT fail if Full skipped.
+  Mini: required (CI + local). Full: local-only (-Full); CI must not fail if skipped.
 
-  Report line: CI: Mini OK|FAIL / Local: Full OK|FAIL|skipped
+  Fails on ANY of:
+    - Traceback | ImportError | circular import in stderr / logs/bootstrap.log / logs/uvicorn.log
+    - Banner version != VERSION file
+    - /api/health != 200 within timeout
+    - UI HTML missing
+
+  Report: CI: Mini OK|FAIL / Local: Full OK|FAIL|skipped
 #>
 param(
   [string]$MiniZip = "",
   [string]$FullZip = "",
   [switch]$Full,
   [switch]$SkipFull,
-  [int]$HealthTimeoutSec = 90
+  [int]$HealthTimeoutSec = 120
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,100 +31,168 @@ function Write-TableRow([string]$Name, [string]$Status, [string]$Detail) {
   Write-Host ("{0,-8} {1,-10} {2}" -f $Name, $Status, $Detail)
 }
 
+function Stop-PortListeners([int]$Port) {
+  try {
+    Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue |
+      ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+  } catch { }
+  Get-Process -Name "uvicorn" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+
+function Test-LogPoison([string]$Root) {
+  $patterns = @("Traceback", "ImportError", "circular import")
+  $targets = @(
+    (Join-Path $Root "logs\bootstrap.log"),
+    (Join-Path $Root "logs\uvicorn.log"),
+    (Join-Path $Root "logs\smoke_launcher.out")
+  )
+  foreach ($f in $targets) {
+    if (-not (Test-Path -LiteralPath $f)) { continue }
+    $text = Get-Content -LiteralPath $f -Raw -ErrorAction SilentlyContinue
+    if (-not $text) { continue }
+    foreach ($p in $patterns) {
+      if ($text -match [regex]::Escape($p)) {
+        return "poison '$p' in $(Split-Path $f -Leaf)"
+      }
+    }
+  }
+  return $null
+}
+
 function Invoke-KitSmoke([string]$ZipPath, [string]$Label, [int]$Port) {
   if (-not (Test-Path -LiteralPath $ZipPath)) {
-    return @{ ok = $false; skipped = $true; detail = "ZIP missing: $ZipPath" }
+    return @{ ok = $false; skipped = $true; detail = "ZIP missing: $ZipPath"; banner = "" }
   }
   $tmp = Join-Path $env:TEMP ("muravei_smoke_" + $Label + "_" + [guid]::NewGuid().ToString("n").Substring(0, 8))
   New-Item -ItemType Directory -Force -Path $tmp | Out-Null
   Write-Host "Unpack $Label → $tmp"
   Expand-Archive -LiteralPath $ZipPath -DestinationPath $tmp -Force
-  # find kit root (stage may nest one folder)
-  $root = $tmp
+
   $bat = Get-ChildItem -Path $tmp -Recurse -Filter "Запустить.bat" -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $bat) {
-    $bat = Get-ChildItem -Path $tmp -Recurse -Filter "Zayuskat*.bat" -ErrorAction SilentlyContinue | Select-Object -First 1
+    Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    return @{ ok = $false; skipped = $false; detail = "Запустить.bat missing"; banner = "" }
   }
-  # also accept start scripts
-  $launch = Get-ChildItem -Path $tmp -Recurse -Filter "*.bat" |
-    Where-Object { $_.Name -match 'Запустить|Start|start_backend' } |
-    Select-Object -First 1
-  if ($bat) { $root = $bat.Directory.FullName; $launch = $bat }
-  elseif ($launch) { $root = $launch.Directory.FullName }
+  $root = $bat.Directory.FullName
+  $verFile = Join-Path $root "VERSION"
+  if (-not (Test-Path -LiteralPath $verFile)) {
+    Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    return @{ ok = $false; skipped = $false; detail = "VERSION file missing"; banner = "" }
+  }
+  $wantVer = (Get-Content -LiteralPath $verFile -Raw).Trim()
+  if (-not $wantVer -or $wantVer -eq "unknown") {
+    Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    return @{ ok = $false; skipped = $false; detail = "VERSION empty/unknown"; banner = "" }
+  }
 
-  $py = Join-Path $root "muravei_env\Scripts\python.exe"
-  if (-not (Test-Path $py)) { $py = Join-Path $root "muravei_env\python.exe" }
-  if (-not (Test-Path $py)) {
-    return @{ ok = $false; skipped = $false; detail = "python missing in kit" }
+  Stop-PortListeners -Port $Port
+  # Operator path uses :8000 in Запустить.bat — enforce free 8000 (Z1 one entry).
+  if ($Port -ne 8000) {
+    Write-Host "NOTE: operator Запустить.bat binds :8000 (ignoring alternate `$Port=$Port for launch)"
   }
+  Stop-PortListeners -Port 8000
 
   $env:MURAVEI_BOOTSTRAP_YES = "1"
+  $env:MURAVEI_NO_PAUSE = "1"
+  $env:MURAVEI_NO_BROWSER = "1"
   $env:MURAVEI_BUILD_PROFILE = $(if ($Label -eq "Full") { "full" } else { "mini" })
-  $boot = Join-Path $root "scripts\bootstrap_portable.ps1"
-  if (Test-Path $boot) {
-    Push-Location $root
-    try {
-      & powershell -NoProfile -ExecutionPolicy Bypass -File $boot
-      if ($LASTEXITCODE -ne 0) {
-        return @{ ok = $false; skipped = $false; detail = "bootstrap failed" }
-      }
-    } finally { Pop-Location }
-  }
+  $outLog = Join-Path $root "logs\smoke_launcher.out"
+  New-Item -ItemType Directory -Force -Path (Join-Path $root "logs") | Out-Null
 
-  $job = Start-Job -ScriptBlock {
-    param($Py, $Root, $Port)
-    Set-Location $Root
-    $env:PYTHONPATH = Join-Path $Root "backend"
-    & $Py -m uvicorn main:app --app-dir (Join-Path $Root "backend") --host 127.0.0.1 --port $Port
-  } -ArgumentList $py, $root, $Port
+  $proc = Start-Process -FilePath "cmd.exe" `
+    -ArgumentList @("/c", "`"$($bat.FullName)`"") `
+    -WorkingDirectory $root `
+    -PassThru -NoNewWindow `
+    -RedirectStandardOutput $outLog `
+    -RedirectStandardError (Join-Path $root "logs\smoke_launcher.err")
 
   $deadline = (Get-Date).AddSeconds($HealthTimeoutSec)
   $healthOk = $false
   $uiOk = $false
+  $healthBody = $null
   while ((Get-Date) -lt $deadline) {
     try {
-      $r = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/api/health" -UseBasicParsing -TimeoutSec 3
-      if ($r.StatusCode -eq 200) { $healthOk = $true; break }
+      $r = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/health" -UseBasicParsing -TimeoutSec 3
+      if ($r.StatusCode -eq 200) {
+        $healthOk = $true
+        $healthBody = $r.Content
+        break
+      }
     } catch { Start-Sleep -Seconds 2 }
   }
+
+  $banner = ""
+  if (Test-Path -LiteralPath $outLog) {
+    $bannerLine = Select-String -Path $outLog -Pattern "MuraveiVision PRO v" | Select-Object -First 1
+    if ($bannerLine) { $banner = $bannerLine.Line.Trim() }
+  }
+
+  $poison = Test-LogPoison -Root $root
+  $logsOk = (Test-Path (Join-Path $root "logs\bootstrap.log")) -or (Test-Path (Join-Path $root "logs\uvicorn.log"))
+  # bootstrap.log may be empty-created by bat; uvicorn.log required after health
+  $uvLog = Test-Path (Join-Path $root "logs\uvicorn.log")
+
   if ($healthOk) {
     try {
-      $u = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/" -UseBasicParsing -TimeoutSec 5
+      $u = Invoke-WebRequest -Uri "http://127.0.0.1:8000/" -UseBasicParsing -TimeoutSec 5
       $uiOk = ($u.StatusCode -eq 200) -and (($u.Content -match 'html') -or ($u.Content.Length -gt 50))
     } catch { $uiOk = $false }
   }
 
-  Stop-Job $job -ErrorAction SilentlyContinue
-  Remove-Job $job -Force -ErrorAction SilentlyContinue
-  # best-effort kill listeners
-  try {
-    Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue |
-      ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
-  } catch { }
+  $verMatch = $banner -match [regex]::Escape("MuraveiVision PRO v$wantVer")
+  # Also accept health JSON version
+  $apiVerOk = $true
+  if ($healthBody) {
+    try {
+      $hj = $healthBody | ConvertFrom-Json
+      if ($hj.version -and ($hj.version -ne $wantVer)) { $apiVerOk = $false }
+    } catch { }
+  }
+
+  # teardown
+  try { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue } catch { }
+  Get-Process | Where-Object { $_.MainWindowTitle -match 'MuraveiVision Backend' } |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+  Stop-PortListeners -Port 8000
+
+  $detailParts = @()
+  if (-not $verMatch) { $detailParts += "banner!='$wantVer' (got: $banner)" }
+  if (-not $apiVerOk) { $detailParts += "health.version mismatch" }
+  if ($poison) { $detailParts += $poison }
+  if (-not $uvLog) { $detailParts += "uvicorn.log missing" }
+  if (-not $logsOk) { $detailParts += "logs/ missing" }
+  if (-not $healthOk) { $detailParts += "health timeout ${HealthTimeoutSec}s" }
+  if ($healthOk -and -not $uiOk) { $detailParts += "UI HTML failed" }
+
+  $ok = $verMatch -and $apiVerOk -and (-not $poison) -and $uvLog -and $healthOk -and $uiOk
 
   Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 
-  if ($healthOk -and $uiOk) {
-    return @{ ok = $true; skipped = $false; detail = "health+ui OK :$Port" }
+  if ($ok) {
+    return @{ ok = $true; skipped = $false; detail = "operator OK banner=$banner"; banner = $banner }
   }
-  if ($healthOk) {
-    return @{ ok = $false; skipped = $false; detail = "health OK but UI failed" }
+  return @{
+    ok = $false
+    skipped = $false
+    detail = ($detailParts -join "; ")
+    banner = $banner
   }
-  return @{ ok = $false; skipped = $false; detail = "health timeout" }
 }
 
-Write-Host "=== portable smoke ==="
+Write-Host "=== portable operator-path smoke ==="
 Write-TableRow "Kit" "Status" "Detail"
 
-$mini = Invoke-KitSmoke -ZipPath $MiniZip -Label "Mini" -Port 18080
+$mini = Invoke-KitSmoke -ZipPath $MiniZip -Label "Mini" -Port 8000
 Write-TableRow "Mini" $(if ($mini.ok) { "OK" } elseif ($mini.skipped) { "SKIP" } else { "FAIL" }) $mini.detail
+if ($mini.banner) { Write-Host "  banner: $($mini.banner)" }
 
-$fullResult = @{ ok = $false; skipped = $true; detail = "skipped (local-only; use -Full)" }
+$fullResult = @{ ok = $false; skipped = $true; detail = "skipped (local-only; use -Full)"; banner = "" }
 $runFull = $Full -and -not $SkipFull
 if ($runFull) {
-  $fullResult = Invoke-KitSmoke -ZipPath $FullZip -Label "Full" -Port 18081
+  $fullResult = Invoke-KitSmoke -ZipPath $FullZip -Label "Full" -Port 8000
 }
 Write-TableRow "Full" $(if ($fullResult.ok) { "OK" } elseif ($fullResult.skipped) { "skipped" } else { "FAIL" }) $fullResult.detail
+if ($fullResult.banner) { Write-Host "  banner: $($fullResult.banner)" }
 
 $miniLabel = if ($mini.ok) { "OK" } else { "FAIL" }
 $fullLabel = if ($fullResult.skipped) { "skipped" } elseif ($fullResult.ok) { "OK" } else { "FAIL" }
@@ -127,5 +200,4 @@ Write-Host ""
 Write-Host "CI: Mini $miniLabel / Local: Full $fullLabel"
 
 if (-not $mini.ok) { exit 1 }
-# Z4: CI must NOT fail on absent Full
 exit 0
