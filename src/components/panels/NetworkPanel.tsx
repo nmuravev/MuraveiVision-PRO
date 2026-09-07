@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Network, RefreshCw, Send } from 'lucide-react';
+import { Network, RefreshCw } from 'lucide-react';
 import {
   useNetworkStore,
   type NetworkConfig,
@@ -17,20 +17,16 @@ export const NetworkPanel: React.FC = () => {
   const status = useNetworkStore((s) => s.status);
   const bases = useNetworkStore((s) => s.bases);
   const targets = useNetworkStore((s) => s.targets);
-  const messages = useNetworkStore((s) => s.messages);
   const error = useNetworkStore((s) => s.error);
   const loadConfig = useNetworkStore((s) => s.loadConfig);
   const saveConfig = useNetworkStore((s) => s.saveConfig);
   const fetchStatus = useNetworkStore((s) => s.fetchStatus);
   const fetchBases = useNetworkStore((s) => s.fetchBases);
   const fetchTargets = useNetworkStore((s) => s.fetchTargets);
-  const fetchMessages = useNetworkStore((s) => s.fetchMessages);
   const sendTarget = useNetworkStore((s) => s.sendTarget);
-  const sendMessage = useNetworkStore((s) => s.sendMessage);
 
   const [draft, setDraft] = useState(config);
   const [hubPin, setHubPin] = useState('');
-  const [chat, setChat] = useState('');
   const [busy, setBusy] = useState(false);
   const [localErr, setLocalErr] = useState<string | null>(null);
 
@@ -46,11 +42,9 @@ export const NetworkPanel: React.FC = () => {
     void fetchStatus();
     void fetchBases();
     void fetchTargets();
-    void fetchMessages();
     const t = window.setInterval(() => {
       void fetchBases();
       void fetchTargets();
-      void fetchMessages();
     }, 8000);
     const st = window.setInterval(() => {
       void fetchStatus();
@@ -59,14 +53,13 @@ export const NetworkPanel: React.FC = () => {
       window.clearInterval(t);
       window.clearInterval(st);
     };
-  }, [isAuthenticated, loadConfig, fetchStatus, fetchBases, fetchTargets, fetchMessages]);
+  }, [isAuthenticated, loadConfig, fetchStatus, fetchBases, fetchTargets]);
 
   const refreshAll = () => {
     void loadConfig();
     void fetchStatus();
     void fetchBases();
     void fetchTargets();
-    void fetchMessages();
   };
 
   const persist = async () => {
@@ -82,23 +75,39 @@ export const NetworkPanel: React.FC = () => {
     }
   };
 
+  const activeRow = detections.find((d) => d.id === activeId);
+
+  const buildTargetPayload = () => {
+    const className = activeRow?.class_name || active?.class_en;
+    if (!className) return null;
+    const gpsLat = activeRow?.gps_lat ?? null;
+    const gpsLon = activeRow?.gps_lon ?? null;
+    const detId = activeRow?.id || active?.id || '';
+    const notesParts = [
+      activeRow?.user_notes || '',
+      detId ? `detection_id=${detId}` : '',
+    ].filter(Boolean);
+    return {
+      class_name: className,
+      confidence: activeRow?.confidence ?? active?.confidence ?? 0,
+      notes: notesParts.join(' · ') || undefined,
+      crop_path: activeRow?.crop_path || undefined,
+      source_video: activeRow?.source_video || active?.source_video || undefined,
+      gps_lat: gpsLat,
+      gps_lon: gpsLon,
+    };
+  };
+
   const onSendTarget = async () => {
-    const row = detections.find((d) => d.id === activeId);
-    const className = row?.class_name || active?.class_en;
-    if (!className) {
+    const payload = buildTargetPayload();
+    if (!payload) {
       setLocalErr('Выберите детекцию в Inspector / Viewer');
       return;
     }
     setBusy(true);
     setLocalErr(null);
     try {
-      await sendTarget({
-        class_name: className,
-        confidence: row?.confidence ?? active?.confidence ?? 0,
-        notes: row?.user_notes || undefined,
-        crop_path: row?.crop_path || undefined,
-        source_video: row?.source_video || active?.source_video || undefined,
-      });
+      await sendTarget(payload);
     } catch (e) {
       setLocalErr(e instanceof Error ? e.message : 'Ошибка');
     } finally {
@@ -106,13 +115,21 @@ export const NetworkPanel: React.FC = () => {
     }
   };
 
-  const onSendChat = async () => {
-    if (!chat.trim()) return;
+  const onShareLocation = async () => {
+    const payload = buildTargetPayload();
+    if (!payload) {
+      setLocalErr('Выберите детекцию в Inspector / Viewer');
+      return;
+    }
+    const hasGps = payload.gps_lat != null && payload.gps_lon != null;
+    if (!hasGps) {
+      const ok = window.confirm('GPS отсутствует — отправить без координат?');
+      if (!ok) return;
+    }
     setBusy(true);
     setLocalErr(null);
     try {
-      await sendMessage(chat.trim());
-      setChat('');
+      await sendTarget(payload);
     } catch (e) {
       setLocalErr(e instanceof Error ? e.message : 'Ошибка');
     } finally {
@@ -251,6 +268,11 @@ export const NetworkPanel: React.FC = () => {
                 ? new Date(status.last_sync_ts * 1000).toLocaleTimeString()
                 : 'ещё не было'}
             </div>
+            {status?.advertise_ip && (
+              <div className="text-[10px] text-[var(--dv-text-muted)]">
+                LAN IP: {status.advertise_ip}
+              </div>
+            )}
             {config.base_id && (
               <div className="text-[9px] truncate text-[var(--dv-text-muted)]" title={config.base_id}>
                 base_id: {config.base_id}
@@ -285,18 +307,29 @@ export const NetworkPanel: React.FC = () => {
         </section>
 
         <section className="space-y-1.5">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="text-[10px] uppercase tracking-wider text-[var(--dv-text-muted)]">
               Входящие цели
             </div>
-            <button
-              type="button"
-              disabled={busy || config.mode === 'off'}
-              className="text-[10px] px-2 py-0.5 rounded-sm bg-[#2e2e2e] disabled:opacity-40"
-              onClick={() => void onSendTarget()}
-            >
-              Отправить текущую цель
-            </button>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                disabled={busy || config.mode === 'off'}
+                className="text-[10px] px-2 py-0.5 rounded-sm bg-[#2e2e2e] disabled:opacity-40"
+                onClick={() => void onSendTarget()}
+              >
+                Отправить текущую цель
+              </button>
+              <button
+                type="button"
+                disabled={busy || config.mode === 'off'}
+                className="text-[10px] px-2 py-0.5 rounded-sm bg-[#2e2e2e] disabled:opacity-40"
+                onClick={() => void onShareLocation()}
+                title="GPS-цель с detection_id в notes"
+              >
+                Поделиться локацией
+              </button>
+            </div>
           </div>
           {incoming.length === 0 && (
             <div className="text-[var(--dv-text-muted)]">Лента пуста</div>
@@ -341,40 +374,9 @@ export const NetworkPanel: React.FC = () => {
           ))}
         </section>
 
-        <section className="space-y-1.5">
-          <div className="text-[10px] uppercase tracking-wider text-[var(--dv-text-muted)]">Чат</div>
-          <div className="max-h-40 overflow-auto space-y-1 border border-[var(--dv-border)] rounded-sm p-2 bg-[var(--dv-bg-deep)]">
-            {messages.length === 0 && (
-              <div className="text-[var(--dv-text-muted)]">Нет сообщений</div>
-            )}
-            {[...messages].reverse().map((m) => (
-              <div key={m.id} className="leading-snug">
-                <span className="text-[var(--dv-text-muted)]">{m.sender}: </span>
-                {m.body}
-              </div>
-            ))}
-          </div>
-          <div className="flex gap-1">
-            <input
-              className="flex-1 bg-[var(--dv-bg-deep)] border border-[var(--dv-border)] px-2 py-1 rounded-sm"
-              value={chat}
-              placeholder="Сообщение…"
-              disabled={config.mode === 'off'}
-              onChange={(e) => setChat(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void onSendChat();
-              }}
-            />
-            <button
-              type="button"
-              disabled={busy || config.mode === 'off' || !chat.trim()}
-              className="px-2 rounded-sm bg-[#2e2e2e] disabled:opacity-40"
-              onClick={() => void onSendChat()}
-            >
-              <Send size={12} />
-            </button>
-          </div>
-        </section>
+        <div className="text-[10px] text-[var(--dv-text-muted)]">
+          Чат перенесён в окно «Чат» (Система / Окна → Чат).
+        </div>
       </div>
     </div>
   );
