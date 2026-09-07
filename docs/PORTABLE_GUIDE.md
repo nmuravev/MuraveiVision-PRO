@@ -54,7 +54,7 @@ Thresholds: [`config/hardware_tiers.json`](../config/hardware_tiers.json). Overr
 | ZIP | Profile | Best for | Honest perf |
 |-----|---------|----------|-------------|
 | `MuraveiVision_PRO_Mini.zip` | mini | Tier 0–1, AMD/WSL/office | YOLO nano/small budgets; Dense/Mesh **off**; torch CPU |
-| `MuraveiVision_PRO_FullKit.zip` | full | Tier 2 field CUDA | Dense/Mesh + AV; torch CUDA; heavier disk (~17–20 GB) |
+| `MuraveiVision_PRO_FullKit.zip` | full | Tier 2 field CUDA | Dense/Mesh + AV; torch CUDA; heavier disk (~17–20 GB). **GitHub release ≤2 GB:** download multi-part `.001`–`.010` + `README_FullKit_parts.md` from the v3.2.0 release and reassemble (sha256 `5DBE1404…0344F`). |
 
 **Mismatch = inform, never block:** Mini on tier 2 → info «Full разблокирует splat/dense»; Full on tier 0 → warning + CPU caps. Both always start.
 
