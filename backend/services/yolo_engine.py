@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from main import BASE_DIR
+from config import BASE_DIR
 from services.classes import (
     canonical_label,
     class_id_for_name,

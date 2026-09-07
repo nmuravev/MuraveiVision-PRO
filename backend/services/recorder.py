@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from main import BASE_DIR
+from config import BASE_DIR
 
 RECORD_ROOT = BASE_DIR / "archive" / "recordings"
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0

@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from main import BASE_DIR
+from config import BASE_DIR
 from services.hardware import hardware_spec
 from services.security import require_role
 

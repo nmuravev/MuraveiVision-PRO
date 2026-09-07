@@ -61,6 +61,10 @@ flowchart TB
 
 Основные группы: auth, media, detect (+ WS), detections, train/export, ai, live, rec, reports, models (вкл. USB), system, network, events, classes, queue, recon, support, seg (архив).
 
+### Paths leaf (`backend/config.py`)
+
+`BASE_DIR` / `DIST_DIR` живут в **leaf**-модуле `backend/config.py` (только stdlib). Сервисы и API импортируют пути оттуда, **не** из `main` — иначе circular import при `_register_routers()` → `api.detect` → `yolo_engine` (ломало portable Mini: `python backend/main.py`).
+
 ### Domain services
 
 | Сервис | Роль |

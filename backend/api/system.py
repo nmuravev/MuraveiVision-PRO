@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from main import BASE_DIR
+from config import BASE_DIR
 from services.hardware import hardware_spec
 from services.security import require_role
 from services.db import get_setting, set_setting

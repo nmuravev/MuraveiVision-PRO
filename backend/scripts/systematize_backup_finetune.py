@@ -597,7 +597,7 @@ def _train_device() -> str | int:
 
 def train(yaml_path: Path) -> dict:
     sys.path.insert(0, str(ROOT / "backend"))
-    from main import BASE_DIR  # noqa: F401
+    from config import BASE_DIR  # noqa: F401
     from services.trainer import WEIGHTS_DIR
     from services.yolo_engine import get_yolo_engine
 

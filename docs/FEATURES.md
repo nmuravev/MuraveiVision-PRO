@@ -74,3 +74,4 @@
 ## Portable
 
 - **Lite / Full Kit** — embeddable Python 3.12.10, запуск `.bat`. См. [PORTABLE.md](PORTABLE.md).
+- **`BASE_DIR` leaf** — пути репо в `backend/config.py` (не через `main`), чтобы backend стартовал и в portable без circular import.

@@ -5,10 +5,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 import jwt
+
+from config import BASE_DIR
 from fastapi import Depends, HTTPException, Query, Request, WebSocket
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-
-BASE_DIR = Path(__file__).resolve().parents[2]
 
 
 def safe_path_resolve(path: str | Path) -> Path:

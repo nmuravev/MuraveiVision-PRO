@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from main import BASE_DIR
+from config import BASE_DIR
 from services.yolo_engine import WEIGHTS_DIR
 
 MAX_MB = 500

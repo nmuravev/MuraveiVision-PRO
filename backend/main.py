@@ -12,22 +12,16 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from config import BASE_DIR, DIST_DIR
+
 # 1. Air-Gapped: block user site-packages
 site.USER_SITE = None
 site.ENABLE_USER_SITE = False
 
-# 2. BASE_DIR for .exe and .py
-if getattr(sys, "frozen", False):
-    BASE_DIR = Path(sys.executable).parent
-else:
-    BASE_DIR = Path(__file__).resolve().parent.parent
-
-# 3. Inject ffmpeg into PATH when present
+# 2. Inject ffmpeg into PATH when present
 ffmpeg_path = BASE_DIR / "assets"
 if ffmpeg_path.exists():
     os.environ["PATH"] = str(ffmpeg_path) + os.pathsep + os.environ.get("PATH", "")
-
-DIST_DIR = BASE_DIR / "dist"
 
 
 def safe_path_resolve(path: str | Path) -> Path:

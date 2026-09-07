@@ -2,12 +2,12 @@
 
 ## Meta
 
-- **Snapshot date:** 2026-09-07
-- **Branch:** `main` @ hygiene + binary-free release policy
-- **Commit:** `84abe6e` — hygiene + slim FullKit dist-copy fix
-- **Unit tests:** 315+
-- **Status:** GitHub releases = changelog only (v3.2.0 assets purged); packs local-only; logs under `logs/`; FullKit slim ~7.5 GB
-- **Last updated by:** repo hygiene + binary-free release policy
+- **Snapshot date:** 2026-09-08
+- **Branch:** `main` @ circular-import BASE_DIR fix
+- **Commit:** _(pending — set after commit)_
+- **Unit tests:** 318
+- **Status:** Leaf `backend/config.py` for `BASE_DIR` (portable Mini start fixed); GitHub releases = changelog only; packs local-only
+- **Last updated by:** fix circular import main ↔ yolo_engine via config.py
 - **Portable local:** Mini 540 MB / FullKit 7.51 GB (sha256 `775c14e3…`) — internal channel only
 - **Env pack:** win_cuda / win_cpu — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
 

@@ -20,6 +20,10 @@
 - **`ECONNRESET` на `POST /api/active-learning/collect`** при конкурентных воркерах Playwright. Mitigation: `workers: 1` в [playwright.config.ts](../playwright.config.ts) (уже выставлено). При ручном запуске нескольких тест-наборов против одного backend — возможен reset; перезапустите backend.
 - **SAHI `pip check` warning**: `sahi 0.12.6` декларирует `opencv-python>=4.12.0.88` (имя non-headless пакета), но установлен `opencv-python-headless`. `cv2` предоставляется headless-сборкой, runtime работает. Benign — можно игнорировать.
 
+## Portable runtime (RESOLVED 2026-09-08)
+
+- **Circular import `main` ↔ `yolo_engine`:** `from main import BASE_DIR` на уровне модуля ломало старт Mini (`ImportError: cannot import name 'router' from partially initialized module 'api.detect'`). Fix: leaf `backend/config.py`; все сервисы/API → `from config import BASE_DIR`. Регрессия: `backend/tests/test_config_base_dir.py`.
+
 ## Portable build (RESOLVED 2026-09-05)
 
 - **Stale staging / DLL locks:** fixed-name stage dirs + live host uvicorn → `Remove-Item` / robocopy fails. Fix: timestamped `portable/stage_<Kit>_<stamp>/`, purge of `stage_*` / `*.locked_*` at start; stop backend before build; reboot if AV holds DLLs.

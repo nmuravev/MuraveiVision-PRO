@@ -8,7 +8,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Any
 
-from main import BASE_DIR
+from config import BASE_DIR
 
 
 def hardware_spec() -> dict[str, Any]:

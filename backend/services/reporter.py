@@ -10,7 +10,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from main import BASE_DIR
+from config import BASE_DIR
 from services.db import CROPS_DIR, list_detections
 from services.hardware import hardware_spec
 

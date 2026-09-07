@@ -8,7 +8,7 @@ import json
 import re
 from typing import Any
 
-from main import BASE_DIR
+from config import BASE_DIR
 
 YAML_PATH = BASE_DIR / "military_classes.yaml"
 MODEL_NC = 12
