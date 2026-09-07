@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-08
 - **Branch:** `main` @ circular-import BASE_DIR fix
-- **Commit:** _(pending — set after commit)_
+- **Commit:** `8cf0b5a` — leaf config.BASE_DIR (circular import fix)
 - **Unit tests:** 318
 - **Status:** Leaf `backend/config.py` for `BASE_DIR` (portable Mini start fixed); GitHub releases = changelog only; packs local-only
 - **Last updated by:** fix circular import main ↔ yolo_engine via config.py
