@@ -1,9 +1,9 @@
-# MuraveiVision PRO — Full Field Kit v3.0
+# MuraveiVision PRO — Full Field Kit v3.2
 
 ## Быстрый старт
 
 1. Распакуйте ZIP на SSD (рекомендуется ≥20 GB свободно).
-2. Запустите `Запустить.bat`.
+2. Запустите `Запустить.bat` (логи → `logs\`).
 3. Откроется браузер: http://127.0.0.1:8000
 4. PIN оператора: `1234567` (инженер `0000000`, мастер `0987907`)
 
@@ -11,10 +11,14 @@
 
 - MuraveiVision PRO (React UI + FastAPI)
 - Embeddable **Python 3.12.10** в `muravei_env\` (+ CUDA torch cu128)
-- YOLO detect weights (`yolo26n-ft.pt` при наличии)
-- **Ollama** Windows amd64 в `ollama\` + модель **qwen2.5vl:7b**
-- **3D sidecars:** `sidecars\colmap`, `sidecars\gsplat_examples` (если были на машине сборки)
-- Опционально `mobileclip2_b.ts` (find-similar)
+- YOLO detect weights (`yolo26n-ft.pt` при наличии; **без SAM/seg**)
+- **Ollama** Windows amd64 в `ollama\` (runtime). **VL-модель не в ZIP** — на цели: `ollama pull qwen2.5vl:7b`
+- **3D sidecars:** `sidecars\colmap`, `sidecars\gsplat_examples`, AliceVision (если в сборке)
+- Опционально `assets\models\mobileclip2_b.ts` (find-similar)
+
+## Распространение
+
+Бинарные паки **не** публикуются на GitHub. Внутренний офлайн-канал; сборка: `scripts\build_portable.ps1`.
 
 ## Требования
 

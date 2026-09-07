@@ -3,15 +3,13 @@
 ## Meta
 
 - **Snapshot date:** 2026-09-07
-- **Branch:** `main` @ v3.2.0 + portable bootstrap
-- **Commit:** `75f03c7` — portable self-bootstrap (Z1–Z5)
-- **Unit tests:** 315
-- **E2E specs:** 6+
-- **Status:** macOS dropped; portable self-bootstrap (Z1–Z5) on Windows + Linux/WSL2; Mini smoke OK / Full local-only
-- **Last updated by:** portable bootstrap + venv audit/self-heal + hardware tiers
-- **Smoke:** `CI: Mini OK / Local: Full skipped` (2026-09-07)
-- **Env pack:** win_cuda ~2952 MB; win_cpu ~439 MB — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md), [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md) (Boot Camp Windows; native macOS unsupported)
-- **Isolated test copy:** `MuraveiVision-Pro-3.2.0/` on :8001/:3001 (gitignored)
+- **Branch:** `main` @ hygiene + binary-free release policy
+- **Commit:** (update after hygiene commit)
+- **Unit tests:** 315+
+- **Status:** GitHub releases = changelog only; packs local-only; logs under `logs/`; FullKit slim (no VL model / no SAM in ZIP)
+- **Last updated by:** repo hygiene + binary-free release policy
+- **Portable:** Mini + FullKit whole ZIPs in `portable/` — internal offline channel (never GitHub assets)
+- **Env pack:** win_cuda / win_cpu — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
 
 ## Major Changes in This Release
 

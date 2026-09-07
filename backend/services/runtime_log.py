@@ -1,6 +1,7 @@
 """In-memory runtime log for DebugPanel (commands, subprocess, backend events)."""
 from __future__ import annotations
 
+import os
 import subprocess
 import threading
 import time
@@ -8,7 +9,16 @@ from pathlib import Path
 from typing import Any
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-LOG_PATH = BASE_DIR / "logs" / "runtime.log"
+
+
+def _log_dir() -> Path:
+    override = (os.environ.get("MURAVEI_LOG_DIR") or "").strip()
+    if override:
+        return Path(override)
+    return BASE_DIR / "logs"
+
+
+LOG_PATH = _log_dir() / "runtime.log"
 
 MAX_ENTRIES = 2000
 _lock = threading.Lock()
@@ -18,8 +28,9 @@ _seq = 0
 
 def _mirror_file(line: str) -> None:
     try:
-        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with LOG_PATH.open("a", encoding="utf-8") as fh:
+        path = _log_dir() / "runtime.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
             fh.write(line + "\n")
     except OSError:
         pass

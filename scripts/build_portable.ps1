@@ -15,13 +15,15 @@
   - ZIP: portable\MuraveiVision_PRO_Mini.zip
 
   FullKit (-FullKit):
-  - то же + ollama + qwen2.5vl:7b + torch cu128 (или -TorchFlavor cpu)
+  - то же + ollama runtime (exe/lib); VL-модель НЕ бандлится (по умолчанию)
+  - опционально -IncludeOllamaModel для qwen2.5vl:7b
   - sidecars\colmap + sidecars\gsplat_examples (3D)
   - ZIP: portable\MuraveiVision_PRO_FullKit.zip (Zip64)
     CPU flavor: MuraveiVision_PRO_FullKit_win_cpu.zip
 
   Только muravei_env / embed 3.12.10 — никогда host Python 3.14.
   Build-time downloads need network (or offline wheels/); field ZIP is air-gap.
+  GitHub releases = changelog only — never upload this ZIP to GitHub.
 
   Staging: unique portable\stage_<Kit>_<timestamp>\ each run; ZIP names stay stable.
   Deps: host muravei_env pip --python <staged> (prefer portable\cache\wheels offline).
@@ -35,6 +37,7 @@ param(
   [switch]$NoDetectWeights,
   [switch]$IncludeAliceVision,
   [switch]$NoAliceVision,
+  [switch]$IncludeOllamaModel,
   [ValidateSet("cuda", "cpu")]
   [string]$TorchFlavor = "cuda",
   [string]$OllamaZipPath = "",
@@ -237,11 +240,10 @@ if ($NoDetectWeights) {
     Get-ChildItem -LiteralPath $srcDir -File -Filter "*.pt" -ErrorAction SilentlyContinue |
       Where-Object {
         $n = $_.Name.ToLowerInvariant()
-        ($n -notmatch "seg") -and ($n -notmatch "yoloe") -and ($_.Length -gt 1024)
+        ($n -notmatch "seg") -and ($n -notmatch "yoloe") -and ($n -notmatch "sam") -and ($_.Length -gt 1024)
       } |
       ForEach-Object {
-        Write-Host ("  {0} ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB))
-        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $destW $_.Name) -Force
+        Write-Host ("  {0} → assets/models ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB))
         Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $destA $_.Name) -Force
       }
   }
@@ -269,15 +271,14 @@ if (Test-Path (Join-Path $Repo "military_classes.yaml")) {
 
 if (-not $NoDetectWeights) {
   $clipCandidates = @(
-    (Join-Path $Repo "mobileclip2_b.ts"),
-    (Join-Path $Repo "assets\models\mobileclip2_b.ts")
+    (Join-Path $Repo "assets\models\mobileclip2_b.ts"),
+    (Join-Path $Repo "mobileclip2_b.ts")
   )
   foreach ($clip in $clipCandidates) {
     if (-not (Test-Path $clip)) { continue }
     $sz = (Get-Item $clip).Length / 1MB
     if ($sz -lt 280 -or $FullKit) {
-      Write-Host ("Copy mobileclip2_b.ts ({0:N0} MB)" -f $sz)
-      Copy-Item $clip (Join-Path $Stage "mobileclip2_b.ts") -Force
+      Write-Host ("Copy mobileclip2_b.ts → assets/models ({0:N0} MB)" -f $sz)
       Copy-Item $clip (Join-Path $destA "mobileclip2_b.ts") -Force
     } else {
       Write-Host "Skip oversized mobileclip2_b.ts (use -FullKit to force)"
@@ -550,9 +551,10 @@ if ($FullKit) {
   }
 
   $storeRoot = Resolve-OllamaStoreRoot $OllamaModelsRoot
-  if (-not $storeRoot) {
-    throw @"
-FullKit: model qwen2.5vl:7b not found.
+  if ($IncludeOllamaModel) {
+    if (-not $storeRoot) {
+      throw @"
+FullKit -IncludeOllamaModel: model qwen2.5vl:7b not found.
 
 Checked: -OllamaModelsRoot, OLLAMA_MODELS, %USERPROFILE%\.ollama (and .ollama\models).
 
@@ -561,15 +563,17 @@ On the build machine run:
 
 Or pass -OllamaModelsRoot path\to\store (folder with blobs\ + manifests\).
 "@
+    }
+    Write-Host "Ollama store: $storeRoot"
+    $destModels = Join-Path $ollamaStage "models"
+    Write-Host "Copying ONLY qwen2.5vl:7b into $destModels ..." -ForegroundColor Yellow
+    New-Item -ItemType Directory -Force -Path $destModels | Out-Null
+    Copy-OllamaModelQwen -StoreRoot $storeRoot -DestModels $destModels
+    $checkManifest = Join-Path $destModels "manifests\registry.ollama.ai\library\qwen2.5vl\7b"
+    Assert-File $checkManifest
+  } else {
+    Write-Host "Ollama VL model NOT bundled (default). On target: ollama pull qwen2.5vl:7b" -ForegroundColor Cyan
   }
-  Write-Host "Ollama store: $storeRoot"
-
-  $destModels = Join-Path $ollamaStage "models"
-  Write-Host "Copying ONLY qwen2.5vl:7b into $destModels ..." -ForegroundColor Yellow
-  New-Item -ItemType Directory -Force -Path $destModels | Out-Null
-  Copy-OllamaModelQwen -StoreRoot $storeRoot -DestModels $destModels
-  $checkManifest = Join-Path $destModels "manifests\registry.ollama.ai\library\qwen2.5vl\7b"
-  Assert-File $checkManifest
 
   # PORTABLE_README for Full
   $readmeFull = Join-Path $Repo "scripts\PORTABLE_README_FULL.md"
@@ -633,20 +637,20 @@ $modelsLine = if ($NoDetectWeights) {
   "assets\models\        (detect .pt; no seg/SAM in Lite copy filter)"
 }
 $sidecarLine = if ($FullKit) {
-  "sidecars\colmap\      (COLMAP)`nsidecars\gsplat_examples\  (trainer)`nsidecars\alicevision\  (optional Dense/Mesh)`nollama\               (ollama.exe + models/qwen2.5vl)`nPORTABLE_README.md"
+  "sidecars\colmap\      (COLMAP)`nsidecars\gsplat_examples\  (trainer)`nsidecars\alicevision\  (optional Dense/Mesh)`nollama\               (ollama.exe + lib; VL: ollama pull на цели)`nPORTABLE_README.md"
 } else {
   "README.md"
 }
 $note = @"
-MuraveiVision PRO v3.1 — $kitLabel
+MuraveiVision PRO v3.2 — $kitLabel
 =================================
 Запустить.bat
 muravei_env\          (embeddable Python 3.12.10 + packages$(if ($FullKit) { ' + torch cu128' }))
 dist\                 (UI + CSP)
 backend\              (FastAPI)
 $modelsLine
-runs\detect\train\weights\
-archive\ crops\ recordings\ captures\
+runs\detect\train\weights\  (stub dirs only)
+archive\ crops\ recordings\ captures\  (empty)
 military_classes.yaml
 $sidecarLine
 
@@ -655,8 +659,36 @@ PIN: operator 1234567 / engineer 0000000 / master 0987907
 Python: ONLY muravei_env (3.12) — never system 3.14.
 CPU Intel/AMD amd64 OK; NVIDIA recommended for realtime YOLO/VLM.
 Offline map tiles (assets/map_tiles) are NOT in this ZIP — ship separately if needed.
+VL-модель не в комплекте: на цели ``ollama pull qwen2.5vl:7b`` (опционально).
+Бинарные паки не публикуются на GitHub — внутренний офлайн-канал.
 "@
 Set-Content -LiteralPath (Join-Path $Stage "PORTABLE.txt") -Value $note -Encoding UTF8
+
+# --- Hygiene asserts before zip (fail loud) ---
+function Assert-SlimStageHygiene {
+  $modelsDir = Join-Path $Stage "ollama\models"
+  if ((Test-Path $modelsDir) -and -not $IncludeOllamaModel) {
+    $mBytes = (Get-ChildItem $modelsDir -Recurse -File -EA SilentlyContinue | Measure-Object Length -Sum).Sum
+    if ($mBytes -gt 1MB) { throw "HYGIENE: ollama/models present ($([math]::Round($mBytes/1GB,2)) GB) without -IncludeOllamaModel" }
+  }
+  $samHits = Get-ChildItem (Join-Path $Stage "assets\models") -File -Filter "*sam*" -EA SilentlyContinue
+  if ($samHits) { throw "HYGIENE: sam* weights in assets/models: $($samHits.Name -join ', ')" }
+  $runsDir = Join-Path $Stage "runs\detect"
+  if (Test-Path $runsDir) {
+    $rBytes = (Get-ChildItem $runsDir -Recurse -File -EA SilentlyContinue | Measure-Object Length -Sum).Sum
+    if ($rBytes -gt 50MB) { throw "HYGIENE: runs/detect too large ($([math]::Round($rBytes/1MB,1)) MB > 50 MB)" }
+  }
+  $archDir = Join-Path $Stage "archive"
+  if (Test-Path $archDir) {
+    $media = Get-ChildItem $archDir -Recurse -File -EA SilentlyContinue |
+      Where-Object { $_.Extension -match '\.(mp4|mov|avi|mkv|jpg|jpeg|png|ply|obj)$' }
+    if ($media) { throw "HYGIENE: archive has media files: $($media.FullName | Select-Object -First 5)" }
+  }
+  $rootClip = Join-Path $Stage "mobileclip2_b.ts"
+  if (Test-Path $rootClip) { throw "HYGIENE: root mobileclip duplicate — keep only under assets/models" }
+  Write-Host "Hygiene asserts OK" -ForegroundColor Green
+}
+Assert-SlimStageHygiene
 
 if (-not $SkipZip) {
   Write-Host "Creating ZIP (Zip64/Fastest)..." -ForegroundColor Yellow

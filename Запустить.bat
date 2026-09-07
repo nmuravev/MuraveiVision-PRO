@@ -1,6 +1,8 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
+if not defined MURAVEI_LOG_DIR set "MURAVEI_LOG_DIR=%~dp0logs"
+if not exist "%MURAVEI_LOG_DIR%" mkdir "%MURAVEI_LOG_DIR%"
 echo ============================================
 echo   MuraveiVision PRO v3.2
 echo   Starting...
@@ -23,9 +25,9 @@ REM --- Portable bootstrap (Z2/Z3): stamp missing/stale → audit + offline-firs
 set "MURAVEI_BOOTSTRAP_YES=1"
 if exist "%~dp0scripts\bootstrap_portable.ps1" (
     echo Checking portable bootstrap...
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\bootstrap_portable.ps1"
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\bootstrap_portable.ps1" >> "%MURAVEI_LOG_DIR%\bootstrap.log" 2>&1
     if errorlevel 1 (
-        echo [ОШИБКА] bootstrap_portable failed.
+        echo [ОШИБКА] bootstrap_portable failed. See logs\bootstrap.log
         echo Offline: place wheels/ and sidecars/ next to the project.
         echo See docs\PORTABLE_GUIDE.md
         pause
@@ -83,7 +85,7 @@ if defined ALICEVISION_ROOT (
     echo AliceVision sidecar not in kit - Dense/Mesh presets will stay disabled.
 )
 echo Starting backend on http://127.0.0.1:8000 ...
-start "MuraveiVision Backend" cmd /c "set COLMAP_ROOT=!COLMAP_ROOT!&& set ALICEVISION_ROOT=!ALICEVISION_ROOT!&& set MURAVEI_SESSION_TRACE=1&& \"!PYTHON!\" -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000"
+start "MuraveiVision Backend" cmd /c "set COLMAP_ROOT=!COLMAP_ROOT!&& set ALICEVISION_ROOT=!ALICEVISION_ROOT!&& set MURAVEI_SESSION_TRACE=1&& set MURAVEI_LOG_DIR=!MURAVEI_LOG_DIR!&& \"!PYTHON!\" -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000 >> \"!MURAVEI_LOG_DIR!\uvicorn.log\" 2>&1"
 
 echo Waiting for backend...
 timeout /t 4 /nobreak >nul

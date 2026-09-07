@@ -8,6 +8,10 @@
 
 На данный момент открытых критических багов нет.
 
+## Packaging (после v3.3 rc)
+
+- [ ] Локальный split `FullKit_Core` + `FullKit_AliceVision` (bootstrap находит sidecars; **не** GitHub assets)
+
 ## Backlog (после Phase 3)
 
 **Phase 3 / P3 закрыт** — см. [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md). SAM3 линия 3a/3b/3c закрыта. Unit + Playwright E2E; error catalog.

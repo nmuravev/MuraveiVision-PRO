@@ -1,6 +1,7 @@
 # Heavy data directories
 archive/
 cache/
+logs/
 logs/*.log
 logs/*.json
 logs/*.jsonl
@@ -16,6 +17,10 @@ assets/map_tiles.mbtiles
 dist/
 node_modules/
 portable/
+portable/*.zip
+portable/stage_*/
+portable/cache/
+portable/fullkit_parts/
 *.pyc
 __pycache__/
 *.pyo

@@ -1,86 +1,46 @@
 # Portable bootstrap guide (Windows + Linux/WSL2)
 
-Platforms: **Windows native** and **Linux/WSL2** only. **macOS is unsupported** (branch `feature/macos-mps` removed).
+Platforms: **Windows native** and **Linux/WSL2** only. **macOS is unsupported**.
+
+## Distribution policy
+
+- **GitHub releases = changelog only.** Бинарные паки на GitHub **не** публикуются.
+- Паки собираются локально (`scripts/build_portable.ps1`) и раздаются **внутренним офлайн-каналом** (облачный диск оператора).
+- Локально держать ровно два целых ZIP: `portable/MuraveiVision_PRO_Mini.zip` и `portable/MuraveiVision_PRO_FullKit.zip`.
 
 ## Goal
 
-Unpack ZIP → `Запустить.bat` → first-run **self-bootstrap** (venv audit + offline-first sidecars) → UI at `http://127.0.0.1:8000`.
+Unpack ZIP → `Запустить.bat` → first-run **self-bootstrap** → UI at `http://127.0.0.1:8000`. Логи → `logs/` (или `MURAVEI_LOG_DIR`).
 
-Scripts:
+Scripts: `bootstrap_portable.ps1` / `.sh`, `portable_manifest.json`, `setup_env.ps1`, `smoke_portable.ps1`.
 
-- [`scripts/bootstrap_portable.ps1`](../scripts/bootstrap_portable.ps1) (+ [`bootstrap_portable.sh`](../scripts/bootstrap_portable.sh) for WSL)
-- [`scripts/portable_manifest.json`](../scripts/portable_manifest.json) — **only** place for download URLs + sha256 (Z1)
-- [`scripts/setup_env.ps1`](../scripts/setup_env.ps1) — create/rebuild `muravei_env` (`-ForceRebuild` for broken env)
-- [`scripts/smoke_portable.ps1`](../scripts/smoke_portable.ps1) — Mini (CI) / Full (local-only)
+## FullKit contents (slim)
+
+| В комплекте | Не в комплекте |
+|-------------|----------------|
+| muravei_env + torch CUDA, dist, backend | Ollama VL-модель (на цели: `ollama pull qwen2.5vl:7b`) |
+| ollama.exe + lib | SAM / seg веса |
+| COLMAP + AliceVision (если собрано) | Дубли весов в `runs/detect` |
+| YOLO detect `.pt` (nano/ft) | Медиа в `archive/` |
+
+Ожидаемый размер FullKit после slim: **~5–10 GB**.
 
 ## Zero-hardcode (Z1)
 
-- Paths: repo-relative **or** env overrides (`MURAVEI_SIDECARS_DIR`, `MURAVEI_WHEELS_DIR`, `MURAVEI_FFMPEG_DIR`, `MURAVEI_PYTHON`, …).
-- No machine paths / job UUIDs in logic.
-- URLs + sha256: **only** in `scripts/portable_manifest.json`.
+Paths repo-relative or `MURAVEI_*`. URLs+sha256 only in `scripts/portable_manifest.json`.
 
-## Offline-first ladder (Z3)
+## Offline-first / venv self-heal / tiers
 
-1. Local `wheels/` + `sidecars/` next to the kit → use, **no network**.
-2. Missing → RU confirm (skipped when `MURAVEI_BOOTSTRAP_YES=1`, as in `Запустить.bat`) → download + sha256 verify.
-3. No local and no network → clear RU error listing what to bring (`wheels/`, COLMAP/AliceVision archives).
-
-## Venv audit / self-heal (Z2)
-
-Before backend start, bootstrap:
-
-| State | Action |
-|-------|--------|
-| Env missing | `setup_env.ps1` create |
-| Interpreter dead / bad `pyvenv.cfg` | treat as **absent** → `-ForceRebuild` (never skip because folder exists) |
-| Alive but packages missing vs `backend/requirements.txt` | `pip` install offline-first, then network |
-| Full + CUDA HW + torch CPU | try CUDA torch from `wheels/` or manifest index |
-| Mini + CUDA HW | keep CPU torch + info line |
-
-Fingerprint in `config/local/bootstrap_complete.json` includes `hash(requirements.txt)` + torch variant + `gpu_present` + build profile. Any change → re-bootstrap.
-
-## Hardware tiers (Z5)
-
-Thresholds: [`config/hardware_tiers.json`](../config/hardware_tiers.json). Override: `MURAVEI_FORCE_TIER=0|1|2`.
-
-| Tier | Class (RU) | Rule |
-|------|------------|------|
-| 2 | полевая станция | CUDA + RAM≥16 + cores≥8 |
-| 1 | рабочая станция | no CUDA + (RAM≥16 or cores≥8) |
-| 0 | офис | else |
-
-### Which build to pick
-
-| ZIP | Profile | Best for | Honest perf |
-|-----|---------|----------|-------------|
-| `MuraveiVision_PRO_Mini.zip` | mini | Tier 0–1, AMD/WSL/office | YOLO nano/small budgets; Dense/Mesh **off**; torch CPU |
-| `MuraveiVision_PRO_FullKit.zip` | full | Tier 2 field CUDA | Dense/Mesh + AV; torch CUDA; heavier disk (~17–20 GB). **GitHub release ≤2 GB:** download multi-part `.001`–`.010` + `README_FullKit_parts.md` from the v3.2.0 release and reassemble (sha256 `5DBE1404…0344F`). |
-
-**Mismatch = inform, never block:** Mini on tier 2 → info «Full разблокирует splat/dense»; Full on tier 0 → warning + CPU caps. Both always start.
-
-Applied defaults: gitignored `config/local/hardware_profile.json` (operator-overridable). UI badge: «Сборка: Mini · класс: офис (tier 0)».
+Offline-first: local `wheels/`+`sidecars/` → confirm → network. Broken env → rebuild; incomplete → heal. Tiers 0/1/2 in `config/hardware_tiers.json`.
 
 ## Field checklist
 
-1. Unpack Mini/Full ZIP to a **clean** folder (not inside another git clone).
-2. Optional air-gap: copy `wheels/` and `sidecars/` next to the kit.
-3. Run `Запустить.bat`.
-4. Self-heal check: `muravei_env\Scripts\pip.exe uninstall -y psutil` → re-run → bootstrap must reinstall, not silently skip.
+1. Распаковать Mini/Full в чистую папку.
+2. Опционально: `wheels/` + `sidecars/` рядом.
+3. `Запустить.bat`.
+4. Self-heal: uninstall пакета → перезапуск → bootstrap доустановит.
+5. VLM: `ollama pull qwen2.5vl:7b` при необходимости.
 
-## Smoke split (Z4)
+## Smoke
 
-```powershell
-# Mini — required (CI / local)
-powershell -ExecutionPolicy Bypass -File scripts\smoke_portable.ps1
-
-# Full — local only (large ZIP)
-powershell -ExecutionPolicy Bypass -File scripts\smoke_portable.ps1 -Full
-```
-
-Report: `CI: Mini OK / Local: Full OK|skipped`. CI must **not** fail when Full is skipped.
-
-## Related
-
-- [PORTABLE.md](PORTABLE.md) — build matrix / bake details
-- [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md) — env pack
-- [KNOWN_ISSUES.md](KNOWN_ISSUES.md) — macOS unsupported; first-run network if no wheels
+`scripts/smoke_portable.ps1` (Mini); `-Full` только локально.
