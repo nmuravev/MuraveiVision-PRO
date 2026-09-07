@@ -39,6 +39,13 @@
 - **wrong_service:** если :11434 отвечает не Ollama (другой AI-стек) — RU подсказка про `MURAVEI_OLLAMA_URL`.
 - Ollama остаётся **опциональной** — отсутствие не блокирует детект/ recon.
 
+## Network / chat (v3.2)
+
+- Chat latency **10–30 s** (REST worker tick ~15 s) — not WebSocket realtime (v3.3).
+- Hub-and-spoke only; no mesh.
+- Crop **bytes** not replicated (`crop_path` string only).
+- Job/recon package share deferred to v3.3.
+
 ## AliceVision / Dense-Mesh (v3.2 branch)
 
 - **Optional sidecar:** Dense/Mesh presets disable with clear Russian `disabled_reason` when `sidecars/alicevision` missing or CUDA unavailable (no CPU depth-map fallback).

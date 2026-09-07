@@ -54,7 +54,7 @@
 
 ## Сеть
 
-- **Network sync** — реальная репликация между машинами: фоновый worker, JWT на хаб, инкрементальный pull `GET /targets?since=`, upsert newer-wins, TTL 24 ч. `source_video` и GPS уезжают вместе с целью. API: `/api/network/config` (`hub_pin` write-only), `/api/network/status`, `/api/network/targets`.
+- **Network sync** — hub-and-spoke: worker ~15 с, JWT, targets + **chat messages**, heartbeat LAN IP. UI: Сеть + окно **Чат**. API `/api/network/*`. См. [NETWORK_REPLICATION.md](NETWORK_REPLICATION.md).
 
 ## Фотограмметрия (C.1–C.5)
 

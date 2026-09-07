@@ -300,23 +300,24 @@ Train (один job за раз; блокирует `POST /start` COLMAP пок�
 
 ## Network — `/api/network`
 
-Репликация целей между машинами. Инстанс `mode=server` — хаб (принимает JWT-запросы). `mode=client` — фоновый worker (`backend/services/network_sync.py`, тик 30 с): heartbeat, push локальных `direction=out` с `synced_at IS NULL`, pull `GET /targets?since=`, upsert как `direction=in`. Worker стартует вместе с backend всегда; тик no-op, если режим не `client`. Хаб недоступен — UI живой, в статусе `hub_reachable=false`.
+Репликация целей и чата между машинами. Инстанс `mode=server` — хаб. `mode=client` — фоновый worker (`backend/services/network_sync.py`, тик **15 с**): heartbeat (реальный LAN IPv4 или `MURAVEI_NETWORK_ADVERTISE_IP`), push/pull targets, затем push/pull messages. Worker стартует всегда; тик no-op, если режим не `client`. Подробности: [NETWORK_REPLICATION.md](NETWORK_REPLICATION.md).
 
 Клиент логинится на хаб `POST /api/auth/login` с сохранённым `hub_pin` (PIN роли на хабе, обычно operator).
 
 | Метод | Путь | Роль | Описание |
 |-------|------|------|----------|
 | GET | `/config` | operator+ | `mode`, `server_ip`, `port`, `base_name`, `base_id`, `has_hub_pin`. Значение PIN **не** возвращается |
-| POST | `/config` | engineer+ | Тело: `mode`, `server_ip`, `port`, `base_name`; опционально `hub_pin` (write-only: пустая строка / отсутствие поля **не** затирает сохранённый PIN) |
-| GET | `/status` | operator+ | `mode`, `base_id`, `last_sync_ts`, `last_error`, `hub_reachable`, `worker_alive` |
-| GET | `/bases` | operator+ | реестр heartbeat |
+| POST | `/config` | engineer+ | Тело: `mode`, `server_ip`, `port`, `base_name`; опционально `hub_pin` (write-only) |
+| GET | `/status` | operator+ | + `advertise_ip`, `sync_interval_sec`, `hub_reachable`, `worker_alive` |
+| GET | `/bases` | operator+ | реестр heartbeat (ожидается LAN IP клиента) |
 | POST | `/heartbeat` | operator+ | `{base_id, base_name, ip}` |
-| GET | `/targets` | operator+ | активные цели (перед выдачей TTL-purge 24 ч). Query `?since=<epoch>` — только строки с `created_at > since` |
-| POST | `/targets` | operator+ | одна строка `direction=out`. Локального зеркала `in` **нет**. Опциональный `id` (UUID) сохраняется. Входящие цели создаёт только worker через upsert (newer-wins по `created_at`) |
-| GET | `/messages` | operator+ | чат |
-| POST | `/messages` | operator+ | одна строка `direction=out` (без локального зеркала `in`) |
+| GET | `/targets` | operator+ | TTL 24 ч; `?since=<epoch>` |
+| POST | `/targets` | operator+ | `direction=out`; опциональный `id`; GPS/`source_video` |
+| GET | `/messages` | operator+ | чат; `?since=<epoch>` для инкрементального pull |
+| POST | `/messages` | operator+ | `direction=out`; опциональные `id`, `sender`, `created_at` (идемпотентно) |
+| GET | `/messages/unread` | operator+ | `{count}` входящих с `created_at > since` |
 
-Цели несут GPS и `source_video`. `crop_path` — путь к файлу, байты кропа по сети не гоняются (на другой машине файл может отсутствовать). Upsert: `ON CONFLICT(id)` обновляет только если входящий `created_at` строго больше.
+Цели несут GPS и `source_video`. `crop_path` — путь, байты кропа не гоняются. Messages: `synced_at` / TTL 24 ч; upsert newer-wins.
 
 ## Events — `/api/events`
 

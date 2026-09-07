@@ -194,11 +194,11 @@ Viewer поддерживает до 4 инстансов, Архив|Live, pan/
 
 ## 5. Сеть (тактическая)
 
-`backend/api/network.py` + `services/network.py` + `services/network_sync.py`: server/client/off, JWT на хаб, heartbeat, targets (GPS, `source_video`), чат.
+`backend/api/network.py` + `services/network.py` + `services/network_sync.py`: server/client/off, JWT на хаб, heartbeat (LAN IPv4), **targets + chat messages**. См. [NETWORK_REPLICATION.md](NETWORK_REPLICATION.md).
 
-Клиентский worker (тик 30 с) стартует из `main.py` lifespan всегда; no-op если `mode != client`. `POST /targets` пишет только `direction=out`. Входящие — upsert newer-wins (`direction=in`). Skip self по `source_base` == `base_id` или `base_name`. Инкрементальный pull: `GET /targets?since=`.
+Клиентский worker (тик **15 с**) стартует из `main.py` lifespan всегда; no-op если `mode != client`. Порядок тика: heartbeat → push/pull targets → push/pull messages. `POST /targets|messages` пишет только `direction=out`. Входящие — upsert newer-wins (`direction=in`). Skip self по sender/`source_base`. Инкрементальный pull: `?since=`.
 
-Один процесс / одна SQLite **не** проверяет репликацию — две копии каталога, см. [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md#сеть-баз). 4×Live / Event Timeline: `GET /api/events/timeline` + вкладка `liveQuad`.
+Один процесс / одна SQLite **не** проверяет репликацию — две копии каталога, см. [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md#сеть-баз). UI: ViewId `network` + ViewId `chat`. 4×Live / Event Timeline: `GET /api/events/timeline`.
 
 ## 6. Правила генерации кода
 

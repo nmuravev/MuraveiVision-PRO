@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-07
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** `12df24b` — Ollama discovery + connect panel
-- **Unit tests:** 292
+- **Commit:** (pending) — network chat MVP (messages sync + ChatPanel)
+- **Unit tests:** [SYSTEM] Serving UI from D:\LLM\MuraveiVision-PRO\dist 302
 - **E2E specs:** 6+
-- **Status:** Ollama auto-discovery ladder + calm connect UI; sparse points-primary; CPU+DirectML; **do not merge to main**
-- **Last updated by:** feat Ollama discovery / one-click connect
+- **Status:** Network chat MVP (REST message sync, ChatPanel, LAN heartbeat IP); Ollama discovery; sparse points-primary; CPU+DirectML; **do not merge to main** (merge to main later with `--no-ff` — v3.3 stacks on this branch)
+- **Last updated by:** feat network chat MVP v3.2
 - **Portable artifacts:** Mini ~0.54 GB; FullKit+AV CUDA; FullKit `-TorchFlavor cpu`
 - **Env pack:** win_cuda ~2952 MB; win_cpu ~439 MB — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md), [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md)
 - **Isolated test copy:** `MuraveiVision-Pro-3.2.0/` on :8001/:3001 (gitignored)

@@ -70,10 +70,10 @@ Air-gap: Система → панель «Импорт с USB» (engineer, PIN 
 SYSTEM → Сеть (`mode` off / server / client):
 
 - **server** — этот инстанс хаб (остальные клиенты бьют в его `server_ip`:`port`).
-- **client** — фоновый worker каждые ~30 с: login JWT по `hub_pin` (PIN оператора хаба), heartbeat, push несинхронизированных исходящих, pull `GET /api/network/targets?since=`.
+- **client** — фоновый worker каждые ~**15 с**: login JWT по `hub_pin`, heartbeat (LAN IPv4), push/pull targets, push/pull **messages**.
 - PIN хаба в UI write-only (пустое поле при сохранении не стирает уже записанный).
-- Цели несут `source_video` и GPS. TTL 24 ч. Входящие появляются как `direction=in` (не локальное зеркало).
-- Статус: `GET /api/network/status` — `hub_reachable`, `last_sync_ts`, `last_error`, `worker_alive`.
+- Цели несут `source_video` и GPS. TTL 24 ч. Чат — отдельное окно ViewId `chat`. См. [NETWORK_REPLICATION.md](NETWORK_REPLICATION.md).
+- Статус: `GET /api/network/status` — `hub_reachable`, `advertise_ip`, `last_sync_ts`, `last_error`, `worker_alive`.
 
 Один backend не доказывает репликацию. Ручной тест — **две копии папки** (у каждой свой `muravei.db`):
 
