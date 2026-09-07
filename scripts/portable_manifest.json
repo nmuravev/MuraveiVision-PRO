@@ -34,7 +34,7 @@
   "components": {
     "colmap_windows_cuda": {
       "url": "https://github.com/colmap/colmap/releases/download/3.9.1/COLMAP-3.9.1-windows-cuda.zip",
-      "sha256": "PIN_AFTER_DOWNLOAD",
+      "sha256": "cce14ec55ac1eef1f08a8ee7bfa08e70a7743e8411c0dede80d98faf996fbe01",
       "dest_relative": "sidecars/colmap",
       "archive_relative": "sidecars/colmap/downloads/COLMAP-3.9.1-windows-cuda.zip",
       "profiles": ["full", "mini"]
