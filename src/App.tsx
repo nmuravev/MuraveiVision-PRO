@@ -18,6 +18,7 @@ import { useHotkeys } from './hooks/useHotkeys';
 import { useTimelineStore } from './store/timeline-store';
 import { useViewerStore } from './store/useViewerStore';
 import { useMuraveiStore } from './store/useMuraveiStore';
+import { useNetworkStore } from './store/useNetworkStore';
 import { useSam3Store } from './store/useSam3Store';
 import { useReconStore } from './store/useReconStore';
 import { SplashScreen, shouldShowSplash } from './components/SplashScreen';
@@ -93,6 +94,18 @@ function App() {
   }, []);
 
   const activeTab = MODE_TO_TAB[workspaceMode] ?? 'Монтаж';
+  const chatUnread = useNetworkStore((s) => s.unreadCount);
+  const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
+  const refreshUnread = useNetworkStore((s) => s.refreshUnread);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void refreshUnread();
+    const t = window.setInterval(() => {
+      void refreshUnread();
+    }, 10000);
+    return () => window.clearInterval(t);
+  }, [isAuthenticated, refreshUnread]);
 
   const onTabChange = useCallback(
     (tab: string) => {
@@ -118,18 +131,24 @@ function App() {
   }, [resetLayout]);
 
   const renderTile = useCallback(
-    (id: ViewId, path: number[]) => (
-      <MosaicWindow<ViewId>
-        path={path}
-        title={VIEW_TITLES[id]}
-        toolbarControls={<PanelToolbarButtons id={id} />}
-      >
-        <PanelChrome id={id} hideHeader>
-          <ComponentForId id={id} />
-        </PanelChrome>
-      </MosaicWindow>
-    ),
-    [],
+    (id: ViewId, path: number[]) => {
+      const title =
+        id === 'chat' && chatUnread > 0
+          ? `${VIEW_TITLES.chat} (${chatUnread > 99 ? '99+' : chatUnread})`
+          : VIEW_TITLES[id];
+      return (
+        <MosaicWindow<ViewId>
+          path={path}
+          title={title}
+          toolbarControls={<PanelToolbarButtons id={id} />}
+        >
+          <PanelChrome id={id} hideHeader>
+            <ComponentForId id={id} />
+          </PanelChrome>
+        </MosaicWindow>
+      );
+    },
+    [chatUnread],
   );
 
   const fallbackTree = layoutPresets.mediaView;

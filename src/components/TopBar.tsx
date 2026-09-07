@@ -22,6 +22,7 @@ import {
 } from '../layout/initialLayout';
 import { usePanelLayoutStore } from '../store/usePanelLayoutStore';
 import { useMuraveiStore } from '../store/useMuraveiStore';
+import { useNetworkStore } from '../store/useNetworkStore';
 import { useViewerStore } from '../store/useViewerStore';
 import { downloadAuthorized } from '../lib/download';
 import { logger } from '../services/logger';
@@ -83,6 +84,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const hydrateDetections = useMuraveiStore((s) => s.hydrateDetections);
   const loadClassCatalog = useMuraveiStore((s) => s.loadClassCatalog);
   const resetSession = useMuraveiStore((s) => s.resetSession);
+  const chatUnreadBadge = useNetworkStore((s) => s.unreadCount);
 
   useEffect(() => {
     const token = localStorage.getItem('muravei-token');
@@ -429,6 +431,11 @@ export const TopBar: React.FC<TopBarProps> = ({
                       }`}
                     />
                     {VIEW_TITLES[id]}
+                    {id === 'chat' && chatUnreadBadge > 0 ? (
+                      <span className="ml-auto text-[10px] text-amber-400">
+                        {chatUnreadBadge > 99 ? '99+' : chatUnreadBadge}
+                      </span>
+                    ) : null}
                   </MenuItem>
                 );
               })}

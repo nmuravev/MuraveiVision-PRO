@@ -15,6 +15,7 @@ export type ViewId =
   | 'aiAnalysis'
   | 'debug'
   | 'network'
+  | 'chat'
   | 'flight3d'
   | 'events';
 
@@ -79,6 +80,7 @@ export const VIEW_TITLES: Record<ViewId, string> = {
   aiAnalysis: 'AI-анализ',
   debug: 'Отладка',
   network: 'Сеть',
+  chat: 'Чат',
   flight3d: 'Гео 3D',
   events: 'События',
 };
@@ -97,6 +99,7 @@ export const ALL_VIEW_IDS: ViewId[] = [
   'aiAnalysis',
   'debug',
   'network',
+  'chat',
   'flight3d',
   'events',
 ];
@@ -116,6 +119,7 @@ export const MIN_SIZES: Partial<Record<ViewId, { width: number; height: number }
   aiAnalysis: { width: 280, height: 220 },
   debug: { width: 280, height: 200 },
   network: { width: 300, height: 240 },
+  chat: { width: 280, height: 220 },
   flight3d: { width: 320, height: 240 },
   events: { width: 280, height: 140 },
 };
@@ -199,12 +203,20 @@ export const trainingLayout: MosaicNode<ViewId> = {
   ],
 };
 
-/** SYSTEM — admin + network */
+/** SYSTEM — admin + network + chat */
 export const systemLayout: MosaicNode<ViewId> = {
   type: 'split',
   direction: 'row',
-  splitPercentages: [55, 45],
-  children: ['admin', 'network'],
+  splitPercentages: [40, 60],
+  children: [
+    'admin',
+    {
+      type: 'split',
+      direction: 'row',
+      splitPercentages: [50, 50],
+      children: ['network', 'chat'],
+    },
+  ],
 };
 
 /** MEDIA + Flight3D — viewer 60% / geo 40% + timeline */
