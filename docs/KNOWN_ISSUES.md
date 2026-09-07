@@ -33,6 +33,12 @@
 - **COLMAP / Dense / gsplat:** CPU-профиль урезает бюджеты; Dense/Mesh по умолчанию off; gsplat — «требуется NVIDIA CUDA».
 - Spec и acceptance: [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md).
 
+## Ollama / AI
+
+- **RESOLVED (2026-09-07): spam «Ollama нет»** — раньше TopBar опрашивал `/api/ai/models` каждые 15 с при hardcoded `127.0.0.1:11434` (WSL/LAN не находились). Теперь: явное Подключить + лестница discovery; badge спокойный «отключена»; LAN-скан только по кнопке. См. [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md#ollama-опционально).
+- **wrong_service:** если :11434 отвечает не Ollama (другой AI-стек) — RU подсказка про `MURAVEI_OLLAMA_URL`.
+- Ollama остаётся **опциональной** — отсутствие не блокирует детект/ recon.
+
 ## AliceVision / Dense-Mesh (v3.2 branch)
 
 - **Optional sidecar:** Dense/Mesh presets disable with clear Russian `disabled_reason` when `sidecars/alicevision` missing or CUDA unavailable (no CPU depth-map fallback).

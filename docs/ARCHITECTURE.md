@@ -73,7 +73,8 @@ flowchart TB
 | `trainer.py` | quick finetune + SSE |
 | `classes.py` | 238 YAML + overrides |
 | `similarity.py` | find-similar: CLIP image + hist fallback, кэш SQLite |
-| `ollama_proxy.py` | tags/generate, ranking vision/chat |
+| `ollama_proxy.py` | connection manager + tags/generate; persist `config/local/ollama.json` |
+| `ollama_discovery.py` | health `/api/tags`, ladder, WSL candidates, explicit LAN scan |
 | `live_stream.py` / `recorder.py` | RTSP/UDP + REC |
 | `reporter.py` | автономный HTML-отчёт |
 | `db.py` | detections, crops, embeddings, auth, network, overrides, **seg_masks** (opt-in, не train) |
@@ -122,7 +123,7 @@ UpdatePanel → POST /api/train/start {epochs, imgsz, batch, resume_from?}
 
 ```
 AiAnalysisPanel / Inspector → POST /api/ai/analyze
-  → ollama_proxy → localhost:11434
+  → ollama_proxy → discovered base (env / loopback / WSL / saved / manual)
 ```
 
 ## UI mosaic

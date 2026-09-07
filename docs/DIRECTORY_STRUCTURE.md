@@ -45,6 +45,7 @@ MuraveiVision-PRO/
 │   │   ├── motion.py
 │   │   ├── similarity.py
 │   │   ├── ollama_proxy.py
+│   │   ├── ollama_discovery.py
 │   │   ├── live_stream.py
 │   │   ├── recorder.py
 │   │   ├── recon_scanner.py

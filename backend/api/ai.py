@@ -11,7 +11,16 @@ from pydantic import BaseModel, Field
 from services.ai_crops import detection_crop_b64
 from services.autolabel import parse_autolabel_result
 from services.classes import get_class_catalog
-from services.ollama_proxy import UNAVAILABLE, generate, list_models
+from services.ollama_proxy import (
+    UNAVAILABLE,
+    connect as ollama_connect,
+    disconnect as ollama_disconnect,
+    generate,
+    get_status as ollama_status,
+    list_models,
+    save_settings as ollama_save_settings,
+    scan_lan as ollama_scan_lan,
+)
 from services.security import require_role
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -31,10 +40,83 @@ class AutolabelRequest(BaseModel):
     model: str | None = None
 
 
+class OllamaConnectBody(BaseModel):
+    host: str | None = None
+    port: int | None = Field(default=None, ge=1, le=65535)
+    base_url: str | None = None
+    model: str | None = None
+    timeout_sec: float | None = Field(default=None, ge=5, le=600)
+
+
+class OllamaSettingsBody(BaseModel):
+    host: str | None = None
+    port: int | None = Field(default=None, ge=1, le=65535)
+    base_url: str | None = None
+    model: str | None = None
+    timeout_sec: float | None = Field(default=None, ge=5, le=600)
+    auto_reconnect: bool | None = None
+    connect_now: bool = True
+
+
 _VISION_PROMPT_PREFIX = (
     "На приложенном кадре (crop детекции) опиши, что видно: форма, цвет, "
     "материал, окружение. Затем сравни с метками YOLO/оператора.\n\n"
 )
+
+
+@router.get("/ollama/status")
+async def ai_ollama_status(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    return await asyncio.to_thread(ollama_status)
+
+
+@router.post("/ollama/connect")
+async def ai_ollama_connect(
+    body: OllamaConnectBody | None = None,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    body = body or OllamaConnectBody()
+    return await asyncio.to_thread(
+        ollama_connect,
+        base_url=body.base_url,
+        host=body.host,
+        port=body.port,
+        model=body.model,
+        timeout_sec=body.timeout_sec,
+        use_ladder=not bool((body.base_url or body.host or "").strip()),
+    )
+
+
+@router.post("/ollama/disconnect")
+async def ai_ollama_disconnect(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    return await asyncio.to_thread(ollama_disconnect)
+
+
+@router.post("/ollama/scan")
+async def ai_ollama_scan(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    return await asyncio.to_thread(ollama_scan_lan)
+
+
+@router.put("/ollama/settings")
+async def ai_ollama_settings(
+    body: OllamaSettingsBody,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    return await asyncio.to_thread(
+        ollama_save_settings,
+        host=body.host,
+        port=body.port,
+        base_url=body.base_url,
+        model=body.model,
+        timeout_sec=body.timeout_sec,
+        auto_reconnect=body.auto_reconnect,
+        connect_now=body.connect_now,
+    )
 
 
 @router.get("/models")

@@ -4,13 +4,13 @@
 
 - **Snapshot date:** 2026-09-07
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** `58904ff` — sparse ranking docs contract (points-primary) + Meta sync
-- **Unit tests:** 280+ OK (incl. views-vs-points disagree case)
+- **Commit:** (pending) — Ollama discovery + connect panel
+- **Unit tests:** 292
 - **E2E specs:** 6+
-- **Status:** Sparse rank contract = points3D size primary / views secondary; CPU+DirectML edition shipped; **do not merge to main**
-- **Last updated by:** fix RECON_3D sparse ranking docs + Meta/TODO/ROADMAP sync
+- **Status:** Ollama auto-discovery ladder + calm connect UI; sparse points-primary; CPU+DirectML; **do not merge to main**
+- **Last updated by:** feat Ollama discovery / one-click connect
 - **Portable artifacts:** Mini ~0.54 GB; FullKit+AV CUDA; FullKit `-TorchFlavor cpu`
-- **Env pack:** win_cuda ~2952 MB (`5c662a9e…`); win_cpu ~439 MB (`d55f4d49…`) — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md), [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md)
+- **Env pack:** win_cuda ~2952 MB; win_cpu ~439 MB — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md), [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md)
 - **Isolated test copy:** `MuraveiVision-Pro-3.2.0/` on :8001/:3001 (gitignored)
 
 ## Major Changes in This Release

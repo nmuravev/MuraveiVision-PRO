@@ -30,9 +30,10 @@ def main() -> int:
     importlib.import_module("main")
     from services import ollama_proxy as op
 
-    assert op.TAGS_RETRIES >= 3
-    assert op.TAGS_RETRY_DELAY_SEC >= 2.0
-    assert "ollama/ollama.exe" in op.UNAVAILABLE.lower() or "ollama.exe" in op.UNAVAILABLE
+    assert op.UNAVAILABLE
+    assert "ollama" in op.UNAVAILABLE.lower()
+    assert hasattr(op, "startup_reconnect")
+    assert hasattr(op, "connect")
 
     # list_models: if Ollama down → available False + message; if up → ok
     t0 = time.time()

@@ -236,11 +236,16 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| GET | `/models` | список Ollama |
+| GET | `/ollama/status` | state: disconnected/searching/connected/degraded + base_url/model |
+| POST | `/ollama/connect` | лестница discovery или `{host,port,base_url,model?}` |
+| POST | `/ollama/disconnect` | отключить (настройки в config/local сохраняются) |
+| POST | `/ollama/scan` | LAN /24 TCP:11434 (только по запросу, ≤10 с) |
+| PUT | `/ollama/settings` | сохранить host/port/model/timeout (+ connect_now) |
+| GET | `/models` | список моделей (available только если подключена) |
 | POST | `/analyze` | prompt + optional image → текст |
 | POST | `/autolabel` | `{ detection_id, model? }` → структурированное предложение класса |
 
-503, если Ollama недоступна.
+503, если Ollama не подключена. Конфиг: `config/local/ollama.json` (не в git).
 
 ## Live — `/api/live`
 

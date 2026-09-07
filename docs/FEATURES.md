@@ -42,6 +42,7 @@
 ## AI / аналитика
 
 - **Active Learning** — очередь low-confidence детекций, сбор/решение (accept/reject). API `/api/active-learning`.
+- **Ollama connect** — панель в AI-анализе: Подключить (лестница env→loopback→WSL→saved), Найти в сети (LAN /24), host/port/model; спокойный статус «отключена». API `/api/ai/ollama/*`. Конфиг `config/local/ollama.json` (не в git).
 - **Ollama autolabel** — предложение класса через Ollama, accept патчит детекцию. API `/api/ai/autolabel`.
 - **Rules/alerts** — правила детекции с cooldown 3с. Звук: `beep` / `alarm` / `none`, громкость 0–100, кнопка «Тест». Back-compat: `sound=true` → `beep`.
 
@@ -59,7 +60,7 @@
 
 - **COLMAP** — poses + intrinsics (PINHOLE/SIMPLE_PINHOLE/SIMPLE_RADIAL/RADIAL/OPENCV).
 - **gsplat** — UI train presets (Balanced/Bootstrap/High) + dual load Points / DropInViewer. **Not** run inside «Построить 3D» by default (`GSPLAT_INLINE=1` opt-in only).
-- **Flight3D** — ручной scale/horizon. «Построить 3D» = COLMAP sparse (`colmap_done` + `next_action=balanced_for_splat`); ops-модалка: live stages из SSE (`extract` → `COLMAP plan` → `feature_extractor` → matcher → `mapper` с `sparse/N`+last write → `model_converter` → позы → load); header `job` = **текущий** `job_id` из status/SSE (не stale manifest). После sparse: **`sparse COLMAP · нужен train для splat`**. После успешного Balanced `_patch_artifact` снимает `next_action` и UI **не** показывает CTA/баннер, если `artifact=model.ply` (даже при sparse-превью во время загрузки DropIn). Idle-карточка → Balanced. Strip Bootstrap / Balanced / High; HQ disabled при VRAM &lt; 12 ГБ. Один train за раз; взаимная блокировка с COLMAP (**не** с `sceneLoading` splat). Sparse-превью до скачивания `model.ply`. Train-успех держит chip до загрузки splat. Canvas: absolute host + `setSize(w,h,false)` + `overflow-hidden` (без дрожания при сжатии mosaic).
+- **Flight3D** — ручной scale/horizon. «Построить 3D» = COLMAP sparse (`colmap_done` + `next_action=balanced_for_splat`); ops-модалка: live stages из SSE (`extract` → `COLMAP plan` → `feature_extractor` → matcher → `mapper` с `sparse/N`+last write → `model_converter` → позы → load) со статусами ожидание/идёт/готово/ошибка; строка **статус ·** из текущего poll/SSE; header `job · Ns · % · ETA ~… (оценка)` (`eta ≈ elapsed×(1−p)/p` при p&gt;5%, либо `train.eta_seconds`); ошибки/warning только от **текущего** `job_id`/op (не stale AliceVision soft-fail на новый COLMAP). После sparse: **`sparse COLMAP · нужен train для splat`**. После Dense/Mesh: статус **`dense/mesh AliceVision · … загружено`** (не «нет облака»). После успешного Balanced `_patch_artifact` снимает `next_action` и UI **не** показывает CTA/баннер, если `artifact=model.ply` (даже при sparse-превью во время загрузки DropIn). Idle-карточка → Balanced. Strip Bootstrap / Balanced / High; HQ disabled при VRAM &lt; 12 ГБ. Один train за раз; взаимная блокировка с COLMAP (**не** с `sceneLoading` splat). Sparse-превью до скачивания `model.ply`. Train-успех держит chip до загрузки splat. Canvas: absolute host + `setSize(w,h,false)` + `overflow-hidden` (без дрожания при сжатии mosaic).
 - **2D→3D raycast** — intrinsics + splat pick, miss→toast (не THREE.Raycaster).
 
 ## Отчёты / обучение

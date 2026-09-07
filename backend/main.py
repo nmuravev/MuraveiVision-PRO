@@ -102,6 +102,12 @@ async def lifespan(app: FastAPI):
     from services.network_sync import start_network_worker, stop_network_worker
 
     start_network_worker()
+    try:
+        from services.ollama_proxy import startup_reconnect
+
+        startup_reconnect()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[SYSTEM] Ollama startup reconnect skip: {exc}")
     yield
     print("[SYSTEM] Backend stopping...")
     await stop_network_worker()

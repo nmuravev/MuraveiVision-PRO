@@ -33,6 +33,9 @@ dist/muravei_env_pack_win_cpu.zip
 dist/muravei_env_pack_win_cuda.zip
 dist/_env_pack_stage/
 
+# Machine-local secrets / endpoints (never commit)
+config/local/
+
 # IDE and editor files
 .idea/
 .vscode/
