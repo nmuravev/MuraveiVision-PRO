@@ -3,12 +3,12 @@
 ## Meta
 
 - **Snapshot date:** 2026-09-08
-- **Branch:** `main` @ portable one-entry + VERSION
-- **Commit:** _(pending Phase 0 portable fix)_
-- **Unit tests:** 319
-- **Status:** Leaf config + VERSION stamp + operator-path smoke; packs rebuild next
-- **Last updated by:** fix(portable) one entry path + dynamic version + operator smoke
-- **Portable local:** rebuild pending (stale Mini/Full purged)
+- **Branch:** `main` @ portable torch profile
+- **Commit:** _(pending torch-profile commit)_
+- **Unit tests:** 325 (+6 portable torch policy)
+- **Status:** Profile-driven Mini=CPU / FullKit=CUDA torch; packs rebuild next
+- **Last updated by:** fix(portable) profile-driven torch wheel selection (mini=CPU)
+- **Portable local:** rebuild pending (lean Mini + FullKit slim)
 - **Env pack:** win_cuda / win_cpu — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
 
 ## Major Changes in This Release

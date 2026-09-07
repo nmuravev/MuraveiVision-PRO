@@ -12,14 +12,20 @@
 
   Mini (-NoDetectWeights):
   - то же без detect .pt / mobileclip (UI/geo/отчёты; YOLO → 503 до USB-import)
-  - ZIP: portable\MuraveiVision_PRO_Mini.zip
+  - torch/torchvision = CPU only (never CUDA; never host-mirror CUDA)
+  - ZIP: portable\MuraveiVision_PRO_Mini.zip (~540–600 MB target)
 
   FullKit (-FullKit):
   - то же + ollama runtime (exe/lib); VL-модель НЕ бандлится (по умолчанию)
   - опционально -IncludeOllamaModel для qwen2.5vl:7b
   - sidecars\colmap + sidecars\gsplat_examples (3D)
+  - torch: CUDA cu128 by default (-TorchFlavor cpu → CPU)
   - ZIP: portable\MuraveiVision_PRO_FullKit.zip (Zip64)
     CPU flavor: MuraveiVision_PRO_FullKit_win_cpu.zip
+
+  Torch wheel selection is PROFILE-DRIVEN (scripts/portable_torch_policy.py):
+  Mini/Lite → CPU; FullKit → CUDA unless -TorchFlavor cpu.
+  portable/cache/wheels may hold BOTH variants — never install "first found".
 
   Только muravei_env / embed 3.12.10 — никогда host Python 3.14.
   Build-time downloads need network (or offline wheels/); field ZIP is air-gap.
@@ -28,6 +34,7 @@
   Staging: unique portable\stage_<Kit>_<timestamp>\ each run; ZIP names stay stable.
   Deps: host muravei_env pip --python <staged> (prefer portable\cache\wheels offline).
   Robocopy host site-packages only as fallback (or MURAVEI_PORTABLE_MIRROR=1).
+  NEVER use MURAVEI_PORTABLE_MIRROR=1 for Mini (mirrors host CUDA).
 #>
 param(
   [switch]$SkipNpmBuild,
@@ -161,6 +168,170 @@ function Remove-StalePortableStages([string]$Root) {
       }
     }
   }
+}
+
+# Profile → torch CUDA yes/no (Mini/Lite always CPU). See scripts/portable_torch_policy.py
+$TorchPolicyScript = Join-Path $PSScriptRoot "portable_torch_policy.py"
+$WantCudaTorch = $false
+if ($FullKit -and $TorchFlavor -eq "cuda") { $WantCudaTorch = $true }
+$TorchKitName = if ($FullKit) { "fullkit" } elseif ($NoDetectWeights) { "mini" } else { "lite" }
+
+function Get-TorchPolicyJson {
+  param([string]$Kit, [string]$Flavor = "cuda", [string]$ListWheels = "")
+  $args = @($TorchPolicyScript, "--kit", $Kit, "--flavor", $Flavor, "--json")
+  if ($ListWheels) { $args += @("--list-wheels", $ListWheels) }
+  $prevEap = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  $raw = & $HostPy @args 2>&1 | Out-String
+  $ErrorActionPreference = $prevEap
+  if (-not $raw) { throw "portable_torch_policy.py produced no output" }
+  # Policy CLI may exit 2 on cache mismatch when listing; still parse JSON from stdout
+  $jsonLine = ($raw -split "`n" | Where-Object { $_.Trim().StartsWith("{") } | Select-Object -First 1)
+  if (-not $jsonLine) {
+    # multi-line JSON
+    $start = $raw.IndexOf("{")
+    $end = $raw.LastIndexOf("}")
+    if ($start -ge 0 -and $end -gt $start) {
+      $jsonLine = $raw.Substring($start, $end - $start + 1)
+    }
+  }
+  if (-not $jsonLine) { throw "failed to parse torch policy JSON: $raw" }
+  return ($jsonLine | ConvertFrom-Json)
+}
+
+function New-FilteredWheelFindLinks {
+  <#
+    Build a temp find-links dir that EXCLUDES the wrong torch variant.
+    Non-torch wheels are linked as-is. Keeps both variants in the real cache.
+  #>
+  param(
+    [string]$WheelDir,
+    [bool]$WantCuda,
+    [string]$Stamp
+  )
+  $names = @(Get-ChildItem -LiteralPath $WheelDir -File | ForEach-Object { $_.Name })
+  $list = ($names -join ",")
+  $pol = Get-TorchPolicyJson -Kit $TorchKitName -Flavor $(if ($WantCuda) { "cuda" } else { "cpu" }) -ListWheels $list
+  $rejected = @{}
+  if ($pol.rejected) {
+    foreach ($r in @($pol.rejected)) { $rejected[$r] = $true }
+  }
+  $out = Join-Path $env:TEMP "muravei_wheels_${TorchKitName}_$Stamp"
+  if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }
+  New-Item -ItemType Directory -Force -Path $out | Out-Null
+  $linked = 0
+  foreach ($f in (Get-ChildItem -LiteralPath $WheelDir -File)) {
+    if ($rejected.ContainsKey($f.Name)) {
+      Write-Host "  skip wrong-variant wheel: $($f.Name)" -ForegroundColor DarkYellow
+      continue
+    }
+    $dest = Join-Path $out $f.Name
+    # Hardlink when possible (same volume); else copy
+    try {
+      New-Item -ItemType HardLink -Path $dest -Value $f.FullName -ErrorAction Stop | Out-Null
+    } catch {
+      Copy-Item -LiteralPath $f.FullName -Destination $dest -Force
+    }
+    $linked++
+  }
+  $selCount = 0
+  if ($pol.selected) { $selCount = @($pol.selected).Count }
+  Write-Host "Filtered find-links: $linked files (torch matches=$selCount, excluded=$($rejected.Count)) → $out" -ForegroundColor Yellow
+  return @{
+    Path = $out
+    SelectedTorch = $selCount
+    CacheMismatch = [bool]$pol.cache_mismatch
+    IndexUrl = [string]$pol.index_url
+  }
+}
+
+function Install-ProfileTorch {
+  <#
+    Force torch+torchvision to the kit profile after requirements bake / host mirror.
+    Mini/Lite: CPU (+ onnxruntime CPU/DirectML). FullKit cuda: cu128. Never pick opposite from cache.
+  #>
+  param(
+    [string]$PyExe,
+    [string]$HostPyExe,
+    [bool]$WantCuda,
+    [bool]$HasWheels,
+    [string]$WheelDir,
+    [string]$Stamp
+  )
+  $label = if ($WantCuda) { "CUDA cu128" } else { "CPU" }
+  Write-Host "Forcing profile torch ($label) for kit=$TorchKitName ..." -ForegroundColor Yellow
+  $prevEap = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  & $HostPyExe -m pip --python $PyExe uninstall -y torch torchvision 2>&1 | Out-Host
+  if (-not $WantCuda) {
+    & $HostPyExe -m pip --python $PyExe uninstall -y onnxruntime-gpu 2>&1 | Out-Host
+  }
+  $ErrorActionPreference = $prevEap
+
+  $torchArgs = $null
+  $usedCache = $false
+  if ($HasWheels) {
+    $flt = New-FilteredWheelFindLinks -WheelDir $WheelDir -WantCuda $WantCuda -Stamp "$Stamp-torch"
+    if ($flt.SelectedTorch -gt 0) {
+      $torchArgs = @(
+        "--python", $PyExe, "install", "--no-index", "--find-links", $flt.Path,
+        "--force-reinstall", "--no-deps", "--no-warn-script-location",
+        "torch", "torchvision"
+      )
+      $usedCache = $true
+      Write-Host "Profile torch from filtered wheel cache ($($flt.SelectedTorch) matches)" -ForegroundColor Yellow
+    } else {
+      Write-Host "WARNING: wheel cache has no $label torch — falling back to $($flt.IndexUrl) (never opposite variant)" -ForegroundColor Yellow
+      $torchArgs = @(
+        "--python", $PyExe, "install", "--force-reinstall", "--no-warn-script-location",
+        "--no-cache-dir", "--index-url", $flt.IndexUrl, "torch", "torchvision"
+      )
+    }
+  } else {
+    $idx = if ($WantCuda) { "https://download.pytorch.org/whl/cu128" } else { "https://download.pytorch.org/whl/cpu" }
+    Write-Host "No wheel cache — installing torch from $idx" -ForegroundColor Yellow
+    $torchArgs = @(
+      "--python", $PyExe, "install", "--force-reinstall", "--no-warn-script-location",
+      "--no-cache-dir", "--index-url", $idx, "torch", "torchvision"
+    )
+  }
+  & $HostPyExe -m pip @torchArgs
+  if ($LASTEXITCODE -ne 0) { throw "profile torch ($label) install failed" }
+
+  if (-not $WantCuda) {
+    # Prefer DirectML on Windows field kits; fall back to CPU ORT
+    $ortArgs = @("--python", $PyExe, "install", "--force-reinstall", "--no-warn-script-location")
+    if ($HasWheels -and -not $usedCache) {
+      # already online path
+    }
+    if ($HasWheels) {
+      $ortArgs += @("--no-index", "--find-links", $WheelDir, "onnxruntime-directml")
+      & $HostPyExe -m pip @ortArgs
+      if ($LASTEXITCODE -ne 0) {
+        Write-Host "onnxruntime-directml not in cache — trying online / onnxruntime" -ForegroundColor Yellow
+        & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-warn-script-location --no-cache-dir "onnxruntime-directml>=1.16.0"
+        if ($LASTEXITCODE -ne 0) {
+          & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-warn-script-location --no-cache-dir "onnxruntime>=1.16.0"
+          if ($LASTEXITCODE -ne 0) { throw "onnxruntime (CPU/DirectML) install failed for CPU kit" }
+        }
+      }
+    } else {
+      & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-warn-script-location --no-cache-dir "onnxruntime-directml>=1.16.0"
+      if ($LASTEXITCODE -ne 0) {
+        & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-warn-script-location --no-cache-dir "onnxruntime>=1.16.0"
+        if ($LASTEXITCODE -ne 0) { throw "onnxruntime (CPU/DirectML) install failed for CPU kit" }
+      }
+    }
+  }
+
+  if ($WantCuda) {
+    & $PyExe -c "import torch; assert torch.version.cuda is not None, 'expected CUDA torch (torch.version.cuda is not None)'; print('STAGE_TORCH', torch.__version__, 'cuda', torch.version.cuda)"
+    if ($LASTEXITCODE -ne 0) { throw "POST-STAGE ASSERT FAILED: FullKit requires CUDA torch (torch.version.cuda is not None)" }
+  } else {
+    & $PyExe -c "import torch; assert torch.version.cuda is None, 'expected CPU torch (torch.version.cuda is None)'; print('STAGE_TORCH', torch.__version__, 'cpu', torch.version.cuda)"
+    if ($LASTEXITCODE -ne 0) { throw "POST-STAGE ASSERT FAILED: Mini/Lite/CPU kit requires CPU torch (torch.version.cuda is None)" }
+  }
+  Write-Host "Torch profile assert OK ($label)" -ForegroundColor Green
 }
 
 function Copy-OllamaModelQwen([string]$StoreRoot, [string]$DestModels) {
@@ -444,9 +615,16 @@ if ($FetchEmbeddablePython) {
   $hasWheels = (Test-Path -LiteralPath $wheelDir) -and (
     $null -ne (Get-ChildItem -LiteralPath $wheelDir -File -ErrorAction SilentlyContinue | Select-Object -First 1)
   )
+  if ($NoDetectWeights -and ($env:MURAVEI_PORTABLE_MIRROR -eq "1")) {
+    Write-Host "WARNING: MURAVEI_PORTABLE_MIRROR=1 with Mini — host CUDA may be mirrored; profile torch force will reinstall CPU" -ForegroundColor Yellow
+  }
+  $bakeFindLinks = $wheelDir
   if ($hasWheels) {
-    Write-Host "Using local wheel cache: $wheelDir" -ForegroundColor Yellow
-    $bakeArgs = @("--python", $pyExe, "install", "--no-index", "--find-links", $wheelDir, "--prefer-binary", "--no-warn-script-location", "-r", $reqFile)
+    # Exclude opposite torch variant from find-links so pip never picks CUDA for Mini
+    $fltBake = New-FilteredWheelFindLinks -WheelDir $wheelDir -WantCuda $WantCudaTorch -Stamp "$Stamp-bake"
+    $bakeFindLinks = $fltBake.Path
+    Write-Host "Using filtered local wheel cache: $bakeFindLinks" -ForegroundColor Yellow
+    $bakeArgs = @("--python", $pyExe, "install", "--no-index", "--find-links", $bakeFindLinks, "--prefer-binary", "--no-warn-script-location", "-r", $reqFile)
   } else {
     Write-Host "No portable/cache/wheels — online install (run scripts/cache_portable_wheels.ps1 once)" -ForegroundColor Yellow
     $bakeArgs = @("--python", $pyExe, "install", "--no-cache-dir", "--prefer-binary", "--no-warn-script-location", "-r", $reqFile)
@@ -490,56 +668,10 @@ if ($FetchEmbeddablePython) {
     }
   }
 
-  if ($FullKit -and -not $mirrorHost) {
-    if ($TorchFlavor -eq "cpu") {
-      Write-Host "FullKit CPU: forcing torch CPU wheels in staged muravei_env..." -ForegroundColor Yellow
-      $prevEap = $ErrorActionPreference
-      $ErrorActionPreference = "Continue"
-      & $HostPy -m pip --python $pyExe uninstall -y torch torchvision onnxruntime-gpu 2>&1 | Out-Host
-      $ErrorActionPreference = $prevEap
-      $torchArgs = @("--python", $pyExe, "install", "--force-reinstall", "--no-warn-script-location", "torch", "torchvision")
-      if ($hasWheels) {
-        $torchArgs = @("--python", $pyExe, "install", "--no-index", "--find-links", $wheelDir, "--force-reinstall", "--no-warn-script-location", "torch", "torchvision")
-        Write-Host "FullKit CPU torch from wheel cache" -ForegroundColor Yellow
-      } else {
-        $torchArgs += @("--no-cache-dir", "--index-url", "https://download.pytorch.org/whl/cpu")
-      }
-      & $HostPy -m pip @torchArgs
-      if ($LASTEXITCODE -ne 0) { throw "torch CPU install failed" }
-      if (-not $hasWheels) {
-        & $HostPy -m pip --python $pyExe install --force-reinstall --no-warn-script-location --no-cache-dir "onnxruntime-directml>=1.16.0"
-      }
-      & $pyExe -c "import torch; assert not torch.version.cuda, 'expected CPU torch'; print('STAGE_TORCH', torch.__version__, 'cpu')"
-      if ($LASTEXITCODE -ne 0) { throw "staged torch CPU wheel check failed" }
-    } else {
-      Write-Host "FullKit: forcing torch+cu128 in staged muravei_env..." -ForegroundColor Yellow
-      $prevEap = $ErrorActionPreference
-      $ErrorActionPreference = "Continue"
-      & $HostPy -m pip --python $pyExe uninstall -y torch torchvision 2>&1 | Out-Host
-      $ErrorActionPreference = $prevEap
-      $torchArgs = @("--python", $pyExe, "install", "--force-reinstall", "--no-warn-script-location", "torch", "torchvision")
-      if ($hasWheels) {
-        $torchArgs = @("--python", $pyExe, "install", "--no-index", "--find-links", $wheelDir, "--force-reinstall", "--no-warn-script-location", "torch", "torchvision")
-        Write-Host "FullKit torch from wheel cache (expect cu128 wheels present)" -ForegroundColor Yellow
-      } else {
-        $torchArgs += @("--no-cache-dir", "--index-url", "https://download.pytorch.org/whl/cu128")
-      }
-      & $HostPy -m pip @torchArgs
-      $bakeEc = $LASTEXITCODE
-      if ($bakeEc -ne 0) { throw "torch cu128 install failed" }
-      & $pyExe -c "import torch; assert torch.version.cuda, 'expected CUDA wheel'; print('STAGE_TORCH', torch.__version__, torch.version.cuda)"
-      if ($LASTEXITCODE -ne 0) { throw "staged torch CUDA wheel check failed" }
-    }
-  } elseif ($FullKit -and $mirrorHost) {
-    if ($TorchFlavor -eq "cpu") {
-      Write-Host "FullKit CPU: host mirror — verifying torch..." -ForegroundColor Yellow
-      & $pyExe -c "import torch; print('STAGE_TORCH', torch.__version__, getattr(torch.version,'cuda',None))"
-    } else {
-      Write-Host "FullKit: host mirror already includes torch — verifying CUDA..." -ForegroundColor Yellow
-      & $pyExe -c "import torch; assert torch.version.cuda, 'expected CUDA wheel'; print('STAGE_TORCH', torch.__version__, torch.version.cuda)"
-      if ($LASTEXITCODE -ne 0) { throw "staged torch CUDA wheel check failed" }
-    }
-  }
+  # Profile-driven torch: Mini/Lite always CPU; FullKit follows -TorchFlavor.
+  # Runs after bake AND after host mirror (so MURAVEI_PORTABLE_MIRROR cannot ship CUDA into Mini).
+  Install-ProfileTorch -PyExe $pyExe -HostPyExe $HostPy -WantCuda $WantCudaTorch `
+    -HasWheels $hasWheels -WheelDir $wheelDir -Stamp $Stamp
 
   & $pyExe -c "import sys,fastapi,uvicorn,ultralytics,cv2,jwt; assert sys.version.startswith('3.12'); print('BAKE_OK', sys.version.split()[0], fastapi.__version__)"
   if ($LASTEXITCODE -ne 0) { throw "BAKE import failed" }
@@ -739,6 +871,15 @@ if (-not $SkipZip) {
   Write-Zip64 -SourceDir $Stage -DestZip $ZipPath
   $zipMb = [math]::Round((Get-Item $ZipPath).Length / 1MB, 1)
   Write-Host "ZIP: $ZipPath ($zipMb MB)" -ForegroundColor Green
+  if ($NoDetectWeights -and -not $FullKit) {
+    # Mini target ~540–600 MB; CUDA torch mistake → multi-GB. Fail loud above 1.2 GB.
+    if ($zipMb -gt 1200) {
+      throw "MINI SIZE ASSERT FAILED: ZIP is $zipMb MB (>1200). Likely CUDA torch leaked — check STAGE_TORCH / profile filter."
+    }
+    if ($zipMb -gt 750) {
+      Write-Host "WARNING: Mini ZIP is $zipMb MB (target ~540–600 MB) — review torch/ORT contents" -ForegroundColor Yellow
+    }
+  }
 }
 
 Write-Host "Staged: $Stage" -ForegroundColor Green

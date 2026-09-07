@@ -25,11 +25,12 @@
 - **Circular import `main` ↔ `yolo_engine`:** `from main import BASE_DIR` на уровне модуля ломало старт Mini (`ImportError: cannot import name 'router' from partially initialized module 'api.detect'`). Fix: leaf `backend/config.py`; все сервисы/API → `from config import BASE_DIR`. Регрессия: `backend/tests/test_config_base_dir.py`.
 - **One entry path + VERSION:** `Запустить.bat` → `-m uvicorn` only; pack root `VERSION` (git describe) drives banner + `/api/health`/`/api/system/version`; `smoke_portable.ps1` = operator path with negative asserts (Traceback/ImportError/circular import).
 
-## Portable build (RESOLVED 2026-09-05)
+## Portable build (RESOLVED 2026-09-05 / torch profile 2026-09-08)
 
 - **Stale staging / DLL locks:** fixed-name stage dirs + live host uvicorn → `Remove-Item` / robocopy fails. Fix: timestamped `portable/stage_<Kit>_<stamp>/`, purge of `stage_*` / `*.locked_*` at start; stop backend before build; reboot if AV holds DLLs.
 - **`cacert.pem` vanishes mid-pip:** staged `python -m pip` self-upgrade deletes vendor CA while `SSL_CERT_FILE` still points at it. Fix: host `pip --python <staged>`; stable `portable/cache/cacert.pem` + env pins.
 - **AV breaking staged pip (`INSTALLER*.tmp`):** prefer offline `portable/cache/wheels` (`scripts/cache_portable_wheels.ps1`); robocopy host site-packages only as fallback / `MURAVEI_PORTABLE_MIRROR=1`. See [PORTABLE.md](PORTABLE.md).
+- **Mini fat ZIP (~3 GB) from CUDA torch:** `MURAVEI_PORTABLE_MIRROR=1` or unfiltered `--find-links` installed host/`+cu*` torch into Mini. Fix: profile-driven selection ([`portable_torch_policy.py`](../scripts/portable_torch_policy.py)) — Mini/Lite force CPU + post-stage `torch.version.cuda is None`; FullKit CUDA assert `is not None`; keep both wheels in cache. Do not mirror host env for Mini.
 
 ## Intel + AMD Radeon (без NVIDIA / RDNA1)
 

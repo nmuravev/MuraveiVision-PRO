@@ -15,11 +15,12 @@
 - **Offline wheels:** предпочтительно `portable/cache/wheels` (`--no-index --find-links`). Один раз на машине сборки:
   ```powershell
   powershell -ExecutionPolicy Bypass -File scripts\cache_portable_wheels.ps1
-  # FullKit + cu128 torch:
+  # FullKit + cu128 torch (CPU wheels also kept — do not delete either):
   powershell -ExecutionPolicy Bypass -File scripts\cache_portable_wheels.ps1 -WithTorchCu128
   ```
+- **Torch by kit profile** ([`scripts/portable_torch_policy.py`](../scripts/portable_torch_policy.py)): **Mini/Lite → CPU only**; **FullKit → CUDA cu128** (or `-TorchFlavor cpu`). Cache may hold both `+cpu` and `+cu*` wheels — build filters find-links by profile (never «first found»). Post-stage assert: Mini `torch.version.cuda is None`; FullKit CUDA `is not None`. Mini ZIP fails if &gt; ~1.2 GB (CUDA leak).
 - **CA bundle:** стабильный `portable/cache/cacert.pem` (вне stage site-packages); env `SSL_CERT_FILE` / `PIP_CERT` / …
-- **Robocopy fallback:** только если host-pip bake упал, или `MURAVEI_PORTABLE_MIRROR=1`.
+- **Robocopy fallback:** только если host-pip bake упал, или `MURAVEI_PORTABLE_MIRROR=1`. **Never** set `MURAVEI_PORTABLE_MIRROR=1` for Mini (mirrors host CUDA).
 - **Перед сборкой:** остановите host `uvicorn` / portable stage (DLL locks). Если AV держит файлы — перезагрузка ПК, затем повтор.
 
 Все пути в скриптах — относительно корня репо / env (`OLLAMA_MODELS`, `%USERPROFILE%\.ollama`, `-OllamaModelsRoot`). Без абсолютных `D:\…` machine paths.
@@ -29,8 +30,8 @@
 | Режим | npm / флаг | Содержимое | ZIP |
 |-------|------------|------------|-----|
 | **Lite** | `npm run portable` | UI + backend + embed Python + **detect YOLO `.pt`** (без seg/SAM/yoloe) | `MuraveiVision_PRO_Portable.zip` |
-| **Mini** | `npm run portable:mini` (`-NoDetectWeights`) | как Lite **без** detect `.pt` / mobileclip (YOLO → 503 до USB-import) | `MuraveiVision_PRO_Mini.zip` |
-| **Full** | `npm run portable:full` (`-FullKit -IncludeAliceVision`) | Lite + Ollama `qwen2.5vl:7b` + torch **cu128** + **`sidecars/colmap`** + **`sidecars/gsplat_examples`** + **`sidecars/alicevision`** (~2.8 GB; `-NoAliceVision` to skip) | `MuraveiVision_PRO_FullKit.zip` |
+| **Mini** | `npm run portable:mini` (`-NoDetectWeights`) | как Lite **без** detect `.pt` / mobileclip; **torch CPU**; target ~540–600 MB | `MuraveiVision_PRO_Mini.zip` |
+| **Full** | `npm run portable:full` (`-FullKit -IncludeAliceVision`) | Lite + Ollama runtime + torch **cu128** + **`sidecars/colmap`** + **`sidecars/gsplat_examples`** + **`sidecars/alicevision`** (`-IncludeOllamaModel` for VL blobs) | `MuraveiVision_PRO_FullKit.zip` |
 
 **Не путать:** «Mini без AI» ≠ Lite. Lite уже с YOLO detect. Настоящий лёгкий кит — **Mini** (`-NoDetectWeights`).
 
