@@ -617,9 +617,6 @@ Or pass -OllamaModelsRoot path\to\store (folder with blobs\ + manifests\).
         if (Test-Path -LiteralPath $f) { Copy-Item -LiteralPath $f -Destination (Join-Path $avDest $name) -Force }
       }
       Copy-Item -LiteralPath (Join-Path $avSrc "windows-x64") -Destination (Join-Path $avDest "windows-x64") -Recurse -Force
-      if (Test-Path -LiteralPath (Join-Path $avSrc "macos-arm64")) {
-        Copy-Item -LiteralPath (Join-Path $avSrc "macos-arm64") -Destination (Join-Path $avDest "macos-arm64") -Recurse -Force
-      }
       Write-Host "  sidecars\alicevision copied (-IncludeAliceVision / FullKit default when staged)"
     } else {
       Write-Host "WARNING: -IncludeAliceVision requested but windows-x64 bins missing — skip." -ForegroundColor Yellow

@@ -140,9 +140,5 @@
       "aliceVision_voctreeStatistics.exe"
     ],
     "runtime_note": "Set ALICEVISION_ROOT to sidecars/alicevision/windows-x64 (absolute at runtime). Requires Microsoft Visual C++ Redistributable. CUDA is OPTIONAL (GPU depth maps)."
-  },
-  "macos-arm64": {
-    "status": "build-from-source",
-    "note": "No macOS or darwin/arm64 prebuilt assets on alicevision/AliceVision releases through v3.3.0; build from source if needed. Do not auto-download."
   }
 }

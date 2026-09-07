@@ -50,7 +50,7 @@
 
 - **Optional sidecar:** Dense/Mesh presets disable with clear Russian `disabled_reason` when `sidecars/alicevision` missing or CUDA unavailable (no CPU depth-map fallback).
 - **Binaries not in git:** fetch via `scripts/fetch_alicevision.ps1`; FullKit may bundle with `-IncludeAliceVision`.
-- **macOS AliceVision:** not in this RC — placeholder `macos-arm64/.gitkeep` only (do not conflate with `feature/macos-mps`).
+- **macOS unsupported:** platforms are Windows native + Linux/WSL2 only; AliceVision sidecar is Windows-x64. Branch `feature/macos-mps` deleted.
 - **Field smoke** of full Dense/Mesh on production footage: pending after RC tag; integration tests cover 9-min clip segment + soft-fail gates.
 - **RESOLVED (2026-09-05): Dense used tiny sparse/0** — multi-model COLMAP left 3 views in `sparse/0` and 24 in `sparse/4`; Dense hardcoded `sparse/0` → soft-fail «только 3 кадров». First patch (`resolve_sparse_dir_for_dense`) was incomplete: (1) landed ~16:56 after a 16:51 Dense click on a pre-fix `:8001`; (2) honored legacy `sparse_dir=sparse/0` overrides; (3) dead-job salvage still converted only `sparse/0`. Hardened: always prefer `get_best_sparse_dir` (points size primary, TXT view count secondary — never `images.bin`÷N heuristics), ignore under-`sparse/` overrides, salvage uses best model. Re-click Dense after backend reload (stale `alicevision_warning` / `alicevision/` cleared on fix).
 - **RESOLVED (2026-09-05): COLMAP text model missing** — Dense failed when `sparse/0` had only `.bin`. Fix: `ensure_colmap_text_model()` auto-runs COLMAP `model_converter` → TXT before AliceVision. Retry Dense after backend reload.

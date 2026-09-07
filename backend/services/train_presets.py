@@ -191,7 +191,7 @@ def presets_for_client() -> list[dict[str, Any]]:
                 eta = CPU_DENSE_ETA_RU
             elif not sys.platform.startswith("win") and not av_ok:
                 disabled = True
-                reason = "AliceVision пока только Windows (macOS — позже)"
+                reason = "AliceVision только Windows (macOS не поддерживается)"
             elif not av_ok:
                 disabled = True
                 reason = "AliceVision не установлен (sidecar / ALICEVISION_ROOT)"

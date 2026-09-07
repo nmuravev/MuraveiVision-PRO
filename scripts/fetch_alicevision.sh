@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # AliceVision offline fetch (POSIX) — reads scripts/alicevision_manifest.json.
-# macOS arm64 placeholder: Windows asset only in current manifest; exits with message.
+# Official release ZIP is Windows-x64 only (macOS unsupported).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MANIFEST="$ROOT/scripts/alicevision_manifest.json"
@@ -53,5 +53,5 @@ for name in ("bin", "lib", "share"):
     if s.is_dir():
         shutil.copytree(s, out / name)
 print(f"Staged AliceVision {chosen.get('version')} → {out}")
-print("Note: current official ZIP is Windows-x64; macOS arm64 is a future port.")
+print("Note: official ZIP is Windows-x64 only (macOS unsupported).")
 PY

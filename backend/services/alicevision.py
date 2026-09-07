@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import platform
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -25,13 +24,12 @@ _logged_version = False
 
 
 def _platform_dir_name() -> str:
+    """Windows + Linux/WSL only — macOS is unsupported (no sidecar)."""
     if sys.platform.startswith("win"):
         return "windows-x64"
-    if sys.platform == "darwin" and platform.machine().lower() in ("arm64", "aarch64"):
-        return "macos-arm64"
     if sys.platform.startswith("linux"):
         return "linux-x64"
-    return "windows-x64"
+    return "unsupported"
 
 
 def alicevision_root() -> Path | None:
