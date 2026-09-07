@@ -4,11 +4,11 @@
 
 - **Snapshot date:** 2026-09-07
 - **Branch:** `main` @ hygiene + binary-free release policy
-- **Commit:** (update after hygiene commit)
+- **Commit:** `84abe6e` — hygiene + slim FullKit dist-copy fix
 - **Unit tests:** 315+
-- **Status:** GitHub releases = changelog only; packs local-only; logs under `logs/`; FullKit slim (no VL model / no SAM in ZIP)
+- **Status:** GitHub releases = changelog only (v3.2.0 assets purged); packs local-only; logs under `logs/`; FullKit slim ~7.5 GB
 - **Last updated by:** repo hygiene + binary-free release policy
-- **Portable:** Mini + FullKit whole ZIPs in `portable/` — internal offline channel (never GitHub assets)
+- **Portable local:** Mini 540 MB / FullKit 7.51 GB (sha256 `775c14e3…`) — internal channel only
 - **Env pack:** win_cuda / win_cpu — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
 
 ## Major Changes in This Release
