@@ -1,6 +1,9 @@
 """Network bases: config, targets exchange, chat."""
 from __future__ import annotations
 
+import ipaddress
+import os
+import socket
 import time
 import uuid
 from typing import Any
@@ -8,6 +11,50 @@ from typing import Any
 from services.db import _connect, init_db
 
 TARGET_TTL_SEC = 24 * 3600
+
+
+def resolve_lan_ipv4() -> str:
+    """Best-effort LAN IPv4 for heartbeat advertise (no external probes).
+
+    Order: MURAVEI_NETWORK_ADVERTISE_IP → first non-loopback RFC1918/psutil → 127.0.0.1.
+    """
+    env = (os.environ.get("MURAVEI_NETWORK_ADVERTISE_IP") or "").strip()
+    if env:
+        try:
+            ipaddress.IPv4Address(env)
+            return env
+        except ValueError:
+            pass
+    candidates: list[str] = []
+    try:
+        import psutil
+
+        for _name, addrs in psutil.net_if_addrs().items():
+            for a in addrs:
+                if getattr(a, "family", None) != socket.AF_INET:
+                    continue
+                ip = str(a.address or "").strip()
+                if not ip or ip.startswith("127.") or ip.startswith("169.254."):
+                    continue
+                candidates.append(ip)
+    except Exception:  # noqa: BLE001
+        candidates = []
+    private: list[str] = []
+    other: list[str] = []
+    for ip in candidates:
+        try:
+            addr = ipaddress.IPv4Address(ip)
+        except ValueError:
+            continue
+        if addr.is_private:
+            private.append(ip)
+        elif not addr.is_loopback and not addr.is_link_local:
+            other.append(ip)
+    if private:
+        return private[0]
+    if other:
+        return other[0]
+    return "127.0.0.1"
 
 
 def ensure_base_id() -> str:
