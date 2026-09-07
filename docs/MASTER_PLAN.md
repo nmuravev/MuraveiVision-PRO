@@ -2,13 +2,13 @@
 
 ## Meta
 
-- **Snapshot date:** 2026-09-05
+- **Snapshot date:** 2026-09-07
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** `b7ae5aa` — Windows CPU+DirectML field edition
-- **Unit tests:** 280 OK
+- **Commit:** (pending) — sparse ranking docs contract (points-primary) + Meta sync
+- **Unit tests:** 280+ OK (incl. views-vs-points disagree case)
 - **E2E specs:** 6+
-- **Status:** CPU profile + DirectML YOLO + win_cpu/win_cuda packs; **do not merge to main**
-- **Last updated by:** feat Intel+AMD field edition (no CUDA)
+- **Status:** Sparse rank contract = points3D size primary / views secondary; CPU+DirectML edition shipped; **do not merge to main**
+- **Last updated by:** fix RECON_3D sparse ranking docs + Meta/TODO/ROADMAP sync
 - **Portable artifacts:** Mini ~0.54 GB; FullKit+AV CUDA; FullKit `-TorchFlavor cpu`
 - **Env pack:** win_cuda ~2952 MB (`5c662a9e…`); win_cpu ~439 MB (`d55f4d49…`) — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md), [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md)
 - **Isolated test copy:** `MuraveiVision-Pro-3.2.0/` on :8001/:3001 (gitignored)

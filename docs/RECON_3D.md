@@ -162,7 +162,7 @@ PyPI `gsplat` is **JIT-only** (no `csrc`). First CUDA call compiles kernels. On 
 
 Expect `model.ply` **≫ 1 MB** and `gsplat_meta.json` with `"gsplat": true`. Tiny ply (~KB) with `"gsplat": true` means train ran but COLMAP gave almost no Gaussians (weak scene).
 
-**Multi-model COLMAP:** if mapper writes several `sparse/N` folders, diagnose / train / bootstrap / in-app recon pick the **largest valid** points cloud (`get_best_sparse_dir`). Trainer staging still copies that model into `gsplat_data/sparse/0/` for gsplat examples.
+**Multi-model COLMAP:** if mapper writes several `sparse/N` folders, diagnose / train / bootstrap / in-app recon / **AliceVision Dense** pick the **best** model via `get_best_sparse_dir` — **largest `points3D.*` primary** (cameras present), then exact registered-view count from `images.txt` secondary. Never `images.bin` size heuristics; never hardcode `sparse/0`. Trainer staging still copies that model into `gsplat_data/sparse/0/` for gsplat examples. See also [ALICEVISION.md](ALICEVISION.md).
 
 ### Install / stage
 

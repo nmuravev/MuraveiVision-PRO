@@ -145,6 +145,44 @@ class ReconDiagnoseTests(unittest.TestCase):
             self.assertNotIn("missing_colmap_sparse", diag.issues)
             self.assertTrue(diag.needs_train)
 
+    def test_best_sparse_points_beat_more_views(self) -> None:
+        """Contract: points3D size primary — many views + tiny cloud lose to few views + large cloud."""
+        with tempfile.TemporaryDirectory() as tmp:
+            job = Path(tmp) / "disagree"
+            sparse0 = job / "colmap" / "sparse" / "0"
+            sparse1 = job / "colmap" / "sparse" / "1"
+            sparse0.mkdir(parents=True)
+            sparse1.mkdir(parents=True)
+
+            def _images_txt(n: int) -> str:
+                lines = ["# Image list with two lines of data per image:\n"]
+                for i in range(1, n + 1):
+                    lines.append(f"{i} 1 0 0 0 0 0 0 1 frame_{i:04d}.jpg\n")
+                    lines.append("\n")
+                return "".join(lines)
+
+            # sparse/0: many registered views, tiny points
+            (sparse0 / "cameras.txt").write_text("# cam\n1 PINHOLE 10 10 5 5 5 5\n", encoding="utf-8")
+            (sparse0 / "images.txt").write_text(_images_txt(20), encoding="utf-8")
+            (sparse0 / "points3D.txt").write_text("# tiny\n1 0 0 0 255 0 0 0\n", encoding="utf-8")
+
+            # sparse/1: few views, large points cloud
+            (sparse1 / "cameras.txt").write_text("# cam\n1 PINHOLE 10 10 5 5 5 5\n", encoding="utf-8")
+            (sparse1 / "images.txt").write_text(_images_txt(3), encoding="utf-8")
+            big_pts = "# 3D point list\n" + "\n".join(
+                f"{i} {i}.0 0.0 0.0 255 0 0 0" for i in range(1, 200)
+            )
+            (sparse1 / "points3D.txt").write_text(big_pts, encoding="utf-8")
+
+            from services.recon_colmap import count_registered_images
+
+            self.assertEqual(count_registered_images(sparse0), 20)
+            self.assertEqual(count_registered_images(sparse1), 3)
+            best = get_best_sparse_dir(job)
+            self.assertIsNotNone(best)
+            assert best is not None
+            self.assertEqual(best.name, "1")
+
 
 if __name__ == "__main__":
     unittest.main()
