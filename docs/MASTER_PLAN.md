@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-07
 - **Branch:** `feature/alicevision-v3.2` → merge to `main` as **v3.2.0** (`--no-ff`)
-- **Commit:** (pending smoke driver + Meta tip)
+- **Commit:** `12f998e` — dual-smoke gate + release prep
 - **Unit tests:** 302
 - **E2E specs:** 6+
 - **Status:** dual-smoke **7/7 PASS** (2026-09-07); network chat MVP + Ollama discovery + AliceVision + CPU/DirectML — releasing to main
