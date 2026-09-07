@@ -1,6 +1,6 @@
 # Field machine: MacBook Pro (Intel) + Windows Boot Camp + AMD Radeon Pro 5500M
 
-Целевая полевая конфигурация **без NVIDIA CUDA**. Цель — выжать максимум из Intel CPU + AMD Radeon (RDNA1) через CPU-бюджеты и DirectML (DX12) для YOLO.
+Целевая полевая конфигурация **без NVIDIA CUDA** под **Windows Boot Camp** (нативный macOS **не поддерживается** — см. [PORTABLE_GUIDE.md](PORTABLE_GUIDE.md)). Цель — выжать максимум из Intel CPU + AMD Radeon (RDNA1) через CPU-бюджеты и DirectML (DX12) для YOLO.
 
 ## Hardware matrix
 

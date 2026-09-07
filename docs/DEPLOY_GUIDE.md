@@ -10,8 +10,9 @@
 2. Распаковать пак **в корень проекта** (появятся `wheels/`, `README_PACK.txt`, …):
    - NVIDIA → `muravei_env_pack_win_cuda.zip`
    - Intel + AMD (без NVIDIA) → `muravei_env_pack_win_cpu.zip`
-3. Запустить `scripts\setup_env.bat`  
-   — или просто `Запустить.bat` (сам вызовет setup, если env нет).
+3. Запустить `scripts\setup_env.bat`
+   — или просто `Запустить.bat` (вызовет `scripts\bootstrap_portable.ps1`: venv audit/self-heal + offline-first).
+   Подробнее: [PORTABLE_GUIDE.md](PORTABLE_GUIDE.md).
 4. Дождаться `Готово: muravei_env установлен.`
 5. Дальше обычный запуск API/UI.
 

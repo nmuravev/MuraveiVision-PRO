@@ -1,0 +1,27 @@
+name: portable-mini-smoke
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/bootstrap_portable.ps1"
+      - "scripts/smoke_portable.ps1"
+      - "scripts/portable_manifest.json"
+      - "backend/services/hardware_detect.py"
+      - "backend/services/portable_bootstrap.py"
+      - "Запустить.bat"
+jobs:
+  mini-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Note on Full smoke
+        run: Write-Host "Z4: Full smoke is local-only; CI runs Mini when ZIP artifact is provided."
+      - name: Mini smoke if ZIP present
+        shell: pwsh
+        run: |
+          if (Test-Path portable/MuraveiVision_PRO_Mini.zip) {
+            powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke_portable.ps1
+          } else {
+            Write-Host "Mini ZIP not in repo (gitignored portable/) — skip smoke; unit tests cover audit."
+            Write-Host "CI: Mini skipped / Local: Full skipped"
+          }

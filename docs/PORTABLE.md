@@ -103,12 +103,12 @@ AliceVision Dense/Mesh: `npm run portable:full` передаёт `-IncludeAliceV
 
 ## Лаунчер `Запустить.bat`
 
-ASCII + CRLF. `COLMAP_ROOT=%~dp0sidecars\colmap` выставляется **только если** sidecar присутствует. `ALICEVISION_ROOT=%~dp0sidecars\alicevision\windows-x64` — если есть `aliceVision_*.exe`. `MURAVEI_SESSION_TRACE=1` по умолчанию.
+ASCII + CRLF. Calls `scripts\bootstrap_portable.ps1` (venv audit / offline-first) before start — see [PORTABLE_GUIDE.md](PORTABLE_GUIDE.md). `COLMAP_ROOT=%~dp0sidecars\colmap` выставляется **только если** sidecar присутствует. `ALICEVISION_ROOT=%~dp0sidecars\alicevision\windows-x64` — если есть `aliceVision_*.exe`. `MURAVEI_SESSION_TRACE=1` по умолчанию.
 
 ## Проверка комплекта
 
 1. Распаковать на чистую машину / другую папку.  
-2. `Запустить.bat`.  
+2. `Запустить.bat` (bootstrap сам доустановит неполный env / пересоберёт битый).  
 3. Lite: YOLO ready; Mini: detect 503 до USB-import; Full: ollama + COLMAP_ROOT.  
-4. Smoke layout:  
-   `.\muravei_env\Scripts\python.exe backend\scripts\smoke_fullkit_layout.py`
+4. Smoke: `powershell -File scripts\smoke_portable.ps1` (Mini); `-Full` только локально.  
+5. Layout: `.\muravei_env\Scripts\python.exe backend\scripts\smoke_fullkit_layout.py`

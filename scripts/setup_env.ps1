@@ -4,16 +4,20 @@
   Create muravei_env from system Python 3.12 and install deps (offline wheels preferred).
 
 .DESCRIPTION
-  Idempotent: if muravei_env\Scripts\python.exe exists → exit 0.
+  Idempotent: if muravei_env\Scripts\python.exe exists → exit 0 (unless -ForceRebuild).
   Prefer wheels/ at repo root (from muravei_env_pack.zip). Else PyPI if online.
+  Paths: repo-relative or MURAVEI_WHEELS_DIR (Z1).
 #>
+param(
+  [switch]$ForceRebuild
+)
 $ErrorActionPreference = "Stop"
 $Repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location -LiteralPath $Repo
 
 $VenvPy = Join-Path $Repo "muravei_env\Scripts\python.exe"
 $Req = Join-Path $Repo "backend\requirements.txt"
-$WheelDir = Join-Path $Repo "wheels"
+$WheelDir = if ($env:MURAVEI_WHEELS_DIR) { $env:MURAVEI_WHEELS_DIR } else { Join-Path $Repo "wheels" }
 
 function Write-RuError([string]$Msg) {
   Write-Host "[ОШИБКА] $Msg" -ForegroundColor Red
@@ -54,9 +58,14 @@ function Find-Python312 {
   return $null
 }
 
-if (Test-Path -LiteralPath $VenvPy) {
+if ((Test-Path -LiteralPath $VenvPy) -and -not $ForceRebuild) {
   Write-Host "muravei_env уже есть — пропуск установки." -ForegroundColor Green
   exit 0
+}
+
+if ($ForceRebuild -and (Test-Path -LiteralPath (Join-Path $Repo "muravei_env"))) {
+  Write-Host "ForceRebuild: удаляю muravei_env ..." -ForegroundColor Yellow
+  Remove-Item -LiteralPath (Join-Path $Repo "muravei_env") -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 if (-not (Test-Path -LiteralPath $Req)) {

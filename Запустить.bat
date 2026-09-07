@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 echo ============================================
-echo   MuraveiVision PRO v3.0
+echo   MuraveiVision PRO v3.2
 echo   Starting...
 echo ============================================
 echo.
@@ -19,8 +19,19 @@ if exist "%~dp0ollama\ollama.exe" (
     echo Ollama not in kit ^(Lite/Mini^). AI analysis needs a system Ollama if available.
 )
 
-REM --- Ensure muravei_env (field: unpack muravei_env_pack.zip then setup_env) ---
-if not exist "%~dp0muravei_env\Scripts\python.exe" (
+REM --- Portable bootstrap (Z2/Z3): stamp missing/stale → audit + offline-first ---
+set "MURAVEI_BOOTSTRAP_YES=1"
+if exist "%~dp0scripts\bootstrap_portable.ps1" (
+    echo Checking portable bootstrap...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\bootstrap_portable.ps1"
+    if errorlevel 1 (
+        echo [ОШИБКА] bootstrap_portable failed.
+        echo Offline: place wheels/ and sidecars/ next to the project.
+        echo See docs\PORTABLE_GUIDE.md
+        pause
+        exit /b 1
+    )
+) else if not exist "%~dp0muravei_env\Scripts\python.exe" (
     if exist "%~dp0scripts\setup_env.bat" (
         echo muravei_env не найден — запускаю scripts\setup_env.bat ...
         call "%~dp0scripts\setup_env.bat"

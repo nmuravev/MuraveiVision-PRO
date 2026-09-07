@@ -89,6 +89,25 @@ async def hardware(_user: dict[str, Any] = Depends(require_role("operator"))) ->
     except Exception:  # noqa: BLE001
         spec["directml_available"] = False
 
+    try:
+        from services.hardware_detect import detect_all
+
+        hw = detect_all()
+        spec["portable_tier"] = (hw.get("tier") or {}).get("tier")
+        spec["portable_tier_label_ru"] = (hw.get("tier") or {}).get("label_ru")
+        spec["build_profile"] = hw.get("build_profile")
+        spec["system_badge_ru"] = hw.get("badge_ru")
+        spec["portable_mismatch"] = hw.get("mismatch")
+        spec["components"] = {
+            "colmap": hw.get("colmap"),
+            "alicevision": hw.get("alicevision"),
+            "ffmpeg": hw.get("ffmpeg"),
+            "python": hw.get("python"),
+            "gpu": hw.get("gpu"),
+        }
+    except Exception as exc:  # noqa: BLE001
+        spec["hardware_detect_error"] = str(exc)
+
     if _sim["active"] == "gpu_oom":
         spec["simulated"] = "gpu_oom"
         spec["vram_used_mb"] = spec.get("vram_total_mb", 8192)

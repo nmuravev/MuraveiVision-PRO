@@ -108,6 +108,14 @@ async def lifespan(app: FastAPI):
         startup_reconnect()
     except Exception as exc:  # noqa: BLE001
         print(f"[SYSTEM] Ollama startup reconnect skip: {exc}")
+    try:
+        from services.accelerator import log_profile_once
+        from services.hardware_detect import log_detect_once
+
+        log_profile_once()
+        log_detect_once()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[SYSTEM] hardware_detect skip: {exc}")
     yield
     print("[SYSTEM] Backend stopping...")
     await stop_network_worker()

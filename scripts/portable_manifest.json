@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "default_profile": "mini",
+  "profiles": {
+    "mini": {
+      "torch": "cpu",
+      "alicevision": false,
+      "yolo_weights": ["nano", "small"],
+      "colmap_max_frames": 150,
+      "colmap_max_frames_min": 100,
+      "max_image_size": 1024,
+      "dense_enabled": false,
+      "dense_disabled_reason_ru": "Mini-сборка: Dense/Mesh отключены (нужен Full)",
+      "mesh_enabled": false,
+      "gsplat_enabled": false,
+      "viewer_lod": "low",
+      "budget_label": "100–150 frames"
+    },
+    "full": {
+      "torch": "cuda_with_cpu_fallback",
+      "alicevision": true,
+      "yolo_weights": ["m", "l"],
+      "colmap_max_frames": 600,
+      "colmap_max_frames_min": 200,
+      "max_image_size": 1600,
+      "dense_enabled": true,
+      "dense_with_caps": true,
+      "mesh_enabled": true,
+      "gsplat_enabled_if_cuda": true,
+      "viewer_lod": "high",
+      "budget_label": "200–600 frames"
+    }
+  },
+  "components": {
+    "colmap_windows_cuda": {
+      "url": "https://github.com/colmap/colmap/releases/download/3.9.1/COLMAP-3.9.1-windows-cuda.zip",
+      "sha256": "PIN_AFTER_DOWNLOAD",
+      "dest_relative": "sidecars/colmap",
+      "archive_relative": "sidecars/colmap/downloads/COLMAP-3.9.1-windows-cuda.zip",
+      "profiles": ["full", "mini"]
+    },
+    "alicevision_windows": {
+      "url": "https://github.com/alicevision/AliceVision/releases/download/v3.3.0/AliceVision-3.3.0-Windows.zip",
+      "sha256": "e6d6026faec6910541a1a9afcfad9aba6c10723bafccaacfc1378c49e6ab0c86",
+      "dest_relative": "sidecars/alicevision/windows-x64",
+      "archive_relative": "sidecars/alicevision/downloads/AliceVision-3.3.0-Windows.zip",
+      "profiles": ["full"]
+    },
+    "torch_cuda": {
+      "index_url": "https://download.pytorch.org/whl/cu128",
+      "profiles": ["full"],
+      "note": "Prefer local wheels/; network index only after RU confirm"
+    }
+  },
+  "notes": "URLs + sha256 live ONLY here (Z1). Never hardcode download URLs in .py/.ps1 logic."
+}

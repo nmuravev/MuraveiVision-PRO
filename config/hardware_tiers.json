@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "tiers": {
+    "2": {
+      "label_ru": "полевая станция",
+      "require_cuda": true,
+      "min_ram_gb": 16,
+      "min_cpu_cores": 8
+    },
+    "1": {
+      "label_ru": "рабочая станция",
+      "require_cuda": false,
+      "min_ram_gb_or": 16,
+      "min_cpu_cores_or": 8
+    },
+    "0": {
+      "label_ru": "офис",
+      "fallback": true
+    }
+  },
+  "notes": "Override with MURAVEI_FORCE_TIER=0|1|2 for tests. Thresholds are inclusive."
+}

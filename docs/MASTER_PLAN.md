@@ -3,14 +3,14 @@
 ## Meta
 
 - **Snapshot date:** 2026-09-07
-- **Branch:** `feature/alicevision-v3.2` → merge to `main` as **v3.2.0** (`--no-ff`)
-- **Commit:** `12f998e` — dual-smoke gate + release prep
-- **Unit tests:** 302
+- **Branch:** `main` @ v3.2.0 + portable bootstrap
+- **Commit:** (portable bootstrap — update after commit)
+- **Unit tests:** 315
 - **E2E specs:** 6+
-- **Status:** dual-smoke **7/7 PASS** (2026-09-07); network chat MVP + Ollama discovery + AliceVision + CPU/DirectML — releasing to main
-- **Last updated by:** release gate dual-smoke + merge prep
-- **Portable artifacts:** Mini ~0.54 GB; FullKit+AV CUDA; FullKit `-TorchFlavor cpu`
-- **Env pack:** win_cuda ~2952 MB; win_cpu ~439 MB — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md), [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md)
+- **Status:** macOS dropped; portable self-bootstrap (Z1–Z5) on Windows + Linux/WSL2; Mini smoke OK / Full local-only
+- **Last updated by:** portable bootstrap + venv audit/self-heal + hardware tiers
+- **Smoke:** `CI: Mini OK / Local: Full skipped` (2026-09-07)
+- **Env pack:** win_cuda ~2952 MB; win_cpu ~439 MB — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md), [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md) (Boot Camp Windows; native macOS unsupported)
 - **Isolated test copy:** `MuraveiVision-Pro-3.2.0/` on :8001/:3001 (gitignored)
 
 ## Major Changes in This Release
