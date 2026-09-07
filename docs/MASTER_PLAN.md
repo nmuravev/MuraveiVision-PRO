@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-07
 - **Branch:** `main` @ v3.2.0 + portable bootstrap
-- **Commit:** (portable bootstrap — update after commit)
+- **Commit:** `75f03c7` — portable self-bootstrap (Z1–Z5)
 - **Unit tests:** 315
 - **E2E specs:** 6+
 - **Status:** macOS dropped; portable self-bootstrap (Z1–Z5) on Windows + Linux/WSL2; Mini smoke OK / Full local-only
