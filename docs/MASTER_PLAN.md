@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-07
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** (pending) — sparse ranking docs contract (points-primary) + Meta sync
+- **Commit:** `58904ff` — sparse ranking docs contract (points-primary) + Meta sync
 - **Unit tests:** 280+ OK (incl. views-vs-points disagree case)
 - **E2E specs:** 6+
 - **Status:** Sparse rank contract = points3D size primary / views secondary; CPU+DirectML edition shipped; **do not merge to main**
