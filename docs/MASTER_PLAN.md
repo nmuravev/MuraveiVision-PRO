@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-07
 - **Branch:** `feature/alicevision-v3.2`
-- **Commit:** (pending) — Ollama discovery + connect panel
+- **Commit:** `12df24b` — Ollama discovery + connect panel
 - **Unit tests:** 292
 - **E2E specs:** 6+
 - **Status:** Ollama auto-discovery ladder + calm connect UI; sparse points-primary; CPU+DirectML; **do not merge to main**
