@@ -97,6 +97,14 @@ cd ..\MuraveiVision-PRO-Base2
 3. На Base-1 отправить цель. На Base-2 в «Входящие» через ~30 с та же `id`, GPS, `source_video`, `direction=in`.
 4. Остановить Base-1: Base-2 UI живой, статус `hub_reachable=false`.
 
+Автоматический gate (hub :8000 + Base2 :8001, свои `muravei.db`):
+
+```
+.\muravei_env\Scripts\python.exe backend\scripts\dual_network_smoke.py
+```
+
+Ожидается 7/7 PASS (bases LAN IP, chat both ways, unread, GPS target, no-dup, targets regression).
+
 ## Диагностика
 
 - `GET /api/detect/status` — mode, model, device, last ms, queue.

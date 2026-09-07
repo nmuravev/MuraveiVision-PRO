@@ -3,12 +3,12 @@
 ## Meta
 
 - **Snapshot date:** 2026-09-07
-- **Branch:** `feature/alicevision-v3.2`
-- **Commit:** `9619300` — network chat MVP (messages sync + ChatPanel + GPS share)
+- **Branch:** `feature/alicevision-v3.2` → merge to `main` as **v3.2.0** (`--no-ff`)
+- **Commit:** (pending smoke driver + Meta tip)
 - **Unit tests:** 302
 - **E2E specs:** 6+
-- **Status:** Network chat MVP (REST message sync, ChatPanel, LAN heartbeat IP); Ollama discovery; sparse points-primary; CPU+DirectML; **do not merge to main** (merge to main later with `--no-ff` — v3.3 stacks on this branch)
-- **Last updated by:** feat network chat MVP v3.2
+- **Status:** dual-smoke **7/7 PASS** (2026-09-07); network chat MVP + Ollama discovery + AliceVision + CPU/DirectML — releasing to main
+- **Last updated by:** release gate dual-smoke + merge prep
 - **Portable artifacts:** Mini ~0.54 GB; FullKit+AV CUDA; FullKit `-TorchFlavor cpu`
 - **Env pack:** win_cuda ~2952 MB; win_cpu ~439 MB — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md), [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md)
 - **Isolated test copy:** `MuraveiVision-Pro-3.2.0/` on :8001/:3001 (gitignored)
