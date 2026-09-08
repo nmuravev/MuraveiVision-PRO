@@ -30,7 +30,15 @@
 - **Stale staging / DLL locks:** fixed-name stage dirs + live host uvicorn → `Remove-Item` / robocopy fails. Fix: timestamped `portable/stage_<Kit>_<stamp>/`, purge of `stage_*` / `*.locked_*` at start; stop backend before build; reboot if AV holds DLLs.
 - **`cacert.pem` vanishes mid-pip:** staged `python -m pip` self-upgrade deletes vendor CA while `SSL_CERT_FILE` still points at it. Fix: host `pip --python <staged>`; stable `portable/cache/cacert.pem` + env pins.
 - **AV breaking staged pip (`INSTALLER*.tmp`):** prefer offline `portable/cache/wheels` (`scripts/cache_portable_wheels.ps1`); robocopy host site-packages only as fallback / `MURAVEI_PORTABLE_MIRROR=1`. See [PORTABLE.md](PORTABLE.md).
-- **Mini fat ZIP (~3 GB) from CUDA torch:** `MURAVEI_PORTABLE_MIRROR=1` or unfiltered `--find-links` installed host/`+cu*` torch into Mini. Fix: profile-driven selection ([`portable_torch_policy.py`](../scripts/portable_torch_policy.py)) — Mini/Lite force CPU + post-stage `torch.version.cuda is None`; FullKit CUDA assert `is not None`; keep both wheels in cache. Do not mirror host env for Mini.
+- **Mini fat ZIP from CUDA torch:** `MURAVEI_PORTABLE_MIRROR=1` or unfiltered `--find-links` installed host/`+cu*` torch into Mini. Fix: profile-driven selection — Mini force CPU + post-stage `torch.version.cuda is None`. Size gate now **~3.5–4.5 GB** (with intentional SAM3), reject &gt;5 GB — not the old ~500 MB “lightweight” Mini.
+- **Embed `Scripts\python.exe` trap:** … Fix: remove `Scripts\python.exe` from portable bake; `Запустить.bat` prefers `muravei_env\python.exe`.
+
+## Detect out-of-box / packs (2026-09-08)
+
+- **Mini is no longer “lightweight”:** deliberate air-gap tradeoff — ships tactical YOLO + **sam3.pt** (~3.3 GB) so «Сканировать»/«Сегментация» work with zero downloads. See [PORTABLE_GUIDE.md](PORTABLE_GUIDE.md).
+- **CPU SAM3:** медленно (~минуты/кадр); one-time RU ETA + dismiss in `config/local`.
+- **Ollama system-optional:** not bundled in Mini or FullKit; install separately / air-gap blobs to `OLLAMA_MODELS`.
+- **Tactical weights only:** no COCO s/m/l download at build; ladder l-ft&gt;m-ft&gt;s-ft&gt;n-ft&gt;n. Train larger ft weights → next rebuild picks them up.
 
 ## Intel + AMD Radeon (без NVIDIA / RDNA1)
 

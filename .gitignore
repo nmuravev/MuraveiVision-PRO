@@ -66,6 +66,8 @@ desktop.ini
 *.jpeg
 !docs/*.png
 !docs/*.jpg
+!assets/smoke_sample/*.jpg
+!assets/smoke_sample/**/*.jpg
 
 # Model weights (keep only if <10MB)
 *.pt

@@ -53,6 +53,7 @@ class YoloDirectmlTests(unittest.TestCase):
             weights = Path(td) / "toy.pt"
             weights.write_bytes(b"fake-pt-bytes-xxxx")
             onnx = onnx_cache_path(weights)
+            onnx.parent.mkdir(parents=True, exist_ok=True)
             onnx.write_bytes(b"x" * 2048)
             # Newer onnx than pt → no export call
             with mock.patch("ultralytics.YOLO") as yolo_cls:
@@ -68,6 +69,7 @@ class YoloDirectmlTests(unittest.TestCase):
 
             class _FakeModel:
                 def export(self, **_kwargs):
+                    out.parent.mkdir(parents=True, exist_ok=True)
                     out.write_bytes(b"y" * 2048)
                     return str(out)
 
@@ -75,6 +77,7 @@ class YoloDirectmlTests(unittest.TestCase):
                 path = ensure_onnx_export(weights, imgsz=640)
                 self.assertTrue(path.is_file())
                 self.assertGreater(path.stat().st_size, 1024)
+                self.assertIn("onnx_cache", str(path).replace("\\", "/"))
 
 
 if __name__ == "__main__":

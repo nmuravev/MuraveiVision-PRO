@@ -198,7 +198,20 @@ async def seg_batch_abort(
 async def sam3_status(
     _user: dict[str, Any] = Depends(require_role("operator")),
 ) -> dict[str, Any]:
-    return get_sam3_engine().status()
+    from services.accelerator import is_cpu_profile
+    from services.local_ui_flags import sam3_cpu_eta_dismissed
+
+    st = get_sam3_engine().status()
+    cpu = bool(is_cpu_profile())
+    show_eta = bool(st.get("ready")) and cpu and not sam3_cpu_eta_dismissed()
+    st["cpu_profile"] = cpu
+    st["cpu_eta_ru"] = (
+        "SAM3 на CPU: ~минуты на кадр"
+        if show_eta
+        else ""
+    )
+    st["cpu_eta_show"] = show_eta
+    return st
 
 
 @router.post("/sam3/load")

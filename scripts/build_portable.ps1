@@ -1,55 +1,39 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Сборка MuraveiVision PRO Portable ZIP (Lite, Mini, или Full Field Kit).
+  Сборка MuraveiVision PRO Portable ZIP (Mini или Full Field Kit).
 
 .DESCRIPTION
-  Lite (по умолчанию):
-  - npm run build → dist/
-  - Embeddable Python 3.12.10 → stage\muravei_env (+ get-pip + requirements)
-  - backend, dist, detect-веса, YAML, Запустить.bat
-  - ZIP: portable\MuraveiVision_PRO_Portable.zip
-
-  Mini (-NoDetectWeights):
-  - то же без detect .pt / mobileclip (UI/geo/отчёты; YOLO → 503 до USB-import)
-  - torch/torchvision = CPU only (never CUDA; never host-mirror CUDA)
-  - ZIP: portable\MuraveiVision_PRO_Mini.zip (~540–600 MB target)
+  Mini (-Mini):
+  - Embeddable Python 3.12.10 + dist/backend
+  - tactical YOLO26 *.pt (copy-only) + exactly one sam3.pt
+  - torch CPU + onnxruntime-directml
+  - ZIP: portable\MuraveiVision_PRO_Mini.zip (~3.5–4.5 GB with SAM3)
+  - Ollama NOT bundled (system-optional)
 
   FullKit (-FullKit):
-  - то же + ollama runtime (exe/lib); VL-модель НЕ бандлится (по умолчанию)
-  - опционально -IncludeOllamaModel для qwen2.5vl:7b
-  - sidecars\colmap + sidecars\gsplat_examples (3D)
-  - torch: CUDA cu128 by default (-TorchFlavor cpu → CPU)
-  - ZIP: portable\MuraveiVision_PRO_FullKit.zip (Zip64)
-    CPU flavor: MuraveiVision_PRO_FullKit_win_cpu.zip
+  - same weights + sam3 + sidecars (COLMAP/gsplat/AliceVision)
+  - torch CUDA cu128 by default (-TorchFlavor cpu → CPU)
+  - ZIP: portable\MuraveiVision_PRO_FullKit.zip
+  - Ollama NOT bundled
 
-  Torch wheel selection is PROFILE-DRIVEN (scripts/portable_torch_policy.py):
-  Mini/Lite → CPU; FullKit → CUDA unless -TorchFlavor cpu.
-  portable/cache/wheels may hold BOTH variants — never install "first found".
+  Lite (no -Mini/-FullKit): legacy Portable.zip with same weight rules.
+  -NoDetectWeights: debug-only empty models (not a product kit).
 
-  Только muravei_env / embed 3.12.10 — никогда host Python 3.14.
-  Build-time downloads need network (or offline wheels/); field ZIP is air-gap.
-  GitHub releases = changelog only — never upload this ZIP to GitHub.
-
-  Staging: unique portable\stage_<Kit>_<timestamp>\ each run; ZIP names stay stable.
-  Deps: host muravei_env pip --python <staged> (prefer portable\cache\wheels offline).
-  Robocopy host site-packages only as fallback (or MURAVEI_PORTABLE_MIRROR=1).
-  NEVER use MURAVEI_PORTABLE_MIRROR=1 for Mini (mirrors host CUDA).
+  Never download detect weights at build time (tactical .pt copy-only).
+  Torch profile: Mini/Lite → CPU; FullKit → CUDA unless -TorchFlavor cpu.
 #>
 param(
   [switch]$SkipNpmBuild,
   [switch]$FetchEmbeddablePython,
   [switch]$SkipZip,
   [switch]$FullKit,
+  [switch]$Mini,
   [switch]$NoDetectWeights,
   [switch]$IncludeAliceVision,
   [switch]$NoAliceVision,
-  [switch]$IncludeOllamaModel,
   [ValidateSet("cuda", "cpu")]
-  [string]$TorchFlavor = "cuda",
-  [string]$OllamaZipPath = "",
-  [string]$OllamaVersion = "v0.11.4",
-  [string]$OllamaModelsRoot = ""
+  [string]$TorchFlavor = "cuda"
 )
 
 $ErrorActionPreference = "Stop"
@@ -69,14 +53,19 @@ if ($FullKit) {
     Join-Path $OutRoot "MuraveiVision_PRO_FullKit.zip"
   }
   $KitKind = if ($TorchFlavor -eq "cpu") { "FULL KIT (CPU / no CUDA torch)" } else { "FULL KIT" }
-} elseif ($NoDetectWeights) {
+  $KitMarker = "full"
+} elseif ($Mini -or $NoDetectWeights) {
+  # Product Mini uses -Mini (with weights). -NoDetectWeights is debug-only empty models.
   $KitTag = "Mini"
   $ZipPath = Join-Path $OutRoot "MuraveiVision_PRO_Mini.zip"
-  $KitKind = "Mini (no detect weights)"
+  $KitKind = if ($NoDetectWeights -and -not $Mini) { "Mini (debug: no detect weights)" } else { "Mini (tactical YOLO + SAM3)" }
+  $KitMarker = "mini"
+  if ($Mini) { $NoDetectWeights = $false }
 } else {
   $KitTag = "Lite"
   $ZipPath = Join-Path $OutRoot "MuraveiVision_PRO_Portable.zip"
   $KitKind = "Lite"
+  $KitMarker = "mini"
 }
 # Unique stage per run — avoids stale DLL locks on fixed-name dirs
 $StageName = "stage_${KitTag}_$Stamp"
@@ -130,24 +119,6 @@ function Write-Zip64([string]$SourceDir, [string]$DestZip) {
   )
 }
 
-function Resolve-OllamaStoreRoot([string]$Explicit) {
-  # Build-machine only (never baked into ZIP). No machine-specific absolute paths.
-  $candidates = @()
-  if ($Explicit) { $candidates += $Explicit }
-  if ($env:OLLAMA_MODELS) { $candidates += $env:OLLAMA_MODELS }
-  $candidates += (Join-Path $env:USERPROFILE ".ollama")
-  $candidates += (Join-Path $env:USERPROFILE ".ollama\models")
-  foreach ($c in $candidates) {
-    if (-not $c) { continue }
-    if (-not (Test-Path -LiteralPath $c)) { continue }
-    $manifest = Join-Path $c "manifests\registry.ollama.ai\library\qwen2.5vl\7b"
-    $blobs = Join-Path $c "blobs"
-    if ((Test-Path -LiteralPath $manifest) -and (Test-Path -LiteralPath $blobs)) {
-      return (Resolve-Path -LiteralPath $c).Path
-    }
-  }
-  return $null
-}
 
 function Remove-StalePortableStages([string]$Root) {
   if (-not (Test-Path -LiteralPath $Root)) { return }
@@ -174,29 +145,23 @@ function Remove-StalePortableStages([string]$Root) {
 $TorchPolicyScript = Join-Path $PSScriptRoot "portable_torch_policy.py"
 $WantCudaTorch = $false
 if ($FullKit -and $TorchFlavor -eq "cuda") { $WantCudaTorch = $true }
-$TorchKitName = if ($FullKit) { "fullkit" } elseif ($NoDetectWeights) { "mini" } else { "lite" }
+$TorchKitName = if ($FullKit) { "fullkit" } elseif ($Mini -or $NoDetectWeights) { "mini" } else { "lite" }
 
 function Get-TorchPolicyJson {
   param([string]$Kit, [string]$Flavor = "cuda", [string]$ListWheels = "")
-  $args = @($TorchPolicyScript, "--kit", $Kit, "--flavor", $Flavor, "--json")
-  if ($ListWheels) { $args += @("--list-wheels", $ListWheels) }
+  $pyArgs = @($TorchPolicyScript, "--kit", $Kit, "--flavor", $Flavor, "--json")
+  if ($ListWheels) { $pyArgs += @("--list-wheels", $ListWheels) }
   $prevEap = $ErrorActionPreference
   $ErrorActionPreference = "Continue"
-  $raw = & $HostPy @args 2>&1 | Out-String
+  $raw = & $HostPy @pyArgs 2>&1 | Out-String
   $ErrorActionPreference = $prevEap
   if (-not $raw) { throw "portable_torch_policy.py produced no output" }
-  # Policy CLI may exit 2 on cache mismatch when listing; still parse JSON from stdout
-  $jsonLine = ($raw -split "`n" | Where-Object { $_.Trim().StartsWith("{") } | Select-Object -First 1)
-  if (-not $jsonLine) {
-    # multi-line JSON
-    $start = $raw.IndexOf("{")
-    $end = $raw.LastIndexOf("}")
-    if ($start -ge 0 -and $end -gt $start) {
-      $jsonLine = $raw.Substring($start, $end - $start + 1)
-    }
-  }
-  if (-not $jsonLine) { throw "failed to parse torch policy JSON: $raw" }
-  return ($jsonLine | ConvertFrom-Json)
+  # Pretty-printed JSON spans lines — extract from first { to last }
+  $start = $raw.IndexOf("{")
+  $end = $raw.LastIndexOf("}")
+  if ($start -lt 0 -or $end -le $start) { throw "failed to parse torch policy JSON: $raw" }
+  $jsonText = $raw.Substring($start, $end - $start + 1)
+  return ($jsonText | ConvertFrom-Json)
 }
 
 function New-FilteredWheelFindLinks {
@@ -299,28 +264,30 @@ function Install-ProfileTorch {
   if ($LASTEXITCODE -ne 0) { throw "profile torch ($label) install failed" }
 
   if (-not $WantCuda) {
-    # Prefer DirectML on Windows field kits; fall back to CPU ORT
-    $ortArgs = @("--python", $PyExe, "install", "--force-reinstall", "--no-warn-script-location")
-    if ($HasWheels -and -not $usedCache) {
-      # already online path
-    }
+    # Prefer DirectML on Windows field kits; fall back to CPU ORT.
+    # Use --no-deps so onnxruntime-directml cannot bump numpy to 2.x (requirements pin <2).
+    $ortArgs = @("--python", $PyExe, "install", "--force-reinstall", "--no-deps", "--no-warn-script-location")
     if ($HasWheels) {
       $ortArgs += @("--no-index", "--find-links", $WheelDir, "onnxruntime-directml")
       & $HostPyExe -m pip @ortArgs
       if ($LASTEXITCODE -ne 0) {
         Write-Host "onnxruntime-directml not in cache — trying online / onnxruntime" -ForegroundColor Yellow
-        & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-warn-script-location --no-cache-dir "onnxruntime-directml>=1.16.0"
+        & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-deps --no-warn-script-location --no-cache-dir "onnxruntime-directml>=1.16.0"
         if ($LASTEXITCODE -ne 0) {
-          & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-warn-script-location --no-cache-dir "onnxruntime>=1.16.0"
+          & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-deps --no-warn-script-location --no-cache-dir "onnxruntime>=1.16.0"
           if ($LASTEXITCODE -ne 0) { throw "onnxruntime (CPU/DirectML) install failed for CPU kit" }
         }
       }
     } else {
-      & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-warn-script-location --no-cache-dir "onnxruntime-directml>=1.16.0"
+      & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-deps --no-warn-script-location --no-cache-dir "onnxruntime-directml>=1.16.0"
       if ($LASTEXITCODE -ne 0) {
-        & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-warn-script-location --no-cache-dir "onnxruntime>=1.16.0"
+        & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-deps --no-warn-script-location --no-cache-dir "onnxruntime>=1.16.0"
         if ($LASTEXITCODE -ne 0) { throw "onnxruntime (CPU/DirectML) install failed for CPU kit" }
       }
+    }
+    # Re-assert numpy pin after ORT (cache may hold numpy 2.x as transitive)
+    if ($HasWheels) {
+      & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-deps --no-warn-script-location --no-index --find-links $WheelDir "numpy>=1.26.0,<2" 2>&1 | Out-Host
     }
   }
 
@@ -334,39 +301,6 @@ function Install-ProfileTorch {
   Write-Host "Torch profile assert OK ($label)" -ForegroundColor Green
 }
 
-function Copy-OllamaModelQwen([string]$StoreRoot, [string]$DestModels) {
-  $manifestRel = "manifests\registry.ollama.ai\library\qwen2.5vl\7b"
-  $manifestSrc = Join-Path $StoreRoot $manifestRel
-  Assert-File $manifestSrc
-  $json = Get-Content -LiteralPath $manifestSrc -Raw | ConvertFrom-Json
-  $digests = New-Object System.Collections.Generic.List[string]
-  if ($json.config.digest) { $digests.Add([string]$json.config.digest) }
-  foreach ($layer in $json.layers) {
-    if ($layer.digest) { $digests.Add([string]$layer.digest) }
-  }
-  $destBlobs = Join-Path $DestModels "blobs"
-  $destManifestDir = Join-Path $DestModels "manifests\registry.ollama.ai\library\qwen2.5vl"
-  New-Item -ItemType Directory -Force -Path $destBlobs | Out-Null
-  New-Item -ItemType Directory -Force -Path $destManifestDir | Out-Null
-  Copy-Item -LiteralPath $manifestSrc -Destination (Join-Path $destManifestDir "7b") -Force
-  $srcBlobs = Join-Path $StoreRoot "blobs"
-  $copied = 0
-  $bytes = [int64]0
-  foreach ($d in $digests) {
-    $fileName = ($d -replace "^sha256:", "sha256-")
-    $src = Join-Path $srcBlobs $fileName
-    if (-not (Test-Path -LiteralPath $src)) {
-      throw "Missing blob for $d at $src"
-    }
-    $dst = Join-Path $destBlobs $fileName
-    if (-not (Test-Path -LiteralPath $dst)) {
-      Copy-Item -LiteralPath $src -Destination $dst -Force
-    }
-    $copied++
-    $bytes += (Get-Item -LiteralPath $src).Length
-  }
-  Write-Host ("  qwen2.5vl:7b blobs={0} size={1:N1} GB" -f $copied, ($bytes / 1GB))
-}
 
 # --- Host muravei_env torch probe (dev machine only) ---
 if (Test-Path -LiteralPath $HostPy) {
@@ -427,43 +361,42 @@ foreach ($rel in @(
   New-Item -ItemType Directory -Force -Path (Join-Path $Stage $rel) | Out-Null
 }
 
-Write-Host "Copy detect weights (no seg/yoloe)..."
-$weightSources = @(
-  (Join-Path $Repo "runs\detect\train\weights"),
-  (Join-Path $Repo "assets\models")
-)
-$destW = Join-Path $Stage "runs\detect\train\weights"
+Write-Host "Copy tactical detect weights + sam3.pt (copy-only, no downloads)..."
 $destA = Join-Path $Stage "assets\models"
+New-Item -ItemType Directory -Force -Path $destA | Out-Null
 if ($NoDetectWeights) {
-  Write-Host "  -NoDetectWeights: skip .pt / mobileclip (Mini kit)" -ForegroundColor Yellow
+  Write-Host "  -NoDetectWeights: skip .pt / sam3 (debug empty models)" -ForegroundColor Yellow
 } else {
+  $weightSources = @(
+    (Join-Path $Repo "assets\models"),
+    (Join-Path $Repo "runs\detect\train\weights")
+  )
   foreach ($srcDir in $weightSources) {
     if (-not (Test-Path -LiteralPath $srcDir)) { continue }
-    Get-ChildItem -LiteralPath $srcDir -File -Filter "*.pt" -ErrorAction SilentlyContinue |
+    Get-ChildItem -LiteralPath $srcDir -File -Filter "yolo26*.pt" -ErrorAction SilentlyContinue |
       Where-Object {
         $n = $_.Name.ToLowerInvariant()
-        ($n -notmatch "seg") -and ($n -notmatch "yoloe") -and ($n -notmatch "sam") -and ($_.Length -gt 1024)
+        ($n -notmatch "seg") -and ($n -notmatch "yoloe") -and ($_.Length -gt 1024)
       } |
       ForEach-Object {
+        $dest = Join-Path $destA $_.Name
+        if (Test-Path -LiteralPath $dest) { return }
         Write-Host ("  {0} → assets/models ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB))
-        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $destA $_.Name) -Force
+        Copy-Item -LiteralPath $_.FullName -Destination $dest -Force
       }
   }
-
-  # Prefer yolo26n-ft.pt as best when FullKit
-  $ft = Join-Path $destA "yolo26n-ft.pt"
-  $bestA = Join-Path $destA "best.pt"
-  $y26 = Join-Path $destA "yolo26n.pt"
-  if ($FullKit -and (Test-Path -LiteralPath $ft)) {
-    Copy-Item $ft $bestA -Force
-    Write-Host "  mirrored yolo26n-ft.pt → assets/models/best.pt"
-  } elseif ((-not (Test-Path $bestA) -or (Get-Item $bestA).Length -lt 1024) -and (Test-Path $y26)) {
-    Copy-Item $y26 $bestA -Force
-    Write-Host "  mirrored yolo26n.pt → assets/models/best.pt"
+  $samSrc = Join-Path $Repo "assets\models\sam3.pt"
+  $samDst = Join-Path $destA "sam3.pt"
+  if (Test-Path -LiteralPath $samSrc) {
+    Copy-Item -LiteralPath $samSrc -Destination $samDst -Force
+    Write-Host ("  sam3.pt → assets/models ({0:N1} MB)" -f ((Get-Item $samSrc).Length / 1MB))
+  } else {
+    throw "BUILD FAIL: assets/models/sam3.pt missing — required in both packs (C3)"
   }
-
-  if ($FullKit -and -not (Test-Path -LiteralPath $ft)) {
-    Write-Host "WARNING: yolo26n-ft.pt missing in assets/models — FullKit will ship other detect weights if any." -ForegroundColor Yellow
+  $yoloHits = @(Get-ChildItem -LiteralPath $destA -File -Filter "yolo26*.pt" -EA SilentlyContinue |
+    Where-Object { $_.Name -notmatch "seg" -and $_.Length -gt 1024 })
+  if ($yoloHits.Count -lt 1) {
+    throw "BUILD FAIL: no tactical yolo26*.pt under assets/models after copy"
   }
 }
 
@@ -471,22 +404,13 @@ if (Test-Path (Join-Path $Repo "military_classes.yaml")) {
   Copy-Item (Join-Path $Repo "military_classes.yaml") $Stage -Force
 }
 
-if (-not $NoDetectWeights) {
-  $clipCandidates = @(
-    (Join-Path $Repo "assets\models\mobileclip2_b.ts"),
-    (Join-Path $Repo "mobileclip2_b.ts")
-  )
-  foreach ($clip in $clipCandidates) {
-    if (-not (Test-Path $clip)) { continue }
-    $sz = (Get-Item $clip).Length / 1MB
-    if ($sz -lt 280 -or $FullKit) {
-      Write-Host ("Copy mobileclip2_b.ts → assets/models ({0:N0} MB)" -f $sz)
-      Copy-Item $clip (Join-Path $destA "mobileclip2_b.ts") -Force
-    } else {
-      Write-Host "Skip oversized mobileclip2_b.ts (use -FullKit to force)"
-    }
-    break
-  }
+# Smoke sample (CC0 synthetic) for portable functional smoke
+$smokeSrc = Join-Path $Repo "assets\smoke_sample"
+if (Test-Path -LiteralPath $smokeSrc) {
+  $smokeDst = Join-Path $Stage "assets\smoke_sample"
+  New-Item -ItemType Directory -Force -Path $smokeDst | Out-Null
+  Copy-Item -LiteralPath (Join-Path $smokeSrc "*") -Destination $smokeDst -Force
+  Write-Host "  assets/smoke_sample copied"
 }
 
 Copy-Item (Join-Path $Repo "Запустить.bat") $Stage -Force
@@ -496,6 +420,9 @@ Copy-Item (Join-Path $Repo "README.md") $Stage -Force
 # Stamp VERSION at pack root (single source for banner + /api/health)
 Set-Content -LiteralPath (Join-Path $Stage "VERSION") -Value $AppVersion -Encoding ascii -NoNewline
 Set-Content -LiteralPath (Join-Path $Repo "VERSION") -Value $AppVersion -Encoding ascii -NoNewline
+Set-Content -LiteralPath (Join-Path $Stage "KIT") -Value $KitMarker -Encoding ascii -NoNewline
+Write-Host "KIT marker: $KitMarker"
+
 
 foreach ($bad in @(
   (Join-Path $Stage "muravei.db"),
@@ -552,10 +479,17 @@ if ($FetchEmbeddablePython) {
   & $pyExe $getPip --no-warn-script-location
   if ($LASTEXITCODE -ne 0) { throw "get-pip failed" }
 
+  # Do NOT copy python.exe into Scripts\ — without python*._pth beside it, Windows
+  # resolves sys.prefix to the host/system install (same binary, wrong site-packages).
+  # Запустить.bat prefers muravei_env\python.exe (embed root). Remove any stale copy.
   $scriptsPy = Join-Path $PyHome "Scripts\python.exe"
-  if (-not (Test-Path $scriptsPy)) {
-    New-Item -ItemType Directory -Force -Path (Join-Path $PyHome "Scripts") | Out-Null
-    Copy-Item $pyExe $scriptsPy -Force
+  if (Test-Path -LiteralPath $scriptsPy) {
+    Remove-Item -LiteralPath $scriptsPy -Force -ErrorAction SilentlyContinue
+    Write-Host "Removed Scripts\python.exe (embed must use root python.exe + ._pth)" -ForegroundColor Yellow
+  }
+  $scriptsPyw = Join-Path $PyHome "Scripts\pythonw.exe"
+  if (Test-Path -LiteralPath $scriptsPyw) {
+    Remove-Item -LiteralPath $scriptsPyw -Force -ErrorAction SilentlyContinue
   }
 
   # Harden TLS for embeddable pip: vendor cacert can vanish during pip self-upgrade
@@ -615,7 +549,7 @@ if ($FetchEmbeddablePython) {
   $hasWheels = (Test-Path -LiteralPath $wheelDir) -and (
     $null -ne (Get-ChildItem -LiteralPath $wheelDir -File -ErrorAction SilentlyContinue | Select-Object -First 1)
   )
-  if ($NoDetectWeights -and ($env:MURAVEI_PORTABLE_MIRROR -eq "1")) {
+  if (($Mini -or $NoDetectWeights) -and ($env:MURAVEI_PORTABLE_MIRROR -eq "1")) {
     Write-Host "WARNING: MURAVEI_PORTABLE_MIRROR=1 with Mini — host CUDA may be mirrored; profile torch force will reinstall CPU" -ForegroundColor Yellow
   }
   $bakeFindLinks = $wheelDir
@@ -686,63 +620,9 @@ if ($FetchEmbeddablePython) {
   }
 }
 
-# --- FullKit: Ollama binary + models ---
+# --- FullKit: 3D sidecars (Ollama NOT bundled — system-optional) ---
 if ($FullKit) {
-  Write-Host "FullKit: bundling Ollama..." -ForegroundColor Yellow
-  New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
-  $ollamaZip = $OllamaZipPath
-  if (-not $ollamaZip) {
-    $ollamaZip = Join-Path $CacheDir "ollama-windows-amd64-$OllamaVersion.zip"
-  }
-  if (-not (Test-Path -LiteralPath $ollamaZip)) {
-    $url = "https://github.com/ollama/ollama/releases/download/$OllamaVersion/ollama-windows-amd64.zip"
-    Write-Host "Downloading $url ..." -ForegroundColor Yellow
-    Invoke-WebRequest -Uri $url -OutFile $ollamaZip
-  } else {
-    Write-Host "Using Ollama zip: $ollamaZip"
-  }
-  Assert-File $ollamaZip
-
-  $ollamaStage = Join-Path $Stage "ollama"
-  New-Item -ItemType Directory -Force -Path $ollamaStage | Out-Null
-  Expand-Archive -LiteralPath $ollamaZip -DestinationPath $ollamaStage -Force
-
-  $ollamaExe = Join-Path $ollamaStage "ollama.exe"
-  if (-not (Test-Path -LiteralPath $ollamaExe)) {
-    $found = Get-ChildItem -LiteralPath $ollamaStage -Recurse -Filter "ollama.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($found) {
-      # Flatten if nested
-      Write-Host "ollama.exe found at $($found.FullName) — keeping tree as extracted"
-    } else {
-      throw "ollama.exe not found after extract"
-    }
-  }
-
-  $storeRoot = Resolve-OllamaStoreRoot $OllamaModelsRoot
-  if ($IncludeOllamaModel) {
-    if (-not $storeRoot) {
-      throw @"
-FullKit -IncludeOllamaModel: model qwen2.5vl:7b not found.
-
-Checked: -OllamaModelsRoot, OLLAMA_MODELS, %USERPROFILE%\.ollama (and .ollama\models).
-
-On the build machine run:
-  ollama pull qwen2.5vl:7b
-
-Or pass -OllamaModelsRoot path\to\store (folder with blobs\ + manifests\).
-"@
-    }
-    Write-Host "Ollama store: $storeRoot"
-    $destModels = Join-Path $ollamaStage "models"
-    Write-Host "Copying ONLY qwen2.5vl:7b into $destModels ..." -ForegroundColor Yellow
-    New-Item -ItemType Directory -Force -Path $destModels | Out-Null
-    Copy-OllamaModelQwen -StoreRoot $storeRoot -DestModels $destModels
-    $checkManifest = Join-Path $destModels "manifests\registry.ollama.ai\library\qwen2.5vl\7b"
-    Assert-File $checkManifest
-  } else {
-    Write-Host "Ollama VL model NOT bundled (default). On target: ollama pull qwen2.5vl:7b" -ForegroundColor Cyan
-  }
-
+  Write-Host "FullKit: Ollama runtime NOT bundled (install separately)." -ForegroundColor Cyan
   # PORTABLE_README for Full
   $readmeFull = Join-Path $Repo "scripts\PORTABLE_README_FULL.md"
   if (Test-Path -LiteralPath $readmeFull) {
@@ -798,16 +678,16 @@ Or pass -OllamaModelsRoot path\to\store (folder with blobs\ + manifests\).
   }
 }
 
-$kitLabel = if ($FullKit) { "Full Field Kit" } elseif ($NoDetectWeights) { "Mini (no detect weights)" } else { "Portable Lite" }
+$kitLabel = if ($FullKit) { "Full Field Kit" } elseif ($Mini -or $KitMarker -eq "mini") { "Mini (tactical YOLO + SAM3)" } else { "Portable Lite" }
 $modelsLine = if ($NoDetectWeights) {
-  "assets\models\        (empty — import .pt via USB / Система)"
+  "assets\models\        (empty — debug NoDetectWeights)"
 } else {
-  "assets\models\        (detect .pt; no seg/SAM in Lite copy filter)"
+  "assets\models\        (tactical yolo26*.pt + sam3.pt exactly once)"
 }
 $sidecarLine = if ($FullKit) {
-  "sidecars\colmap\      (COLMAP)`nsidecars\gsplat_examples\  (trainer)`nsidecars\alicevision\  (optional Dense/Mesh)`nollama\               (ollama.exe + lib; VL: ollama pull на цели)`nPORTABLE_README.md"
+  "sidecars\colmap\      (COLMAP)`nsidecars\gsplat_examples\  (trainer)`nsidecars\alicevision\  (optional Dense/Mesh)`nPORTABLE_README.md`n(Ollama не в комплекте — поставьте отдельно)"
 } else {
-  "README.md"
+  "README.md`n(Ollama не в комплекте — поставьте отдельно)"
 }
 $note = @"
 MuraveiVision PRO v$AppVersion — $kitLabel
@@ -828,25 +708,41 @@ PIN: operator 1234567 / engineer 0000000 / master 0987907
 Python: ONLY muravei_env (3.12) — never system 3.14.
 CPU Intel/AMD amd64 OK; NVIDIA recommended for realtime YOLO/VLM.
 Offline map tiles (assets/map_tiles) are NOT in this ZIP — ship separately if needed.
-VL-модель не в комплекте: на цели ``ollama pull qwen2.5vl:7b`` (опционально).
+Ollama не в комплекте: поставьте отдельно; air-gap — installer + blob в OLLAMA_MODELS.
 Бинарные паки не публикуются на GitHub — внутренний офлайн-канал.
 "@
 Set-Content -LiteralPath (Join-Path $Stage "PORTABLE.txt") -Value $note -Encoding UTF8
 
 # --- Hygiene asserts before zip (fail loud) ---
 function Assert-SlimStageHygiene {
-  $modelsDir = Join-Path $Stage "ollama\models"
-  if ((Test-Path $modelsDir) -and -not $IncludeOllamaModel) {
-    $mBytes = (Get-ChildItem $modelsDir -Recurse -File -EA SilentlyContinue | Measure-Object Length -Sum).Sum
-    if ($mBytes -gt 1MB) { throw "HYGIENE: ollama/models present ($([math]::Round($mBytes/1GB,2)) GB) without -IncludeOllamaModel" }
+  $ollamaDir = Join-Path $Stage "ollama"
+  if (Test-Path -LiteralPath $ollamaDir) {
+    throw "HYGIENE: ollama/ dir present in stage — Ollama must not be bundled"
   }
-  $samHits = Get-ChildItem (Join-Path $Stage "assets\models") -File -Filter "*sam*" -EA SilentlyContinue
-  if ($samHits) { throw "HYGIENE: sam* weights in assets/models: $($samHits.Name -join ', ')" }
+  $modelsDir = Join-Path $Stage "assets\models"
+  $samHits = @(Get-ChildItem $modelsDir -File -Filter "*sam*" -EA SilentlyContinue)
+  if (-not $NoDetectWeights) {
+    $sam3 = Join-Path $modelsDir "sam3.pt"
+    if (-not (Test-Path -LiteralPath $sam3)) { throw "HYGIENE: sam3.pt missing under assets/models" }
+    $extraSam = @($samHits | Where-Object { $_.Name -ne "sam3.pt" })
+    if ($extraSam.Count -gt 0) { throw "HYGIENE: extra sam* in assets/models: $($extraSam.Name -join ', ')" }
+    if ($samHits.Count -ne 1) { throw "HYGIENE: expected exactly one sam* (sam3.pt), found $($samHits.Count)" }
+    $yoloHits = @(Get-ChildItem $modelsDir -File -Filter "yolo26*.pt" -EA SilentlyContinue |
+      Where-Object { $_.Name -notmatch "seg" -and $_.Length -gt 1024 })
+    if ($yoloHits.Count -lt 1) { throw "HYGIENE: no tactical yolo26*.pt in assets/models" }
+  } else {
+    if ($samHits) { throw "HYGIENE: NoDetectWeights but sam* present: $($samHits.Name -join ', ')" }
+  }
   $runsDir = Join-Path $Stage "runs\detect"
   if (Test-Path $runsDir) {
     $rBytes = (Get-ChildItem $runsDir -Recurse -File -EA SilentlyContinue | Measure-Object Length -Sum).Sum
+    if ($null -eq $rBytes) { $rBytes = 0 }
     if ($rBytes -gt 50MB) { throw "HYGIENE: runs/detect too large ($([math]::Round($rBytes/1MB,1)) MB > 50 MB)" }
+    $runSam = Get-ChildItem $runsDir -Recurse -File -Filter "*sam*" -EA SilentlyContinue
+    if ($runSam) { throw "HYGIENE: sam* under runs/detect: $($runSam.Name -join ', ')" }
   }
+  $rootSam = Get-ChildItem $Stage -File -Filter "*sam*" -EA SilentlyContinue
+  if ($rootSam) { throw "HYGIENE: sam* at stage root: $($rootSam.Name -join ', ')" }
   $archDir = Join-Path $Stage "archive"
   if (Test-Path $archDir) {
     $media = Get-ChildItem $archDir -Recurse -File -EA SilentlyContinue |
@@ -862,23 +758,27 @@ function Assert-SlimStageHygiene {
   if (-not (Test-Path -LiteralPath $verPath)) { throw "HYGIENE: VERSION file missing at pack root" }
   $verText = (Get-Content -LiteralPath $verPath -Raw -ErrorAction SilentlyContinue).Trim()
   if (-not $verText -or $verText -eq "unknown") { throw "HYGIENE: VERSION empty/unknown — refuse to ship" }
-  Write-Host "Hygiene asserts OK (VERSION=$verText)" -ForegroundColor Green
+  $kitPath = Join-Path $Stage "KIT"
+  if (-not (Test-Path -LiteralPath $kitPath)) { throw "HYGIENE: KIT marker missing at pack root" }
+  $kitText = (Get-Content -LiteralPath $kitPath -Raw -ErrorAction SilentlyContinue).Trim().ToLowerInvariant()
+  if ($kitText -notin @("mini", "full")) { throw "HYGIENE: KIT must be mini|full, got '$kitText'" }
+  Write-Host "Hygiene asserts OK (VERSION=$verText KIT=$kitText)" -ForegroundColor Green
 }
 Assert-SlimStageHygiene
 
 if (-not $SkipZip) {
   Write-Host "Creating ZIP (Zip64/Fastest)..." -ForegroundColor Yellow
   Write-Zip64 -SourceDir $Stage -DestZip $ZipPath
-  $zipMb = [math]::Round((Get-Item $ZipPath).Length / 1MB, 1)
-  Write-Host "ZIP: $ZipPath ($zipMb MB)" -ForegroundColor Green
-  if ($NoDetectWeights -and -not $FullKit) {
-    # Mini target ~540–600 MB; CUDA torch mistake → multi-GB. Fail loud above 1.2 GB.
-    if ($zipMb -gt 1200) {
-      throw "MINI SIZE ASSERT FAILED: ZIP is $zipMb MB (>1200). Likely CUDA torch leaked — check STAGE_TORCH / profile filter."
-    }
-    if ($zipMb -gt 750) {
-      Write-Host "WARNING: Mini ZIP is $zipMb MB (target ~540–600 MB) — review torch/ORT contents" -ForegroundColor Yellow
-    }
+  $zipBytes = (Get-Item $ZipPath).Length
+  $zipGb = [math]::Round($zipBytes / 1GB, 2)
+  $zipMb = [math]::Round($zipBytes / 1MB, 1)
+  Write-Host "ZIP: $ZipPath ($zipGb GB / $zipMb MB)" -ForegroundColor Green
+  if ($FullKit) {
+    if ($zipGb -gt 10) { throw "FULLKIT SIZE ASSERT FAILED: ZIP is $zipGb GB (>10). Reject." }
+    if ($zipGb -gt 9.5) { Write-Host "WARNING: FullKit ZIP is $zipGb GB (band ~7.5–9 GB)" -ForegroundColor Yellow }
+  } elseif ($Mini -or $KitMarker -eq "mini") {
+    if ($zipGb -gt 5) { throw "MINI SIZE ASSERT FAILED: ZIP is $zipGb GB (>5). Reject." }
+    if ($zipGb -gt 4.5) { Write-Host "WARNING: Mini ZIP is $zipGb GB (band ~3.5–4.5 GB)" -ForegroundColor Yellow }
   }
 }
 

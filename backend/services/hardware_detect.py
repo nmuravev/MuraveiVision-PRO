@@ -250,10 +250,17 @@ def load_hardware_profile() -> dict[str, Any] | None:
 
 
 def detect_all() -> dict[str, Any]:
+    from config import read_kit
+
     gpu = detect_gpu()
     tier = classify_tier(cuda=bool(gpu.get("cuda")))
     profile = load_hardware_profile() or {}
-    build_profile = str(profile.get("build_profile") or profile.get("profile") or "").strip() or None
+    kit = read_kit()
+    build_profile = (
+        str(profile.get("build_profile") or profile.get("profile") or "").strip()
+        or (kit if kit != "dev" else None)
+        or kit
+    )
     mismatch_info = _mismatch_message(build_profile, int(tier["tier"]))
     return {
         "gpu": gpu,
@@ -263,6 +270,7 @@ def detect_all() -> dict[str, Any]:
         "alicevision": detect_alicevision(),
         "tier": tier,
         "build_profile": build_profile,
+        "kit": kit,
         "mismatch": mismatch_info,
         "badge_ru": _badge_ru(build_profile, tier),
     }
@@ -287,7 +295,8 @@ def _mismatch_message(build_profile: str | None, tier: int) -> dict[str, Any] | 
 
 
 def _badge_ru(build_profile: str | None, tier: dict[str, Any]) -> str:
-    build = (build_profile or "dev").capitalize()
+    raw = (build_profile or "dev").strip().lower()
+    build = {"mini": "Mini", "full": "Full", "dev": "dev"}.get(raw, raw.capitalize())
     label = tier.get("label_ru") or "класс"
     return f"Сборка: {build} · класс: {label} (tier {tier.get('tier', '?')})"
 

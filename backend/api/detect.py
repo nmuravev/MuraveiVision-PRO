@@ -30,11 +30,11 @@ class DetectRequest(BaseModel):
 
 
 def _sahi_default() -> bool:
-    """Resolve system-wide SAHI default from SQLite settings."""
+    """Resolve system-wide SAHI default from SQLite settings (default ON)."""
     try:
-        return (get_setting("use_sahi_default") or "0") == "1"
+        return (get_setting("use_sahi_default") or "1") == "1"
     except Exception:  # noqa: BLE001
-        return False
+        return True
 
 
 def _resolve_use_sahi(flag: bool | None) -> bool:

@@ -1,0 +1,1 @@
+Synthetic smoke frame (person/car blobs). Generated for MuraveiVision CI.\nLicense: CC0 1.0 Universal — no copyright reserved.\nSource: generated locally by assets/smoke_sample tooling; not from a third-party photo.\n

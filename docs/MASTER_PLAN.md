@@ -3,12 +3,12 @@
 ## Meta
 
 - **Snapshot date:** 2026-09-08
-- **Branch:** `main` @ portable torch profile
-- **Commit:** `9bba223` (+ follow-up strict +cpu tag)
-- **Unit tests:** 325+
-- **Status:** Profile-driven Mini=CPU / FullKit=CUDA torch; packs rebuild next
-- **Last updated by:** fix(portable) profile-driven torch wheel selection (mini=CPU)
-- **Portable local:** rebuild pending (lean Mini + FullKit slim)
+- **Branch:** `main` @ detect out-of-box packs
+- **Commit:** (pending ship) detect contract + Mini/Full rebuild
+- **Unit tests:** 325+ (+ detect contract / KIT / SAHI default)
+- **Status:** Mini/Full ship tactical YOLO + sam3.pt; Ollama not bundled; KIT marker; SAHI default ON; functional smoke
+- **Last updated by:** fix(detect) out-of-box CPU weights + SAM3 in both packs
+- **Portable local:** Mini `MuraveiVision_PRO_Mini.zip` 3.41 GB sha256 `6D11DF7FAA1222098A0DEEE9EB226E30CA018E2357E5171107C379AC87F02C2D`; FullKit CUDA blocked (no cu128 wheel cache / network timeout) → shipped `MuraveiVision_PRO_FullKit_win_cpu.zip` 5.06 GB sha256 `C205B4F3FDEB95CAF92B9D39AD1E1AEADCCAE00C642FD9E00DBB90BCDD68DACC`; ollama absent both; smoke CI Mini OK
 - **Env pack:** win_cuda / win_cpu — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
 
 ## Major Changes in This Release

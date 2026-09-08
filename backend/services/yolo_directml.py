@@ -1,7 +1,8 @@
 """Experimental YOLO inference via ONNX Runtime DirectML (AMD/Intel DX12).
 
 Optional: never required. Any failure falls back to CPU torch with a logged warning.
-ONNX export is cached next to the .pt weights (same stem + .onnx).
+ONNX export is cached under config/local (never beside pack weights).
+CPU .pt path must not call ensure_onnx_export (C1).
 """
 from __future__ import annotations
 
@@ -9,9 +10,12 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from config import BASE_DIR
+
 _LOG = logging.getLogger("muravei.yolo_directml")
 
 DML_PROVIDER = "DmlExecutionProvider"
+_ONNX_CACHE_DIR = BASE_DIR / "config" / "local" / "onnx_cache"
 
 
 def directml_available() -> bool:
@@ -33,34 +37,49 @@ def list_ort_providers() -> list[str]:
 
 
 def onnx_cache_path(weights: Path) -> Path:
-    return weights.with_suffix(".onnx")
+    """Cache path under config/local — not next to shipped .pt."""
+    stem = Path(weights).stem
+    return _ONNX_CACHE_DIR / f"{stem}.onnx"
 
 
 def ensure_onnx_export(weights: Path, *, imgsz: int = 640) -> Path:
-    """Export Ultralytics model to ONNX once; reuse if cache is newer than .pt."""
+    """Export Ultralytics model to ONNX once into config/local; reuse if fresh."""
     weights = Path(weights)
     if not weights.is_file():
         raise FileNotFoundError(f"weights missing: {weights.name}")
     out = onnx_cache_path(weights)
     if out.is_file() and out.stat().st_mtime >= weights.stat().st_mtime and out.stat().st_size > 1024:
         return out
+    try:
+        _ONNX_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise RuntimeError(f"не удалось создать кэш ONNX: {_ONNX_CACHE_DIR}") from exc
+    print(
+        f"[YOLO] Экспорт ONNX для DirectML ({weights.name}) → {out.name} "
+        "(первый запуск ускорения, CPU-путь не ждёт)…"
+    )
+    _LOG.info("onnx export start weights=%s out=%s", weights.name, out)
     from ultralytics import YOLO
 
     model = YOLO(str(weights))
     exported = model.export(format="onnx", imgsz=int(imgsz), simplify=True, opset=12)
     path = Path(str(exported))
     if path.resolve() != out.resolve() and path.is_file():
-        # Ultralytics may write beside weights with same stem
-        if path.name == out.name:
-            return path
         try:
             import shutil
 
             shutil.copy2(path, out)
+            if path.parent.resolve() == weights.parent.resolve() and path != out:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
         except OSError:
-            return path
+            if path.is_file():
+                return path
     if not out.is_file():
         raise RuntimeError(f"ONNX export did not produce {out.name}")
+    print(f"[YOLO] ONNX готов: {out}")
     return out
 
 

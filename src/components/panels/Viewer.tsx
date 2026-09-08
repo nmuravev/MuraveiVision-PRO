@@ -430,6 +430,9 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const samBusy = useSam3Store((s) => s.busy);
   const samTool = useSam3Store((s) => s.tool);
   const samHint = useSam3Store((s) => s.hint);
+  const samCpuEtaShow = useSam3Store((s) => s.cpuEtaShow);
+  const samCpuEtaRu = useSam3Store((s) => s.cpuEtaRu);
+  const dismissSamCpuEta = useSam3Store((s) => s.dismissCpuEta);
   const samNotice = useSam3Store((s) => s.lastUnloadNotice);
   const refreshSamStatus = useSam3Store((s) => s.refreshStatus);
   const loadSam3 = useSam3Store((s) => s.load);
@@ -2355,21 +2358,29 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                     !isAuthenticated ||
                     !segLoaded ||
                     !paused ||
-                    segBusy ||
                     seekInFlight
                   }
-                  onClick={() => void runSegFrame()}
+                  onClick={() => {
+                    if (segBusy) {
+                      segGenRef.current += 1;
+                      setSegBusy(false);
+                      return;
+                    }
+                    void runSegFrame();
+                  }}
                   title={
                     !segReady
                       ? 'Нет yolo26n-seg.pt — детекция работает'
                       : !segLoaded
                         ? 'загрузите модель (Система)'
-                        : paused
-                          ? 'Сегментировать текущий кадр'
-                          : 'Поставьте на паузу'
+                        : segBusy
+                          ? 'Отменить сегментацию кадра'
+                          : paused
+                            ? 'Сегментировать текущий кадр'
+                            : 'Поставьте на паузу'
                   }
                 >
-                  {segBusy ? 'сег…' : 'Сегментировать кадр'}
+                  {segBusy ? 'Отмена…' : 'Сегментировать кадр'}
                 </Button>
                 <Button
                   size="sm"
@@ -2500,6 +2511,23 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
                 >
                   {samHint || (samReady ? 'sam3' : '')}
                 </span>
+                {samCpuEtaShow && samCpuEtaRu ? (
+                  <span
+                    className="text-[9px] text-amber-200/90 max-w-[220px] truncate inline-flex items-center gap-1"
+                    title={samCpuEtaRu}
+                    data-testid="sam3-cpu-eta"
+                  >
+                    {samCpuEtaRu}
+                    <button
+                      type="button"
+                      className="underline opacity-80 hover:opacity-100"
+                      data-testid="sam3-cpu-eta-dismiss"
+                      onClick={() => void dismissSamCpuEta()}
+                    >
+                      больше не показывать
+                    </button>
+                  </span>
+                ) : null}
                 {samNotice ? (
                   <span
                     className="text-[9px] text-dv-accent max-w-[180px] truncate"

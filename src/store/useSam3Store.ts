@@ -51,6 +51,8 @@ interface Sam3State {
   busy: boolean;
   tool: Sam3Tool;
   hint: string;
+  cpuEtaShow: boolean;
+  cpuEtaRu: string;
   lastUnloadNotice: string | null;
   lastPrompt: Sam3Prompt | null;
   textPrompt: string;
@@ -71,6 +73,7 @@ interface Sam3State {
   setTool: (t: Sam3Tool) => void;
   setHint: (hint: string) => void;
   clearNotice: () => void;
+  dismissCpuEta: () => Promise<void>;
   markUnloadedForBatch: () => void;
   markUnloadedByYolo: () => void;
   setPersistEnabled: (v: boolean) => void;
@@ -127,6 +130,8 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
   busy: false,
   tool: 'none',
   hint: '',
+  cpuEtaShow: false,
+  cpuEtaRu: '',
   lastUnloadNotice: null,
   lastPrompt: null,
   textPrompt: '',
@@ -143,6 +148,17 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
   propFrames: [],
 
   clearNotice: () => set({ lastUnloadNotice: null }),
+  dismissCpuEta: async () => {
+    try {
+      await fetch('/api/system/sam3-cpu-eta/dismiss', {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+    } catch {
+      /* ignore */
+    }
+    set({ cpuEtaShow: false, cpuEtaRu: '' });
+  },
   setPersistEnabled: (persistEnabled) => set({ persistEnabled }),
   setTextPrompt: (textPrompt) => set({ textPrompt }),
   setLastPrompt: (lastPrompt) => set({ lastPrompt }),
@@ -192,11 +208,15 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
         ready?: boolean;
         loaded?: boolean;
         weight?: string | null;
+        cpu_eta_show?: boolean;
+        cpu_eta_ru?: string;
       };
       set({
         ready: Boolean(data.ready),
         loaded: Boolean(data.loaded),
         weight: data.weight ?? null,
+        cpuEtaShow: Boolean(data.cpu_eta_show),
+        cpuEtaRu: data.cpu_eta_ru || '',
         hint: data.loaded
           ? data.weight || 'sam3'
           : data.ready

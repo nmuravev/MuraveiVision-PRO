@@ -25,7 +25,8 @@ if exist "%~dp0ollama\ollama.exe" (
     echo Starting Ollama in background...
     echo   OLLAMA_MODELS=!OLLAMA_MODELS!
     start "Ollama" /B "%~dp0ollama\ollama.exe" serve
-    timeout /t 3 /nobreak >nul
+    REM ping instead of timeout — timeout fails when stdin is redirected (smoke)
+    ping -n 4 127.0.0.1 >nul
 ) else (
     echo Ollama not in kit ^(Lite/Mini^). AI analysis needs a system Ollama if available.
 )
@@ -58,13 +59,15 @@ if exist "%~dp0scripts\bootstrap_portable.ps1" (
 )
 
 set "PYTHON="
-if exist "%~dp0muravei_env\Scripts\python.exe" set "PYTHON=%~dp0muravei_env\Scripts\python.exe"
-if not defined PYTHON if exist "%~dp0muravei_env\python.exe" set "PYTHON=%~dp0muravei_env\python.exe"
+REM Prefer embeddable root python.exe (portable). Scripts\python.exe is often a
+REM same-binary copy without python*._pth and resolves to host/system prefix.
+if exist "%~dp0muravei_env\python.exe" set "PYTHON=%~dp0muravei_env\python.exe"
+if not defined PYTHON if exist "%~dp0muravei_env\Scripts\python.exe" set "PYTHON=%~dp0muravei_env\Scripts\python.exe"
 if not defined PYTHON if exist "%~dp0runtime\python\python.exe" set "PYTHON=%~dp0runtime\python\python.exe"
 
 if not defined PYTHON (
     echo [ОШИБКА] Python не найден.
-    echo Ожидается muravei_env\Scripts\python.exe ^(3.12.x^).
+    echo Ожидается muravei_env\python.exe ^(embed portable^) или muravei_env\Scripts\python.exe ^(3.12.x^).
     echo Поле:  распакуйте muravei_env_pack.zip → scripts\setup_env.bat
     echo Portable: scripts\build_portable.ps1 -FetchEmbeddablePython
     if not defined MURAVEI_NO_PAUSE pause
@@ -96,7 +99,10 @@ if defined ALICEVISION_ROOT (
 
 REM --- One entry path: MODULE mode (never script-mode python backend\main.py) ---
 echo Starting backend on http://127.0.0.1:8000 ...
-start "MuraveiVision Backend" cmd /c "set COLMAP_ROOT=!COLMAP_ROOT!&& set ALICEVISION_ROOT=!ALICEVISION_ROOT!&& set MURAVEI_SESSION_TRACE=1&& set MURAVEI_LOG_DIR=!MURAVEI_LOG_DIR!&& \"!PYTHON!\" -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000 >> \"!MURAVEI_LOG_DIR!\uvicorn.log\" 2>&1"
+REM Env vars inherit to child. Use cmd /c ""exe" args" quoting (reliable on Windows).
+REM Avoid nested \" escapes that silently fail under some launchers/smoke hosts.
+set "MURAVEI_SESSION_TRACE=1"
+start "MuraveiVision Backend" /D "%~dp0" cmd /c ""!PYTHON!" -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000 >> "!MURAVEI_LOG_DIR!\uvicorn.log" 2>&1"
 
 echo Waiting for backend...
 set /a _tries=0
@@ -109,7 +115,8 @@ if !_tries! geq 60 (
     if not defined MURAVEI_NO_PAUSE pause
     exit /b 1
 )
-timeout /t 2 /nobreak >nul
+REM ping instead of timeout — timeout fails when stdin is redirected (smoke)
+ping -n 3 127.0.0.1 >nul
 goto wait_health
 
 :health_ok

@@ -270,32 +270,56 @@ class YoloEngine:
         self._last_n: int = 0
         self._last_nms_mode: str = "native"
         self._last_used_kind: str = "none"
+        self._init_error_ru: str = ""
         self._motion_states: dict[str, Any] = {}
         self._trackers: dict[str, Any] = {}
         self._load()
         self._detect_device()
 
+    def engine_status(self) -> str:
+        """Unified vocabulary: offline | cpu | directml | cuda."""
+        from config import (
+            ENGINE_STATUS_CPU,
+            ENGINE_STATUS_CUDA,
+            ENGINE_STATUS_DIRECTML,
+            ENGINE_STATUS_OFFLINE,
+        )
+
+        if self.mode in ("offline", "error") or self.model is None:
+            return ENGINE_STATUS_OFFLINE
+        backend = str(getattr(self, "_device_backend", "cpu") or "cpu")
+        if backend in ("torch-cuda",) or str(self._device).startswith("cuda"):
+            return ENGINE_STATUS_CUDA
+        if backend == "directml" or getattr(self, "_use_directml", False):
+            return ENGINE_STATUS_DIRECTML
+        return ENGINE_STATUS_CPU
+
     def _weight_candidates(self) -> list[Path]:
-        """Prefer closed-set yolo26n-ft when present; else YOLOE (if CLIP) / nano."""
-        closed = [
-            BASE_DIR / "assets" / "models" / "yolo26n-ft.pt",
-            WEIGHTS_DIR / "yolo26n-ft.pt",
-            WEIGHTS_DIR / "yolo26n.pt",
-            WEIGHTS_DIR / "yolo26s.pt",
-            BASE_DIR / "assets" / "models" / "best.pt",
-        ]
-        yoloe = [
-            WEIGHTS_DIR / "yoloe-26s-seg.pt",
-            WEIGHTS_DIR / "yoloe-26n-seg.pt",
-            WEIGHTS_DIR / "yoloe-26s-seg-pf.pt",
-        ]
-        ft = BASE_DIR / "assets" / "models" / "yolo26n-ft.pt"
-        # After backup/LBS finetune, ft is the active detect head — do not let YOLOE steal load.
-        if ft.is_file() and ft.stat().st_size > 1024:
-            return [*closed, *yoloe]
-        if _clip_ready():
-            return [*yoloe, *closed]
-        return [*closed, *yoloe]
+        """Tactical ladder l-ft > m-ft > s-ft > n-ft > n under assets/models (Z1)."""
+        from config import MODELS_DIR, TACTICAL_WEIGHT_LADDER, resolve_default_detect_weight
+
+        ordered: list[Path] = []
+        seen: set[str] = set()
+        primary = resolve_default_detect_weight(MODELS_DIR)
+        if primary is not None:
+            ordered.append(primary)
+            seen.add(primary.name.lower())
+        for name in TACTICAL_WEIGHT_LADDER:
+            key = name.lower()
+            if key in seen:
+                continue
+            path = MODELS_DIR / name
+            ordered.append(path)
+            seen.add(key)
+        # Secondary: runs/detect copies of the same ladder names only (no COCO dump).
+        for name in TACTICAL_WEIGHT_LADDER:
+            path = WEIGHTS_DIR / name
+            key = path.name.lower()
+            if key in seen:
+                continue
+            ordered.append(path)
+            seen.add(key)
+        return ordered
 
     def force_load(self, weights: Path) -> bool:
         """Hard-switch active weights (e.g. after finetune promote)."""
@@ -412,10 +436,17 @@ class YoloEngine:
             pass
         found = [p for p in self._weight_candidates() if p.exists() and p.stat().st_size > 1024]
         if not found:
-            print("[YOLO] no YOLO26/YOLOE weights — offline (empty detections)")
+            msg = (
+                "[YOLO] нет тактических весов yolo26*-ft/n в assets/models — "
+                "режим offline (пустые детекции). Проверьте комплект пака."
+            )
+            print(msg)
             self.model = None
             self.mode = "offline"
+            self.kind = "none"
+            self._init_error_ru = "Нет тактических весов YOLO26 в assets/models"
             return
+        errors: list[str] = []
         for weights in found:
             try:
                 if not self._try_load(weights):
@@ -423,17 +454,22 @@ class YoloEngine:
                 self.model_name = weights.name
                 self.model_path = weights
                 self.mode = "ready"
+                self._init_error_ru = ""
                 sample = list(self._names.items())[:8]
                 print(f"[YOLO] Model loaded successfully: {weights}")
                 print(f"[YOLO] kind={self.kind} nc={len(self._names)} sample={sample}")
                 return
             except Exception as exc:  # noqa: BLE001
-                print(f"[YOLO] Failed {weights.name}: {exc} — trying next")
+                err = f"{weights.name}: {exc}"
+                errors.append(err)
+                print(f"[YOLO] Failed {err} — trying next")
                 self.model = None
                 self.kind = "none"
                 self._names = {}
         print("[YOLO] all candidate weights failed — error mode")
         self.mode = "error"
+        self._init_error_ru = "Не удалось загрузить YOLO: " + ("; ".join(errors[:3]) or "unknown")
+        print(f"[YOLO] RU: {self._init_error_ru}")
 
     def _detect_device(self) -> None:
         """CUDA → optional DirectML (experimental) → CPU; tier from CPU brand + cores."""
@@ -554,11 +590,13 @@ class YoloEngine:
     def status_snapshot(self) -> dict[str, Any]:
         qsize = self._queue.qsize() if self._queue is not None else 0
         label = getattr(self, "_yolo_label", "CPU")
+        eng = self.engine_status()
         return {
             "mode": self.mode,
             "model": self.model_name,
             "kind": self.kind,
             "last_kind": self._last_used_kind,
+            "engine_status": eng,
             "nc": len(self._names),
             "device": self._device,
             "device_backend": getattr(self, "_device_backend", "cpu"),
@@ -574,6 +612,7 @@ class YoloEngine:
             "last_n": self._last_n,
             "nms_mode": self._last_nms_mode,
             "queue_size": qsize,
+            "init_error_ru": getattr(self, "_init_error_ru", "") or "",
         }
 
     def _empty(self, frame_idx: int, time_sec: float, dropped: bool = False) -> dict[str, Any]:

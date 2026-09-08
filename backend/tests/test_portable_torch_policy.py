@@ -150,6 +150,15 @@ class TestPortableTorchPolicy(unittest.TestCase):
         )
         self.assertEqual(rc, 2)
 
+    def test_unmarked_pypi_torch_not_cpu(self):
+        """Unmarked PyPI torch must not count as CPU (often CUDA on Windows)."""
+        unmarked = "torch-2.14.0-cp312-cp312-win_amd64.whl"
+        self.assertTrue(self.pol.is_torch_family_wheel(unmarked))
+        self.assertFalse(self.pol.is_cuda_variant_wheel(unmarked))
+        self.assertFalse(self.pol.is_cpu_variant_wheel(unmarked))
+        self.assertFalse(self.pol.wheel_matches_policy(unmarked, False))
+        self.assertFalse(self.pol.wheel_matches_policy(unmarked, True))
+
 
 if __name__ == "__main__":
     unittest.main()

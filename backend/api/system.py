@@ -104,6 +104,7 @@ async def hardware(_user: dict[str, Any] = Depends(require_role("operator"))) ->
         spec["build_profile"] = hw.get("build_profile")
         spec["system_badge_ru"] = hw.get("badge_ru")
         spec["portable_mismatch"] = hw.get("mismatch")
+        spec["kit"] = hw.get("kit")
         spec["components"] = {
             "colmap": hw.get("colmap"),
             "alicevision": hw.get("alicevision"),
@@ -114,6 +115,42 @@ async def hardware(_user: dict[str, Any] = Depends(require_role("operator"))) ->
     except Exception as exc:  # noqa: BLE001
         spec["hardware_detect_error"] = str(exc)
 
+    # C2: GPU present but accelerated runtime missing → RU offer (Z2 reconcile).
+    try:
+        from services.accelerator import accelerator_kind
+        from services.local_ui_flags import accel_offer_dismissed
+        from services.portable_bootstrap import gpu_present, torch_variant, venv_python
+
+        py = venv_python()
+        tv = torch_variant(py) if py else {"installed": False, "cuda": None}
+        cuda_hw = bool(gpu_present())
+        dml = bool(spec.get("directml_available"))
+        kind = accelerator_kind()
+        offer = None
+        if not accel_offer_dismissed():
+            if cuda_hw and tv.get("installed") and tv.get("cuda") is None and kind != "cuda":
+                offer = {
+                    "show": True,
+                    "kind": "cuda_torch",
+                    "message_ru": "Обнаружен GPU, но ускоренный runtime не установлен. Докачать ускорение?",
+                    "action": "accel_upgrade",
+                }
+            elif cuda_hw and not dml and kind == "cpu":
+                offer = {
+                    "show": True,
+                    "kind": "directml",
+                    "message_ru": "GPU есть, DirectML недоступен. Докачать ускорение (ORT DirectML)?",
+                    "action": "accel_upgrade",
+                }
+        spec["accel_offer"] = offer
+        spec["torch_variant"] = {
+            "installed": bool(tv.get("installed")),
+            "cuda": tv.get("cuda"),
+            "version": tv.get("version"),
+        }
+    except Exception as exc:  # noqa: BLE001
+        spec["accel_offer_error"] = str(exc)
+
     if _sim["active"] == "gpu_oom":
         spec["simulated"] = "gpu_oom"
         spec["vram_used_mb"] = spec.get("vram_total_mb", 8192)
@@ -121,6 +158,95 @@ async def hardware(_user: dict[str, Any] = Depends(require_role("operator"))) ->
         spec["vram_used_gb"] = round(int(spec["vram_used_mb"]) / 1024, 2)
         spec["vram_free_gb"] = 0.0
     return spec
+
+
+class AccelUpgradeBody(BaseModel):
+    accept: bool = True
+    dismiss: bool = False
+
+
+@router.post("/accel-upgrade")
+async def accel_upgrade(
+    body: AccelUpgradeBody | None = None,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    """C2: run Z2 reconcile_torch / DirectML install; client shows restart prompt on ok."""
+    import subprocess
+
+    from services.local_ui_flags import set_accel_offer_dismissed
+    from services.portable_bootstrap import (
+        heal_env,
+        resolve_build_profile,
+        venv_python,
+        wheels_dir,
+    )
+    from services.yolo_directml import directml_available
+
+    payload = body or AccelUpgradeBody()
+    if payload.dismiss or not payload.accept:
+        set_accel_offer_dismissed(True)
+        return {"ok": True, "dismissed": True, "restart_required": False}
+
+    messages: list[str] = []
+    # Prefer DirectML if still missing (Mini / CPU torch path).
+    if not directml_available():
+        py = venv_python()
+        if py is not None:
+            wdir = wheels_dir()
+            cmd = [
+                str(py),
+                "-m",
+                "pip",
+                "install",
+                "--force-reinstall",
+                "--no-deps",
+                "--no-warn-script-location",
+                "onnxruntime-directml",
+            ]
+            if wdir.is_dir():
+                cmd[4:4] = ["--no-index", f"--find-links={wdir}"]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900, check=False)
+            if proc.returncode == 0:
+                messages.append("Установлен onnxruntime-directml")
+            else:
+                messages.append("DirectML install failed — см. логи")
+
+    bp = resolve_build_profile()
+    # Full kit: also reconcile CUDA torch via Z2.
+    if bp == "full":
+        result = heal_env(bp)
+        ok = bool(result.get("ok"))
+        messages.extend(result.get("messages") or [])
+        if not ok:
+            return {
+                "ok": False,
+                "restart_required": False,
+                "message_ru": result.get("error_ru") or "Не удалось докачать ускорение.",
+                "messages": messages,
+            }
+    else:
+        ok = True
+
+    return {
+        "ok": ok,
+        "restart_required": ok,
+        "message_ru": (
+            "Ускорение установлено. Перезапустите приложение — значок обновится (cuda/directml)."
+            if ok
+            else "Не удалось докачать ускорение."
+        ),
+        "messages": messages,
+    }
+
+
+@router.post("/sam3-cpu-eta/dismiss")
+async def dismiss_sam3_cpu_eta(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    from services.local_ui_flags import set_sam3_cpu_eta_dismissed
+
+    set_sam3_cpu_eta_dismissed(True)
+    return {"ok": True, "dismissed": True}
 
 
 @router.post("/selftest")
@@ -215,7 +341,7 @@ async def simulate_status(_user: dict[str, Any] = Depends(require_role("engineer
 # --- Detection inference config (SAHI slicing default + slice params) ---
 
 class DetectConfigBody(BaseModel):
-    use_sahi_default: bool = False
+    use_sahi_default: bool = True
     slice_height: int = Field(default=512, ge=128, le=2048)
     slice_width: int = Field(default=512, ge=128, le=2048)
     overlap_ratio: float = Field(default=0.2, ge=0.0, le=0.5)
@@ -238,7 +364,7 @@ def _read_detect_config() -> dict[str, Any]:
     if backend not in ("auto", "torch", "directml"):
         backend = "auto"
     return {
-        "use_sahi_default": (get_setting("use_sahi_default") or "0") == "1",
+        "use_sahi_default": (get_setting("use_sahi_default") or "1") == "1",
         "slice_height": int(get_setting("sahi_slice_height") or "512"),
         "slice_width": int(get_setting("sahi_slice_width") or "512"),
         "overlap_ratio": float(get_setting("sahi_overlap_ratio") or "0.2"),
