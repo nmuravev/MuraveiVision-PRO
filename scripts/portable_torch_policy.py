@@ -65,13 +65,17 @@ def is_cuda_variant_wheel(filename: str) -> bool:
 
 
 def is_cpu_variant_wheel(filename: str) -> bool:
-    """CPU if explicitly +cpu, or torch-family without CUDA markers."""
+    """CPU only if explicitly tagged +cpu.
+
+    Unmarked PyPI torch wheels on Windows are ambiguous (often CUDA-capable)
+    and must NOT be treated as CPU — require the +cpu local version tag.
+    """
     base = filename.replace("\\", "/").split("/")[-1]
     if not is_torch_family_wheel(base):
         return False
     if is_cuda_variant_wheel(base):
         return False
-    return True
+    return bool(_CPU_MARK.search(base))
 
 
 def wheel_matches_policy(filename: str, want_cuda_flag: bool) -> bool:

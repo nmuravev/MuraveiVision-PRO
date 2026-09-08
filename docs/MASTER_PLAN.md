@@ -4,8 +4,8 @@
 
 - **Snapshot date:** 2026-09-08
 - **Branch:** `main` @ portable torch profile
-- **Commit:** _(pending torch-profile commit)_
-- **Unit tests:** 325 (+6 portable torch policy)
+- **Commit:** `9bba223` (+ follow-up strict +cpu tag)
+- **Unit tests:** 325+
 - **Status:** Profile-driven Mini=CPU / FullKit=CUDA torch; packs rebuild next
 - **Last updated by:** fix(portable) profile-driven torch wheel selection (mini=CPU)
 - **Portable local:** rebuild pending (lean Mini + FullKit slim)

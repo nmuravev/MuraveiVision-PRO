@@ -37,6 +37,12 @@ Write-Host "Downloading torch+torchvision CPU wheels (Mini/Lite)..." -Foreground
 & $HostPy -m pip download torch torchvision -d $WheelDir --index-url https://download.pytorch.org/whl/cpu --prefer-binary
 if ($LASTEXITCODE -ne 0) { throw "pip download torch CPU failed" }
 
+Write-Host "Downloading onnxruntime-directml (Mini/Lite; replaces onnxruntime-gpu)..." -ForegroundColor Cyan
+& $HostPy -m pip download "onnxruntime-directml>=1.16.0" -d $WheelDir --prefer-binary
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "WARNING: onnxruntime-directml download failed — Mini build may fetch online" -ForegroundColor Yellow
+}
+
 if ($WithTorchCu128) {
   Write-Host "Downloading torch+torchvision cu128 wheels (FullKit) — keeping CPU wheels too..." -ForegroundColor Cyan
   & $HostPy -m pip download torch torchvision -d $WheelDir --index-url https://download.pytorch.org/whl/cu128 --prefer-binary
