@@ -3,11 +3,11 @@
 ## Meta
 
 - **Snapshot date:** 2026-09-09
-- **Branch:** `main` @ E6 timm + validator smoke + ci_full
-- **Commit:** (pending) E6 timm/safetensors + CRLF guard + validator reject_ratio + ci_full.ps1
-- **Unit tests:** 325+ (+ detect contract / KIT / SAHI / validator reject_ratio)
-- **Status:** E6 complete — timm pinned, CRLF guard, SAM3 ≤60s, validator reject_ratio, ci_full, rebuilt & smoked
-- **Last updated by:** fix(airgap): E6 timm + validator smoke + ci pipeline
+- **Branch:** `main` @ S2DConv + FasterGhostC3k2 + AP_S/AP_M/AP_L
+- **Commit:** `4e5d50f` feat(detect): S2DConv + FasterGhostC3k2 custom architecture + AP_S/AP_M/AP_L evaluator
+- **Unit tests:** 378+ (+ detect contract / KIT / SAHI / validator / S2DConv 35/35 / UAV metrics 18/18)
+- **Status:** Phase 1+2 custom architecture complete — S2DConv lossless downsampling + FasterGhostC3k2 ghost neck + UAVSizeMetrics AP_S/AP_M/AP_L evaluator (trainer callbacks + standalone script)
+- **Last updated by:** `4e5d50f` feat(detect): S2DConv + FasterGhostC3k2 custom architecture + AP_S/AP_M/AP_L evaluator
 - **Portable local:** Mini 3.62 GB (sha256 `09904BB0…C8AE49B4`) ✓ smoke; FullKit CPU 5.27 GB (sha256 `8D6FA6A5…269EB345`) ✓ smoke
 - **Env pack:** win_cuda / win_cpu — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
 - **E6 additions:** `timm>=0.9.0` + `safetensors>=0.4.0` in requirements; wheels in `portable_manifest.json`; `ci_full.ps1` local CI; CRLF/LF launcher guards in build+smoke; SAM3 load cap ≤60s; validator `reject_ratio` / `raw_n` in infer envelope

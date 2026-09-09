@@ -70,6 +70,8 @@
 - **Гео v1** — sidecar `.SRT`/`.CSV` рядом с роликом в `archive/` → `flight_tracks` и `gps_*` на детекциях (фиксация кадра, ручная рамка, batch-scan). `POST /api/geo/import` дописывает GPS на старые строки; без sidecar — **200** `{ sidecar_missing: true, point_count: 0 }` (не 404). Повторный import при hydrate того же ролика не дергается. Модалка ошибок не показывается на 404 `/api/geo/import` и `/api/recon/asset/`.
 - **KML / GeoJSON** — `GET /api/export/kml?source_video=…` и `/api/export/geojson?source_video=…`. Детекции без GPS пропускаются. KML — основной геоформат (Google Earth). Dropdown «Экспорт» в TopBar.
 - **Training/fine-tune** — detect-only, дефолт imgsz 640 / batch 4, resume `last.pt`, `.pt.backup` + `empty_cache`, promote.
+- **Custom UAV architecture (Phase 1+2)** — S2DConv (lossless downsampling layer 0) + FasterGhostC3k2 (Ghost-lightweight neck layers 13/16/19, layer 22 attention preserved). YAML configs `yolo26n-uav.yaml` (Phase 1) and `yolo26n-uav-ghost.yaml` (Phase 2). Partial weight transfer (strict=False) with 87.8% param transfer from pretrained `yolo26n.pt`. API params: `use_uav_arch`, `use_uav_ghost_arch`.
+- **AP_S/AP_M/AP_L metrics** — COCO-correct area-based AP (<32², 32²–96², >96² original px). Re-matching per size bin via `UAVSizeMetrics`. Integrated as SSE-streaming callbacks (`on_val_start`/`on_val_end`) and standalone `backend/scripts/validate_uav_sizes.py`. Zero external dependencies.
 
 ## Portable
 

@@ -222,7 +222,7 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| POST | `/api/train/start` | `{ epochs?, resume_from?, imgsz?, batch? }` |
+| POST | `/api/train/start` | `{ epochs?, resume_from?, imgsz?, batch?, use_uav_arch?, use_uav_ghost_arch? }` |
 | GET | `/api/train/checkpoints` | last/best/epoch*.pt, `can_resume`, `vram_mb` |
 | POST | `/api/train/stop` | остановка |
 | GET | `/api/train/status` | состояние |
