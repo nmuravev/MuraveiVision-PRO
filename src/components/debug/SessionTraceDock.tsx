@@ -13,7 +13,7 @@ import {
   type TraceEvent,
   type TraceKind,
 } from '../../debug/sessionTrace';
-import { authHeaders } from '../../store/useMuraveiStore';
+import { authHeaders, useMuraveiStore } from '../../store/useMuraveiStore';
 
 const KIND_COLOR: Record<TraceKind, string> = {
   'ui.click': 'text-sky-300',
@@ -42,6 +42,8 @@ type Props = {
 };
 
 export const SessionTraceDock: React.FC<Props> = ({ open, onClose }) => {
+  const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
+  const setAuthenticated = useMuraveiStore((s) => s.setAuthenticated);
   const [rows, setRows] = useState<TraceEvent[]>(() => getEvents());
   const [rec, setRec] = useState(() => isTraceRecording());
   const [beTail, setBeTail] = useState<string[]>([]);
@@ -61,16 +63,35 @@ export const SessionTraceDock: React.FC<Props> = ({ open, onClose }) => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [rows, open]);
 
-  // Merge BE runtime_log into be.log (poll; auth via headers)
+  // Merge BE runtime_log into be.log (poll only while authenticated)
   useEffect(() => {
-    if (!open) return;
+    if (!open || !isAuthenticated) return;
     let cancelled = false;
+    let timer: number | null = null;
     const seen = new Set<string>();
+
+    const stop = () => {
+      if (timer != null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    };
 
     const poll = async () => {
       try {
         const res = await fetch('/api/debug/recent?limit=40', { headers: authHeaders() });
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (res.status === 401) {
+          try {
+            localStorage.removeItem('muravei-token');
+          } catch {
+            /* ignore */
+          }
+          setAuthenticated(false);
+          stop();
+          return;
+        }
+        if (!res.ok) return;
         const data = (await res.json()) as {
           entries?: { id?: string; source?: string; message?: string; level?: string }[];
         };
@@ -91,13 +112,13 @@ export const SessionTraceDock: React.FC<Props> = ({ open, onClose }) => {
         /* ignore */
       }
     };
-    const id = window.setInterval(() => void poll(), 2000);
+    timer = window.setInterval(() => void poll(), 2000);
     void poll();
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      stop();
     };
-  }, [open]);
+  }, [open, isAuthenticated, setAuthenticated]);
 
   if (!open) return null;
 

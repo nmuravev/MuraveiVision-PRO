@@ -5,7 +5,10 @@
     "mini": {
       "torch": "cpu",
       "alicevision": false,
-      "yolo_weights": ["nano", "small"],
+      "yolo_weights": [
+        "nano",
+        "small"
+      ],
       "colmap_max_frames": 150,
       "colmap_max_frames_min": 100,
       "max_image_size": 1024,
@@ -19,7 +22,10 @@
     "full": {
       "torch": "cuda_with_cpu_fallback",
       "alicevision": true,
-      "yolo_weights": ["m", "l"],
+      "yolo_weights": [
+        "m",
+        "l"
+      ],
       "colmap_max_frames": 600,
       "colmap_max_frames_min": 200,
       "max_image_size": 1600,
@@ -37,19 +43,61 @@
       "sha256": "cce14ec55ac1eef1f08a8ee7bfa08e70a7743e8411c0dede80d98faf996fbe01",
       "dest_relative": "sidecars/colmap",
       "archive_relative": "sidecars/colmap/downloads/COLMAP-3.9.1-windows-cuda.zip",
-      "profiles": ["full", "mini"]
+      "profiles": [
+        "full",
+        "mini"
+      ]
     },
     "alicevision_windows": {
       "url": "https://github.com/alicevision/AliceVision/releases/download/v3.3.0/AliceVision-3.3.0-Windows.zip",
       "sha256": "e6d6026faec6910541a1a9afcfad9aba6c10723bafccaacfc1378c49e6ab0c86",
       "dest_relative": "sidecars/alicevision/windows-x64",
       "archive_relative": "sidecars/alicevision/downloads/AliceVision-3.3.0-Windows.zip",
-      "profiles": ["full"]
+      "profiles": [
+        "full"
+      ]
     },
     "torch_cuda": {
       "index_url": "https://download.pytorch.org/whl/cu128",
-      "profiles": ["full"],
+      "profiles": [
+        "full"
+      ],
       "note": "Prefer local wheels/; network index only after RU confirm"
+    },
+    "ffmpeg_windows_essentials": {
+      "url": "https://github.com/GyanD/codexffmpeg/releases/download/6.1.1/ffmpeg-6.1.1-essentials_build.zip",
+      "sha256": "742e32fc9f92681f9f254b925e1b613fdd8074ba40749d4879aefdb009b94cc5",
+      "dest_relative": "portable/cache/ffmpeg",
+      "archive_relative": "portable/cache/ffmpeg-6.1.1-essentials_build.zip",
+      "binaries": [
+        "ffmpeg.exe",
+        "ffprobe.exe"
+      ],
+      "profiles": [
+        "mini",
+        "full"
+      ],
+      "note": "GPL/LGPL ffmpeg essentials; bake into stage assets/ffmpeg/"
+    },
+    "timm": {
+      "url": "https://files.pythonhosted.org/packages/py3/t/timm/timm-1.0.29-py3-none-any.whl",
+      "sha256": "4266486e355c9beb9432e689de580d09e2efe7fa92a9a79e76c03e7763eac724",
+      "dest_relative": "portable/cache/wheels",
+      "profiles": [
+        "mini",
+        "full"
+      ],
+      "note": "SAM3 ViT-Det backbone dependency (timm.layers.DropPath/Mlp)"
+    },
+    "safetensors": {
+      "url": "https://files.pythonhosted.org/packages/cp310/sa/safetensors/safetensors-0.8.0-cp310-abi3-win_amd64.whl",
+      "sha256": "096ec1a98435df7beb08853bb5aa9081a84f23d0adc67ed1a0a10550f608373f",
+      "dest_relative": "portable/cache/wheels",
+      "profiles": [
+        "mini",
+        "full"
+      ],
+      "note": "timm transitive dep; platform-specific wheel"
     }
   },
   "notes": "URLs + sha256 live ONLY here (Z1). Never hardcode download URLs in .py/.ps1 logic."

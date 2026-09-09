@@ -34,17 +34,10 @@ class QueueZipBody(BaseModel):
 
 
 def _ffmpeg_bin() -> str | None:
-    found = shutil.which("ffmpeg")
-    if found:
-        return found
-    for cand in (
-        BASE_DIR / "assets" / "ffmpeg.exe",
-        BASE_DIR / "assets" / "ffmpeg" / "ffmpeg.exe",
-        BASE_DIR / "assets" / "ffmpeg",
-    ):
-        if cand.is_file():
-            return str(cand)
-    return None
+    from services.ffmpeg_util import ffmpeg_bin
+
+    return ffmpeg_bin()
+
 
 
 def _cut_fragment(ffmpeg: str, src: Path, dest: Path, start: float, end: float) -> None:

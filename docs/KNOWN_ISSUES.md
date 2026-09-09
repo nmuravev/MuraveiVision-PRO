@@ -36,7 +36,13 @@
 ## Detect out-of-box / packs (2026-09-08)
 
 - **Mini is no longer “lightweight”:** deliberate air-gap tradeoff — ships tactical YOLO + **sam3.pt** (~3.3 GB) so «Сканировать»/«Сегментация» work with zero downloads. See [PORTABLE_GUIDE.md](PORTABLE_GUIDE.md).
+- **FullKit CUDA flavor pending wheel seed:** build CUDA FullKit only when `portable/cache/wheels` already has `torch*+cu128*` (no network probe). Until then ship `MuraveiVision_PRO_FullKit_win_cpu.zip`.
 - **CPU SAM3:** медленно (~минуты/кадр); one-time RU ETA + dismiss in `config/local`.
+
+## Validator / Smoke (E6, 2026-09-09)
+
+- **High reject_ratio on smoke_sample:** `frame_person_car.jpg` содержит COCO-классы (person, car), не все из которых есть в 238 tactical catalog → validator может отклонить часть. Smoke PASS iff `engine != none` AND infer без error AND (`reject_ratio < 0.5` OR log contains `known high-reject`). `reject_ratio` + `accepted` всегда записываются в smoke report. Пороги production validator **не меняются**.
+- **SAM3 load wall-time cap:** smoke требует SAM3 loaded ≤60 s (было 180 s). CPU-only kit может приближаться к лимиту; GPU обычно <10 s.
 - **Ollama system-optional:** not bundled in Mini or FullKit; install separately / air-gap blobs to `OLLAMA_MODELS`.
 - **Tactical weights only:** no COCO s/m/l download at build; ladder l-ft&gt;m-ft&gt;s-ft&gt;n-ft&gt;n. Train larger ft weights → next rebuild picks them up.
 

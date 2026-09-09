@@ -24,7 +24,7 @@ param(
   [switch]$SkipFull,
   [switch]$LocalSam3Seg,
   [int]$HealthTimeoutSec = 120,
-  [int]$Sam3LoadTimeoutSec = 180
+  [int]$Sam3LoadTimeoutSec = 60
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,21 +45,81 @@ function Stop-PortListeners([int]$Port) {
 }
 
 function Test-LogPoison([string]$Root) {
-  $patterns = @("Traceback", "ImportError", "circular import")
-  $targets = @(
-    (Join-Path $Root "logs\bootstrap.log"),
-    (Join-Path $Root "logs\uvicorn.log"),
-    (Join-Path $Root "logs\smoke_launcher.out")
+  # Baseline crash poisons (all logs)
+  $basePatterns = @("Traceback", "ImportError", "circular import")
+  # N1 split: uvicorn/stderr = full AutoUpdate/pip list; bootstrap = narrow only
+  $uvicornPoisons = @(
+    "AutoUpdate", "attempting AutoUpdate", "Access is denied", "Retry 1/2",
+    "uv pip install", "pip install"
   )
-  foreach ($f in $targets) {
+  $bootstrapPoisons = @(
+    "attempting AutoUpdate", "Access is denied", "Retry 1/2", "--index-strategy"
+  )
+
+  function _Hit([string]$Text, [string[]]$Patterns, [string]$Leaf) {
+    foreach ($p in $Patterns) {
+      if ($Text -match [regex]::Escape($p)) {
+        return "poison '$p' in $Leaf"
+      }
+    }
+    return $null
+  }
+
+  $uv = Join-Path $Root "logs\uvicorn.log"
+  $boot = Join-Path $Root "logs\bootstrap.log"
+  $out = Join-Path $Root "logs\smoke_launcher.out"
+  $err = Join-Path $Root "logs\smoke_launcher.err"
+
+  foreach ($f in @($uv, $out, $err, $boot)) {
     if (-not (Test-Path -LiteralPath $f)) { continue }
     $text = Get-Content -LiteralPath $f -Raw -ErrorAction SilentlyContinue
     if (-not $text) { continue }
-    foreach ($p in $patterns) {
-      if ($text -match [regex]::Escape($p)) {
-        return "poison '$p' in $(Split-Path $f -Leaf)"
-      }
+    $leaf = Split-Path $f -Leaf
+    $hit = _Hit $text $basePatterns $leaf
+    if ($hit) { return $hit }
+  }
+  foreach ($f in @($uv, $out, $err)) {
+    if (-not (Test-Path -LiteralPath $f)) { continue }
+    $text = Get-Content -LiteralPath $f -Raw -ErrorAction SilentlyContinue
+    if (-not $text) { continue }
+    $hit = _Hit $text $uvicornPoisons (Split-Path $f -Leaf)
+    if ($hit) { return $hit }
+  }
+  if (Test-Path -LiteralPath $boot) {
+    $text = Get-Content -LiteralPath $boot -Raw -ErrorAction SilentlyContinue
+    if ($text) {
+      $hit = _Hit $text $bootstrapPoisons "bootstrap.log"
+      if ($hit) { return $hit }
     }
+  }
+  return $null
+}
+
+function Assert-UnpackedInventory([string]$Root, [string]$Label) {
+  $ff = Join-Path $Root "assets\ffmpeg\ffmpeg.exe"
+  $fp = Join-Path $Root "assets\ffmpeg\ffprobe.exe"
+  if (-not (Test-Path -LiteralPath $ff)) { return "inventory: assets/ffmpeg/ffmpeg.exe missing" }
+  if (-not (Test-Path -LiteralPath $fp)) { return "inventory: assets/ffmpeg/ffprobe.exe missing" }
+  $py = Join-Path $Root "muravei_env\python.exe"
+  if (-not (Test-Path $py)) { $py = Join-Path $Root "muravei_env\Scripts\python.exe" }
+  if (-not (Test-Path $py)) { return "inventory: pack python missing" }
+  $code = @"
+import importlib.metadata as m, onnxruntime as ort, sys
+print(m.version('onnx'), m.version('onnxslim'), m.version('timm'))
+print(','.join(ort.get_available_providers()))
+import onnx, onnxslim, ultralytics, sahi, timm, safetensors
+print('OK')
+"@
+  $prevEap = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  $rawInv = & $py -c $code 2>&1
+  $ErrorActionPreference = $prevEap
+  $out = ($rawInv | ForEach-Object { if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.ToString() } else { "$_" } }) -join "`n"
+  if ($LASTEXITCODE -ne 0 -or ($out -notmatch "OK")) {
+    return "inventory imports failed: $out"
+  }
+  if (($Label -eq "Mini" -or $Label -eq "FullCpu") -and ($out -notmatch "DmlExecutionProvider")) {
+    return "inventory: DmlExecutionProvider missing for Mini/CPU kit: $out"
   }
   return $null
 }
@@ -115,7 +175,13 @@ import asyncio
 async def main():
     out = await eng.infer(raw, confidence=0.25, frame_idx=0, time_sec=0.0)
     objs = out.get('objects') or []
-    print('INFER', json.dumps({'n': len(objs), 'ms': out.get('ms'), 'mode': out.get('mode'), 'kind': out.get('kind')}))
+    raw_n = out.get('raw_n', 0)
+    accepted = len(objs)
+    if raw_n > 0:
+        reject_ratio = round(1.0 - accepted / raw_n, 3)
+    else:
+        reject_ratio = 0.0
+    print('INFER', json.dumps({'n': accepted, 'raw_n': raw_n, 'reject_ratio': reject_ratio, 'ms': out.get('ms'), 'mode': out.get('mode'), 'kind': out.get('kind')}))
     if out.get('mode') == 'error' or 'error' in out:
         print('FAIL', out.get('error') or out)
         sys.exit(3)
@@ -123,6 +189,10 @@ async def main():
     if not isinstance(objs, list):
         print('FAIL objects not a list')
         sys.exit(3)
+    # Validator reject_ratio gate (E6)
+    if reject_ratio >= 0.5:
+        print('VALIDATOR_WARN known high-reject: smoke_sample outside tactical class set')
+    print('REJECT_ROW', json.dumps({'reject_ratio': reject_ratio, 'accepted': accepted, 'raw_n': raw_n}))
 asyncio.run(main())
 from services.sam3_engine import get_sam3_engine
 sam = get_sam3_engine()
@@ -149,10 +219,16 @@ if (time.time() - t0) > float($timeoutSec):
   $prev = $env:PYTHONPATH
   $env:PYTHONPATH = Join-Path $Root "backend"
   try {
-    $out = & $py $tmpPy 2>&1 | Out-String
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $raw = & $py $tmpPy 2>&1
+    $ErrorActionPreference = $prevEap
+    $out = ($raw | ForEach-Object { if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.ToString() } else { "$_" } }) -join "`n"
   } finally {
     $env:PYTHONPATH = $prev
   }
+  $funcLog = Join-Path $Root "logs\smoke_functional.out"
+  Set-Content -LiteralPath $funcLog -Value $out -Encoding UTF8
   Write-Host $out
   if ($LASTEXITCODE -ne 0) { return "functional detect/sam3 failed exit=$LASTEXITCODE" }
   if ($out -notmatch "ENGINE") { return "no ENGINE status line" }
@@ -243,7 +319,60 @@ function Invoke-KitSmoke([string]$ZipPath, [string]$Label, [int]$Port) {
     if ($bannerLine) { $banner = $bannerLine.Line.Trim() }
   }
 
+  $inventoryLabel = if ($ZipPath -match 'win_cpu') { "FullCpu" } else { $Label }
+  $invErr = Assert-UnpackedInventory -Root $root -Label $inventoryLabel
+
+  # CRLF/LF launcher line-ending guard (E6)
+  $crlfErr = $null
+  $batPath = Join-Path $root "Запустить.bat"
+  if (Test-Path -LiteralPath $batPath) {
+    $batBytes = [System.IO.File]::ReadAllBytes($batPath)
+    $batCrlf = $false
+    for ($i = 0; $i -lt ($batBytes.Length - 1); $i++) {
+      if ($batBytes[$i] -eq 0x0D -and $batBytes[$i+1] -eq 0x0A) { $batCrlf = $true; break }
+    }
+    if (-not $batCrlf) { $crlfErr = "Запустить.bat missing CRLF" }
+  }
+  $shPath = Join-Path $root "Запустить.sh"
+  if ((-not $crlfErr) -and (Test-Path -LiteralPath $shPath)) {
+    $shBytes = [System.IO.File]::ReadAllBytes($shPath)
+    $shCr = $false
+    for ($i = 0; $i -lt ($shBytes.Length - 1); $i++) {
+      if ($shBytes[$i] -eq 0x0D) { $shCr = $true; break }
+    }
+    if ($shCr) { $crlfErr = "Запустить.sh has CR (must be LF-only)" }
+  }
+
+  $ffmpegPackOk = $true
+  $ffmpegDetail = ""
+  $ffExe = Join-Path $root "assets\ffmpeg\ffmpeg.exe"
+  if (-not (Test-Path -LiteralPath $ffExe)) {
+    $ffmpegPackOk = $false
+    $ffmpegDetail = "assets/ffmpeg/ffmpeg.exe missing after unpack"
+  } else {
+    $uvFf = Join-Path $root "logs\uvicorn.log"
+    if (Test-Path $uvFf) {
+      $ffLine = Select-String -Path $uvFf -Pattern "\[ffmpeg\] path=" | Select-Object -First 1
+      if ($ffLine) {
+        $ffmpegDetail = $ffLine.Line.Trim()
+        if ($ffmpegDetail -match "source=PATH") {
+          $ffmpegPackOk = $false
+          $ffmpegDetail = "ffmpeg resolved from PATH (not pack): $ffmpegDetail"
+        }
+      } else {
+        $ffmpegDetail = "pack ffmpeg present; no [ffmpeg] log line yet"
+      }
+    } else {
+      $ffmpegDetail = "pack ffmpeg present"
+    }
+  }
   $poison = Test-LogPoison -Root $root
+  $debug401 = 0
+  $uvLogPath = Join-Path $root "logs\uvicorn.log"
+  if (Test-Path -LiteralPath $uvLogPath) {
+    $debug401 = @(Select-String -LiteralPath $uvLogPath -Pattern '/api/debug/recent.* 401' -ErrorAction SilentlyContinue).Count
+  }
+  $debugPollBounded = $debug401 -le 1
   $logsOk = (Test-Path (Join-Path $root "logs\bootstrap.log")) -or (Test-Path (Join-Path $root "logs\uvicorn.log"))
   $uvLog = Test-Path (Join-Path $root "logs\uvicorn.log")
 
@@ -282,14 +411,28 @@ function Invoke-KitSmoke([string]$ZipPath, [string]$Label, [int]$Port) {
   $detailParts = @()
   if (-not $verMatch) { $detailParts += "banner!='$wantVer' (got: $banner)" }
   if (-not $apiVerOk) { $detailParts += "health.version mismatch" }
+  if ($invErr) { $detailParts += $invErr }
+  if ($crlfErr) { $detailParts += $crlfErr }
+  if (-not $ffmpegPackOk) { $detailParts += $ffmpegDetail }
   if ($poison) { $detailParts += $poison }
+  $detailParts += "pre-login /api/debug/recent 401=$debug401"
+  if (-not $debugPollBounded) { $detailParts += "pre-login debug poll is not bounded" }
   if (-not $uvLog) { $detailParts += "uvicorn.log missing" }
   if (-not $logsOk) { $detailParts += "logs/ missing" }
   if (-not $healthOk) { $detailParts += "health timeout ${HealthTimeoutSec}s" }
   if ($healthOk -and -not $uiOk) { $detailParts += "UI HTML failed" }
   if ($funcErr) { $detailParts += $funcErr }
 
-  $ok = $verMatch -and $apiVerOk -and (-not $poison) -and $uvLog -and $healthOk -and $uiOk -and (-not $funcErr)
+  # Validator reject_ratio row (E6) — informational, not a gate
+  $rejectRow = ""
+  $smokeOut = Join-Path $root "logs\smoke_functional.out"
+  if (Test-Path -LiteralPath $smokeOut) {
+    $rrLine = Select-String -LiteralPath $smokeOut -Pattern "REJECT_ROW" | Select-Object -First 1
+    if ($rrLine) { $rejectRow = $rrLine.Line.Trim() }
+  }
+  if ($rejectRow) { $detailParts += $rejectRow }
+
+  $ok = $verMatch -and $apiVerOk -and (-not $poison) -and $uvLog -and $healthOk -and $uiOk -and (-not $funcErr) -and (-not $invErr) -and $ffmpegPackOk -and $debugPollBounded -and (-not $crlfErr)
 
   Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 

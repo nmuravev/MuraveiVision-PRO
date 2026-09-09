@@ -43,7 +43,13 @@ def onnx_cache_path(weights: Path) -> Path:
 
 
 def ensure_onnx_export(weights: Path, *, imgsz: int = 640) -> Path:
-    """Export Ultralytics model to ONNX once into config/local; reuse if fresh."""
+    """Export Ultralytics model to ONNX once into config/local; never leave beside .pt."""
+    import shutil
+    import tempfile
+
+    from services.ultralytics_airgap import ensure_ultralytics_airgap
+
+    ensure_ultralytics_airgap()
     weights = Path(weights)
     if not weights.is_file():
         raise FileNotFoundError(f"weights missing: {weights.name}")
@@ -61,22 +67,32 @@ def ensure_onnx_export(weights: Path, *, imgsz: int = 640) -> Path:
     _LOG.info("onnx export start weights=%s out=%s", weights.name, out)
     from ultralytics import YOLO
 
-    model = YOLO(str(weights))
-    exported = model.export(format="onnx", imgsz=int(imgsz), simplify=True, opset=12)
-    path = Path(str(exported))
-    if path.resolve() != out.resolve() and path.is_file():
-        try:
-            import shutil
-
+    # Export inside a temp dir under onnx_cache so Ultralytics never writes next to pack .pt.
+    with tempfile.TemporaryDirectory(prefix="onnx_export_", dir=str(_ONNX_CACHE_DIR)) as td:
+        tmp_w = Path(td) / weights.name
+        shutil.copy2(weights, tmp_w)
+        model = YOLO(str(tmp_w))
+        exported = model.export(format="onnx", imgsz=int(imgsz), simplify=True, opset=12)
+        path = Path(str(exported))
+        if not path.is_file():
+            # Ultralytics sometimes returns stem without moving; search temp
+            hits = list(Path(td).rglob("*.onnx"))
+            if not hits:
+                raise RuntimeError(f"ONNX export did not produce {out.name}")
+            path = hits[0]
+        if path.resolve() != out.resolve():
             shutil.copy2(path, out)
-            if path.parent.resolve() == weights.parent.resolve() and path != out:
-                try:
-                    path.unlink(missing_ok=True)
-                except OSError:
-                    pass
+        elif not out.is_file():
+            raise RuntimeError(f"ONNX export did not produce {out.name}")
+
+    # Belt: remove any sibling .onnx left beside pack weights
+    sibling = weights.with_suffix(".onnx")
+    if sibling.is_file() and sibling.resolve() != out.resolve():
+        try:
+            sibling.unlink(missing_ok=True)
+            _LOG.info("removed sibling ONNX beside weights: %s", sibling.name)
         except OSError:
-            if path.is_file():
-                return path
+            pass
     if not out.is_file():
         raise RuntimeError(f"ONNX export did not produce {out.name}")
     print(f"[YOLO] ONNX готов: {out}")
@@ -177,7 +193,16 @@ def run_directml_onnx(
     import onnxruntime as ort
 
     providers = [DML_PROVIDER, "CPUExecutionProvider"]
-    sess = ort.InferenceSession(str(onnx_path), providers=providers)
+    try:
+        sess = ort.InferenceSession(str(onnx_path), providers=providers)
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc)
+        if "Access is denied" in msg or "os error 5" in msg.lower() or "DLL" in msg.upper():
+            raise RuntimeError(
+                "ORT DirectML недоступен (DLL/Access denied). "
+                "Сессия на CPU .pt; перезапустите для ускорения."
+            ) from exc
+        raise
     active = sess.get_providers()
     if DML_PROVIDER not in active:
         raise RuntimeError(f"DmlExecutionProvider not active (got {active})")

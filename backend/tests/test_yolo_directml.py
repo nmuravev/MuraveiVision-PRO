@@ -80,5 +80,26 @@ class YoloDirectmlTests(unittest.TestCase):
                 self.assertIn("onnx_cache", str(path).replace("\\", "/"))
 
 
+
+    def test_onnx_export_never_leaves_sibling(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            weights = Path(td) / "toy.pt"
+            weights.write_bytes(b"fake-pt-bytes-xxxx")
+            sibling = weights.with_suffix(".onnx")
+            out = onnx_cache_path(weights)
+
+            class _FakeModel:
+                def export(self, **_kwargs):
+                    # Simulate bad export beside weights
+                    sibling.write_bytes(b"z" * 2048)
+                    return str(sibling)
+
+            with mock.patch("ultralytics.YOLO", return_value=_FakeModel()):
+                path = ensure_onnx_export(weights, imgsz=640)
+            self.assertTrue(path.is_file())
+            self.assertIn("onnx_cache", str(path).replace("\\", "/"))
+            self.assertFalse(sibling.is_file(), "sibling ONNX beside .pt must be removed")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -14,3 +14,5 @@ After code changes: follow [`.cursorrules`](.cursorrules) and [docs/DOCS_SYNC_CH
 Do **not** treat `.backup/MuraveiVision/PROJECT_CONTEXT.md` or `.backup/.../ARCHITECTURE_FOR_AI.md` as current — they describe a superseded layout. [`docs/ARCHITECTURE_FOR_AI.md`](docs/ARCHITECTURE_FOR_AI.md) is a stub that points to [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 Python: only `muravei_env\Scripts\python.exe` (3.12.10). See `.cursor/rules/muravei-python-env.mdc`.
+
+Agent skills: [docs/SKILL_CODEX.md](docs/SKILL_CODEX.md) (Codex/Astra) · [docs/SKILL_QWEN_LOCAL.md](docs/SKILL_QWEN_LOCAL.md) (local Qwen).

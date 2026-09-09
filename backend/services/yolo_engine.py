@@ -1,6 +1,10 @@
 """YOLO26 / YOLOE-26 detection engine: one Ultralytics model, one GPU queue."""
 from __future__ import annotations
 
+from services.ultralytics_airgap import ensure_ultralytics_airgap
+
+ensure_ultralytics_airgap()
+
 import asyncio
 import io
 import time
@@ -769,6 +773,7 @@ class YoloEngine:
                 ]
             except Exception as exc:  # noqa: BLE001
                 print(f"[YOLO] DirectML fail → CPU fallback (не молча): {exc}")
+                print("[YOLO] Перезапустите для ускорения (DirectML/ORT).")
                 try:
                     from services.runtime_log import write as runtime_write
 
@@ -987,6 +992,7 @@ class YoloEngine:
         img_size: tuple[int, int] | None = None,
     ) -> dict[str, Any]:
         """Shared tail of _predict_sync / _predict_sync_sahi: track + envelope."""
+        raw_n = len(objects)
         objects, ego = self._apply_motion_track(objects, image_bytes, viewer_id)
         # --- Response validator (defense-in-depth) ---
         from services.response_validator import get_validator
@@ -1011,6 +1017,7 @@ class YoloEngine:
             "ts": time.time(),
             "kind": used,
             "n": len(objects),
+            "raw_n": raw_n,
             "ms": ms,
             "nms_mode": nms_mode,
             "model": self.model_name,

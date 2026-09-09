@@ -58,3 +58,33 @@ Paths repo-relative or `MURAVEI_*`. URLs+sha256 only in `scripts/portable_manife
 `scripts/smoke_portable.ps1` (Mini CI-required: pack layout + YOLO infer + SAM3 load); `-Full` только локально → `CI: Mini OK / Local: Full OK|skipped`.
 
 Smoke sample: `assets/smoke_sample/frame_person_car.jpg` (synthetic CC0 — see `LICENSE.txt`).
+
+## Offline completeness inventory (что внутри и зачем)
+
+| Component | Mini | FullKit | Mandatory |
+|--|--|--|--|
+| python 3.12 embeddable | yes | yes | YES |
+| torch (cpu) | yes | yes (cpu-flavor) / cuda-flavor when `+cu128` wheels pre-seeded | YES |
+| onnx + onnxslim | yes | yes | YES |
+| onnxruntime-directml (gpu for cuda-flavor) | yes | yes | YES |
+| ultralytics + SAM3 code + sahi | yes | yes | YES |
+| fastapi / uvicorn / pydantic / opencv-headless / numpy / pillow | yes | yes | YES |
+| yolo26n-ft.pt (+ yolo26n.pt), ladder l-ft>m-ft>s-ft>n-ft>n | yes | yes | YES |
+| sam3.pt exactly one | yes | yes | YES |
+| **ffmpeg + ffprobe pack-local** (`assets/ffmpeg/`) | yes | yes | YES |
+| COLMAP + AliceVision sidecars | — | yes | YES (Full) |
+| backend/ + dist/ + assets/smoke_sample/ | yes | yes | YES |
+| KIT + VERSION + Запустить.bat | yes | yes | YES |
+| FORBIDDEN: ollama/, node_modules, runs/detect >50 MB, sam dups, archive media, .git, *.part/*.tmp | assert | assert | assert |
+
+### Air-gap runtime
+
+- Pack **does not** call the network on start / Scan / Segmentation.
+- Ultralytics AutoUpdate disabled: `YOLO_AUTOINSTALL=0` + `ULTRALYTICS_SKIP_REQUIREMENTS_CHECKS=1` + no-op wrapper (`backend/services/ultralytics_airgap.py`).
+- Dist-name note: Ultralytics checks metadata name `onnxruntime`, while Mini/CPU ships **`onnxruntime-directml`** (import name still `onnxruntime`). Pins for `onnx`/`onnxslim` + air-gap guard close the AutoUpdate hole.
+- ffmpeg/ffprobe resolve order: `MURAVEI_FFMPEG_DIR` → `assets/ffmpeg` → `sidecars/ffmpeg` → PATH (PATH = degrade only).
+- ffmpeg redistributable: GPL/LGPL essentials (see `scripts/portable_manifest.json` → `ffmpeg_windows_essentials`).
+- ONNX export cache: `config/local/onnx_cache` only (never beside pack `.pt`).
+- Smoke poison grep (split): uvicorn/stderr fails on AutoUpdate/pip; bootstrap only on narrow patterns (offline `--no-index` heal allowed).
+
+Size gates: Mini warn >4.5 GB / reject >5 GB; FullKit warn >9.5 GB / reject >10 GB.

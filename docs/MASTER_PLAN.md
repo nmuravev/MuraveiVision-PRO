@@ -2,14 +2,15 @@
 
 ## Meta
 
-- **Snapshot date:** 2026-09-08
-- **Branch:** `main` @ detect out-of-box packs
-- **Commit:** (pending ship) detect contract + Mini/Full rebuild
-- **Unit tests:** 325+ (+ detect contract / KIT / SAHI default)
-- **Status:** Mini/Full ship tactical YOLO + sam3.pt; Ollama not bundled; KIT marker; SAHI default ON; functional smoke
-- **Last updated by:** fix(detect) out-of-box CPU weights + SAM3 in both packs
-- **Portable local:** Mini `MuraveiVision_PRO_Mini.zip` 3.41 GB sha256 `6D11DF7FAA1222098A0DEEE9EB226E30CA018E2357E5171107C379AC87F02C2D`; FullKit CUDA blocked (no cu128 wheel cache / network timeout) → shipped `MuraveiVision_PRO_FullKit_win_cpu.zip` 5.06 GB sha256 `C205B4F3FDEB95CAF92B9D39AD1E1AEADCCAE00C642FD9E00DBB90BCDD68DACC`; ollama absent both; smoke CI Mini OK
+- **Snapshot date:** 2026-09-09
+- **Branch:** `main` @ E6 timm + validator smoke + ci_full
+- **Commit:** (pending) E6 timm/safetensors + CRLF guard + validator reject_ratio + ci_full.ps1
+- **Unit tests:** 325+ (+ detect contract / KIT / SAHI / validator reject_ratio)
+- **Status:** E6 complete — timm pinned, CRLF guard, SAM3 ≤60s, validator reject_ratio, ci_full, rebuilt & smoked
+- **Last updated by:** fix(airgap): E6 timm + validator smoke + ci pipeline
+- **Portable local:** Mini 3.62 GB (sha256 `09904BB0…C8AE49B4`) ✓ smoke; FullKit CPU 5.27 GB (sha256 `8D6FA6A5…269EB345`) ✓ smoke
 - **Env pack:** win_cuda / win_cpu — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
+- **E6 additions:** `timm>=0.9.0` + `safetensors>=0.4.0` in requirements; wheels in `portable_manifest.json`; `ci_full.ps1` local CI; CRLF/LF launcher guards in build+smoke; SAM3 load cap ≤60s; validator `reject_ratio` / `raw_n` in infer envelope
 
 ## Major Changes in This Release
 

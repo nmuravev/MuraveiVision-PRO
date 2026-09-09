@@ -39,3 +39,6 @@
 | [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md) | Инженер | Установка, настройка, модели, сеть, диагностика, обслуживание |
 
 Устаревшие манифесты из `.backup/MuraveiVision/*.md` **не использовать** — они описывают другой каркас (ONNX-only, Mini/Pro, фантомные пути).
+
+- [SKILL_CODEX.md](SKILL_CODEX.md) — Codex/Astra onboarding
+- [SKILL_QWEN_LOCAL.md](SKILL_QWEN_LOCAL.md) — local Qwen Continue.dev skill

@@ -32,6 +32,7 @@ param(
   [switch]$NoDetectWeights,
   [switch]$IncludeAliceVision,
   [switch]$NoAliceVision,
+  [switch]$Offline,
   [ValidateSet("cuda", "cpu")]
   [string]$TorchFlavor = "cuda"
 )
@@ -44,6 +45,20 @@ $PyVer = "3.12.10"
 $HostPy = Join-Path $Repo "muravei_env\Scripts\python.exe"
 $HostPip = Join-Path $Repo "muravei_env\Scripts\pip.exe"
 $Stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+
+# Air-gap contract: a CUDA FullKit is allowed only when both matching cu128
+# wheels have already been seeded locally. Never probe or download CUDA wheels.
+$CudaFlavorPending = $false
+if ($FullKit -and $TorchFlavor -eq "cuda") {
+  $wheelRoot = Join-Path $CacheDir "wheels"
+  $cuTorch = @(Get-ChildItem -LiteralPath $wheelRoot -File -Filter "torch*+cu128*.whl" -ErrorAction SilentlyContinue)
+  $cuVision = @(Get-ChildItem -LiteralPath $wheelRoot -File -Filter "torchvision*+cu128*.whl" -ErrorAction SilentlyContinue)
+  if ($cuTorch.Count -eq 0 -or $cuVision.Count -eq 0) {
+    $CudaFlavorPending = $true
+    $TorchFlavor = "cpu"
+    Write-Host "CUDA FullKit skipped: portable/cache/wheels has no matching +cu128 torch + torchvision wheels. Building CPU FullKit; no network probe/download." -ForegroundColor Yellow
+  }
+}
 
 if ($FullKit) {
   $KitTag = if ($TorchFlavor -eq "cpu") { "FullKitCpu" } else { "FullKit" }
@@ -98,6 +113,160 @@ Write-Host "VERSION: $AppVersion"
 function Assert-File([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path)) { throw "Missing: $Path" }
 }
+
+function Ensure-PackFfmpeg {
+  # Offline-first: portable/cache/ffmpeg/{ffmpeg,ffprobe}.exe → stage assets/ffmpeg.
+  # If missing, one-time fetch from portable_manifest.json (URL+sha256 only there).
+  $cacheFf = Join-Path $CacheDir "ffmpeg"
+  $stageFf = Join-Path $Stage "assets\ffmpeg"
+  New-Item -ItemType Directory -Force -Path $cacheFf | Out-Null
+  New-Item -ItemType Directory -Force -Path $stageFf | Out-Null
+  $need = @("ffmpeg.exe", "ffprobe.exe")
+  $missing = @($need | Where-Object { -not (Test-Path -LiteralPath (Join-Path $cacheFf $_)) })
+  if ($missing.Count -gt 0) {
+    if ($Offline) { throw "BUILD FAIL (offline): ffmpeg cache missing $($missing -join ', ')" }
+    Write-Host "ffmpeg cache missing ($($missing -join ', ')) — one-time fetch from manifest..." -ForegroundColor Yellow
+    $manPath = Join-Path $Repo "scripts\portable_manifest.json"
+    if (-not (Test-Path -LiteralPath $manPath)) { throw "portable_manifest.json missing for ffmpeg fetch" }
+    $man = Get-Content -LiteralPath $manPath -Raw | ConvertFrom-Json
+    $comp = $man.components.ffmpeg_windows_essentials
+    if (-not $comp -or -not $comp.url -or -not $comp.sha256) { throw "manifest.components.ffmpeg_windows_essentials incomplete" }
+    $zip = Join-Path $CacheDir "ffmpeg-6.1.1-essentials_build.zip"
+    if (-not (Test-Path -LiteralPath $zip)) {
+      Invoke-WebRequest -Uri ([string]$comp.url) -OutFile $zip -UseBasicParsing
+    }
+    $got = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+    $expect = ([string]$comp.sha256).ToLowerInvariant()
+    if ($got -ne $expect) { throw "ffmpeg zip sha256 mismatch: got $got expected $expect" }
+    $ex = Join-Path $CacheDir "_ffmpeg_extract"
+    if (Test-Path $ex) { Remove-Item $ex -Recurse -Force }
+    Expand-Archive -LiteralPath $zip -DestinationPath $ex -Force
+    foreach ($n in $need) {
+      $hit = Get-ChildItem $ex -Recurse -Filter $n -File | Select-Object -First 1
+      if (-not $hit) { throw "ffmpeg extract missing $n" }
+      Copy-Item -LiteralPath $hit.FullName -Destination (Join-Path $cacheFf $n) -Force
+    }
+    Remove-Item $ex -Recurse -Force -EA SilentlyContinue
+  }
+  foreach ($n in $need) {
+    $src = Join-Path $cacheFf $n
+    if (-not (Test-Path -LiteralPath $src)) { throw "BUILD FAIL: pack ffmpeg missing $src" }
+    if ((Get-Item $src).Length -lt 1024) { throw "BUILD FAIL: $n too small (shim?)" }
+    Copy-Item -LiteralPath $src -Destination (Join-Path $stageFf $n) -Force
+    Write-Host ("  assets/ffmpeg/{0} ({1:N1} MB)" -f $n, ((Get-Item $src).Length / 1MB))
+  }
+}
+
+function Assert-PackInventory {
+  param([string]$Kit)
+  $missing = New-Object System.Collections.Generic.List[string]
+  $fail = New-Object System.Collections.Generic.List[string]
+  $py = Join-Path $Stage "muravei_env\python.exe"
+  if (-not (Test-Path $py)) { $py = Join-Path $Stage "muravei_env\Scripts\python.exe" }
+  if (-not (Test-Path $py)) { $missing.Add("python 3.12 embeddable") }
+
+  $reqImports = @(
+    "torch", "onnx", "onnxslim", "onnxruntime", "ultralytics", "sahi",
+    "fastapi", "uvicorn", "pydantic", "cv2", "numpy", "PIL", "timm", "safetensors"
+  )
+  if (Test-Path $py) {
+    $code = @"
+import importlib, importlib.metadata, sys
+pkgs = ['onnx','onnxslim','timm','safetensors']
+for p in pkgs:
+    print('META', p, importlib.metadata.version(p))
+import onnxruntime as ort
+print('ORT', ','.join(ort.get_available_providers()))
+for m in ['torch','ultralytics','sahi','fastapi','uvicorn','pydantic','cv2','numpy','PIL','timm','safetensors']:
+    importlib.import_module(m)
+print('IMPORTS_OK')
+assert sys.version.startswith('3.12')
+"@
+    $out = & $py -c $code 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0 -or ($out -notmatch "IMPORTS_OK")) {
+      $fail.Add("python imports failed: $out")
+    } else {
+      if ($out -notmatch "META onnx") { $missing.Add("onnx metadata") }
+      if ($out -notmatch "META onnxslim") { $missing.Add("onnxslim metadata") }
+      if ($out -notmatch "META timm") { $missing.Add("timm metadata") }
+      if ($Kit -eq "mini" -or $TorchFlavor -eq "cpu") {
+        if ($out -notmatch "DmlExecutionProvider") {
+          $fail.Add("DmlExecutionProvider missing for Mini/CPU kit")
+        }
+      }
+    }
+  }
+
+  foreach ($n in @("ffmpeg.exe", "ffprobe.exe")) {
+    if (-not (Test-Path (Join-Path $Stage "assets\ffmpeg\$n"))) { $missing.Add("assets/ffmpeg/$n") }
+  }
+  if (-not $NoDetectWeights) {
+    $models = Join-Path $Stage "assets\models"
+    $yolo = @(Get-ChildItem $models -File -Filter "yolo26*.pt" -EA SilentlyContinue | Where-Object { $_.Name -notmatch "seg" -and $_.Length -gt 1024 })
+    if ($yolo.Count -lt 1) { $missing.Add("yolo26*.pt tactical") }
+    $sam = Join-Path $models "sam3.pt"
+    if (-not (Test-Path $sam)) { $missing.Add("sam3.pt") }
+  }
+  foreach ($rel in @("backend", "dist", "assets\smoke_sample", "VERSION", "KIT", "Запустить.bat")) {
+    if (-not (Test-Path (Join-Path $Stage $rel))) { $missing.Add($rel) }
+  }
+  if ($Kit -eq "full") {
+    if (-not (Test-Path (Join-Path $Stage "sidecars\colmap"))) { $missing.Add("sidecars/colmap") }
+  }
+  # Forbidden
+  if (Test-Path (Join-Path $Stage "ollama")) { $fail.Add("FORBIDDEN ollama/") }
+  if (Test-Path (Join-Path $Stage "node_modules")) { $fail.Add("FORBIDDEN node_modules") }
+  if (Test-Path (Join-Path $Stage ".git")) { $fail.Add("FORBIDDEN .git") }
+  $runsDetect = Join-Path $Stage "runs\detect"
+  if (Test-Path -LiteralPath $runsDetect) {
+    $runsBytes = (Get-ChildItem -LiteralPath $runsDetect -Recurse -File -EA SilentlyContinue | Measure-Object Length -Sum).Sum
+    if ($null -eq $runsBytes) { $runsBytes = 0 }
+    if ($runsBytes -gt 50MB) { $fail.Add("FORBIDDEN runs/detect >50 MB") }
+  }
+  $samHits = @(Get-ChildItem -LiteralPath (Join-Path $Stage "assets\models") -Recurse -File -Filter "*sam*.pt" -EA SilentlyContinue)
+  if (-not $NoDetectWeights -and ($samHits.Count -ne 1 -or $samHits[0].Name -ne "sam3.pt")) {
+    $fail.Add("FORBIDDEN SAM duplicates: $($samHits.Name -join ',')")
+  }
+  $archive = Join-Path $Stage "archive"
+  if (Test-Path -LiteralPath $archive) {
+    $archiveMedia = @(Get-ChildItem -LiteralPath $archive -Recurse -File -EA SilentlyContinue |
+      Where-Object { $_.Extension -match '^\.(mp4|mov|avi|mkv|jpg|jpeg|png|webp|ply|obj)$' })
+    if ($archiveMedia.Count -gt 0) { $fail.Add("FORBIDDEN archive media: $($archiveMedia[0].Name)") }
+  }
+  $parts = Get-ChildItem $Stage -Recurse -File -EA SilentlyContinue | Where-Object { $_.Name -match '\.(part|tmp)$' }
+  if ($parts) { $fail.Add("FORBIDDEN *.part/*.tmp: $($parts.Name -join ',')") }
+
+  if ($missing.Count -gt 0 -or $fail.Count -gt 0) {
+    $msg = "INVENTORY FAIL kit=$Kit`n missing: $($missing -join '; ')`n fail: $($fail -join '; ')"
+    throw $msg
+  }
+  Write-Host "Assert-PackInventory OK ($Kit)" -ForegroundColor Green
+}
+
+function Assert-LauncherLineEndings([string]$Root) {
+  $bat = Join-Path $Root "Запустить.bat"
+  $sh  = Join-Path $Root "Запустить.sh"
+  if (Test-Path -LiteralPath $bat) {
+    $bytes = [System.IO.File]::ReadAllBytes($bat)
+    $hasCrlf = $false
+    for ($i = 0; $i -lt ($bytes.Length - 1); $i++) {
+      if ($bytes[$i] -eq 0x0D -and $bytes[$i+1] -eq 0x0A) { $hasCrlf = $true; break }
+    }
+    if (-not $hasCrlf) { throw "Запустить.bat must have CRLF line endings" }
+    Write-Host "Assert-LauncherLineEndings: Запустить.bat CRLF OK" -ForegroundColor Green
+  }
+  if (Test-Path -LiteralPath $sh) {
+    $bytes = [System.IO.File]::ReadAllBytes($sh)
+    $hasCr = $false
+    for ($i = 0; $i -lt ($bytes.Length - 1); $i++) {
+      if ($bytes[$i] -eq 0x0D -and $bytes[$i+1] -ne 0x0A) { $hasCr = $true; break }
+      if ($bytes[$i] -eq 0x0D) { $hasCr = $true; break }
+    }
+    if ($hasCr) { throw "Запустить.sh must have LF-only line endings (found CR)" }
+    Write-Host "Assert-LauncherLineEndings: Запустить.sh LF OK" -ForegroundColor Green
+  }
+}
+
 
 function Remove-Pycache([string]$Root) {
   Get-ChildItem -LiteralPath $Root -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue |
@@ -246,6 +415,10 @@ function Install-ProfileTorch {
       $usedCache = $true
       Write-Host "Profile torch from filtered wheel cache ($($flt.SelectedTorch) matches)" -ForegroundColor Yellow
     } else {
+      if ($WantCuda) {
+        throw "CUDA FullKit requires pre-seeded torch*+cu128* wheels under portable/cache/wheels; network download is forbidden. Build CPU FullKit instead."
+      }
+      if ($Offline) { throw "BUILD FAIL (offline): CPU torch wheels missing from portable/cache/wheels" }
       Write-Host "WARNING: wheel cache has no $label torch — falling back to $($flt.IndexUrl) (never opposite variant)" -ForegroundColor Yellow
       $torchArgs = @(
         "--python", $PyExe, "install", "--force-reinstall", "--no-warn-script-location",
@@ -253,6 +426,10 @@ function Install-ProfileTorch {
       )
     }
   } else {
+    if ($WantCuda) {
+      throw "CUDA FullKit requires portable/cache/wheels with torch*+cu128*; network download is forbidden. Build CPU FullKit instead."
+    }
+    if ($Offline) { throw "BUILD FAIL (offline): portable/cache/wheels missing for CPU torch" }
     $idx = if ($WantCuda) { "https://download.pytorch.org/whl/cu128" } else { "https://download.pytorch.org/whl/cpu" }
     Write-Host "No wheel cache — installing torch from $idx" -ForegroundColor Yellow
     $torchArgs = @(
@@ -271,6 +448,7 @@ function Install-ProfileTorch {
       $ortArgs += @("--no-index", "--find-links", $WheelDir, "onnxruntime-directml")
       & $HostPyExe -m pip @ortArgs
       if ($LASTEXITCODE -ne 0) {
+        if ($Offline) { throw "BUILD FAIL (offline): onnxruntime-directml missing from wheel cache" }
         Write-Host "onnxruntime-directml not in cache — trying online / onnxruntime" -ForegroundColor Yellow
         & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-deps --no-warn-script-location --no-cache-dir "onnxruntime-directml>=1.16.0"
         if ($LASTEXITCODE -ne 0) {
@@ -279,6 +457,7 @@ function Install-ProfileTorch {
         }
       }
     } else {
+      if ($Offline) { throw "BUILD FAIL (offline): no wheel cache for onnxruntime-directml" }
       & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-deps --no-warn-script-location --no-cache-dir "onnxruntime-directml>=1.16.0"
       if ($LASTEXITCODE -ne 0) {
         & $HostPyExe -m pip --python $PyExe install --force-reinstall --no-deps --no-warn-script-location --no-cache-dir "onnxruntime>=1.16.0"
@@ -413,6 +592,7 @@ if (Test-Path -LiteralPath $smokeSrc) {
   Write-Host "  assets/smoke_sample copied"
 }
 
+
 Copy-Item (Join-Path $Repo "Запустить.bat") $Stage -Force
 $shLaunch = Join-Path $Repo "Запустить.sh"
 if (Test-Path -LiteralPath $shLaunch) { Copy-Item $shLaunch $Stage -Force }
@@ -472,12 +652,28 @@ if ($FetchEmbeddablePython) {
 
   $getPip = Join-Path $CacheDir "get-pip.py"
   Write-Host "get-pip + requirements (долго)..." -ForegroundColor Yellow
-  if (-not (Test-Path -LiteralPath $getPip)) {
-    Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile $getPip
-  }
   $pyExe = Join-Path $PyHome "python.exe"
-  & $pyExe $getPip --no-warn-script-location
-  if ($LASTEXITCODE -ne 0) { throw "get-pip failed" }
+  if ($Offline) {
+    # The embedded distribution has no pip. Seed it from the mandated 3.12 host
+    # environment instead of asking get-pip to resolve anything from the network.
+    $hostSite = Join-Path $Repo "muravei_env\Lib\site-packages"
+    $targetSite = Join-Path $PyHome "Lib\site-packages"
+    $hostPipPkg = Join-Path $hostSite "pip"
+    if (-not (Test-Path -LiteralPath $hostPipPkg)) { throw "BUILD FAIL (offline): host pip package missing" }
+    New-Item -ItemType Directory -Force -Path $targetSite | Out-Null
+    Copy-Item -LiteralPath $hostPipPkg -Destination (Join-Path $targetSite "pip") -Recurse -Force
+    Get-ChildItem -LiteralPath $hostSite -Directory -Filter "pip-*.dist-info" -ErrorAction SilentlyContinue |
+      ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $targetSite $_.Name) -Recurse -Force }
+    & $pyExe -m pip --version
+    if ($LASTEXITCODE -ne 0) { throw "BUILD FAIL (offline): seeded embedded pip did not start" }
+    Write-Host "Offline build: seeded embedded pip from muravei_env (no get-pip/network)." -ForegroundColor Yellow
+  } else {
+    if (-not (Test-Path -LiteralPath $getPip)) {
+      Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile $getPip
+    }
+    & $pyExe $getPip --no-warn-script-location
+    if ($LASTEXITCODE -ne 0) { throw "get-pip failed" }
+  }
 
   # Do NOT copy python.exe into Scripts\ — without python*._pth beside it, Windows
   # resolves sys.prefix to the host/system install (same binary, wrong site-packages).
@@ -540,9 +736,13 @@ if ($FetchEmbeddablePython) {
   }
   Write-Host "Baking deps via host pip --python (embed target)..." -ForegroundColor Yellow
   # Note: --python must come BEFORE the subcommand name
-  & $HostPy -m pip --python $pyExe install --upgrade pip setuptools wheel --no-warn-script-location
-  $bakeEc = $LASTEXITCODE
-  if ($bakeEc -ne 0) { throw "pip upgrade failed" }
+  if ($Offline) {
+    Write-Host "Offline build: skip pip/setuptools/wheel upgrade (network prohibited)." -ForegroundColor Yellow
+  } else {
+    & $HostPy -m pip --python $pyExe install --upgrade pip setuptools wheel --no-warn-script-location
+    $bakeEc = $LASTEXITCODE
+    if ($bakeEc -ne 0) { throw "pip upgrade failed" }
+  }
   Ensure-PipCaBundle $PyHome
   $reqFile = Join-Path $Repo "backend\requirements.txt"
   $wheelDir = Join-Path $CacheDir "wheels"
@@ -560,6 +760,7 @@ if ($FetchEmbeddablePython) {
     Write-Host "Using filtered local wheel cache: $bakeFindLinks" -ForegroundColor Yellow
     $bakeArgs = @("--python", $pyExe, "install", "--no-index", "--find-links", $bakeFindLinks, "--prefer-binary", "--no-warn-script-location", "-r", $reqFile)
   } else {
+    if ($Offline) { throw "BUILD FAIL (offline): portable/cache/wheels is empty" }
     Write-Host "No portable/cache/wheels — online install (run scripts/cache_portable_wheels.ps1 once)" -ForegroundColor Yellow
     $bakeArgs = @("--python", $pyExe, "install", "--no-cache-dir", "--prefer-binary", "--no-warn-script-location", "-r", $reqFile)
   }
@@ -609,6 +810,8 @@ if ($FetchEmbeddablePython) {
 
   & $pyExe -c "import sys,fastapi,uvicorn,ultralytics,cv2,jwt; assert sys.version.startswith('3.12'); print('BAKE_OK', sys.version.split()[0], fastapi.__version__)"
   if ($LASTEXITCODE -ne 0) { throw "BAKE import failed" }
+  & $pyExe -c "import importlib.metadata as m, onnxruntime as ort; print('ONNX', m.version('onnx'), 'ONNXSLIM', m.version('onnxslim')); print('ORT', ort.get_available_providers()); import onnx, onnxslim"
+  if ($LASTEXITCODE -ne 0) { throw "BAKE onnx/onnxslim/ort assert failed" }
   Write-Host "Embeddable muravei_env ready (3.12)" -ForegroundColor Green
 } else {
   Write-Host "WARNING: without -FetchEmbeddablePython field kit needs host Python." -ForegroundColor Yellow
@@ -694,7 +897,7 @@ MuraveiVision PRO v$AppVersion — $kitLabel
 =================================
 Запустить.bat
 VERSION               ($AppVersion)
-muravei_env\          (embeddable Python 3.12.10 + packages$(if ($FullKit) { ' + torch cu128' }))
+muravei_env\          (embeddable Python 3.12.10 + packages$(if ($FullKit) { if ($TorchFlavor -eq 'cuda') { ' + torch cu128' } else { ' + torch CPU / DirectML' } }))
 dist\                 (UI + CSP)
 backend\              (FastAPI)
 $modelsLine
@@ -712,6 +915,7 @@ Ollama не в комплекте: поставьте отдельно; air-gap 
 Бинарные паки не публикуются на GitHub — внутренний офлайн-канал.
 "@
 Set-Content -LiteralPath (Join-Path $Stage "PORTABLE.txt") -Value $note -Encoding UTF8
+
 
 # --- Hygiene asserts before zip (fail loud) ---
 function Assert-SlimStageHygiene {
@@ -764,7 +968,15 @@ function Assert-SlimStageHygiene {
   if ($kitText -notin @("mini", "full")) { throw "HYGIENE: KIT must be mini|full, got '$kitText'" }
   Write-Host "Hygiene asserts OK (VERSION=$verText KIT=$kitText)" -ForegroundColor Green
 }
+Write-Host "Ensure pack-local ffmpeg/ffprobe..."
+Ensure-PackFfmpeg
+Assert-PackInventory -Kit $KitMarker
+Assert-LauncherLineEndings -Root $Stage
 Assert-SlimStageHygiene
+
+if ($CudaFlavorPending) {
+  Set-Content -LiteralPath (Join-Path $Stage "CUDA_FLAVOR_PENDING.txt") -Encoding UTF8 -Value "CUDA FullKit was not built: seed matching torch*+cu128* and torchvision*+cu128* wheels in portable/cache/wheels, then rebuild. No network probe/download was attempted."
+}
 
 if (-not $SkipZip) {
   Write-Host "Creating ZIP (Zip64/Fastest)..." -ForegroundColor Yellow

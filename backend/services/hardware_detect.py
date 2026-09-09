@@ -50,21 +50,23 @@ def detect_python() -> dict[str, Any]:
 
 
 def detect_ffmpeg() -> dict[str, Any]:
-    override = _env_path("MURAVEI_FFMPEG_DIR")
-    roots: list[Path] = []
-    if override:
-        roots.append(override)
-    roots.append(_repo_path("assets", "ffmpeg"))
-    roots.append(_repo_path("assets"))
-    for root in roots:
-        for name in ("ffmpeg.exe", "ffmpeg"):
-            cand = root / name
-            if cand.is_file():
-                return {"present": True, "path": str(cand), "relative": _rel_or_env(cand)}
-    which = shutil.which("ffmpeg")
-    if which:
-        return {"present": True, "path": which, "relative": "PATH"}
-    return {"present": False, "path": None, "relative": None}
+    from services.ffmpeg_util import resolve_ffmpeg
+
+    path, source = resolve_ffmpeg()
+    if not path:
+        return {"present": False, "path": None, "relative": None, "source": source}
+    rel = "PATH" if source == "path" else _rel_or_env(Path(path))
+    return {"present": True, "path": path, "relative": rel, "source": source}
+
+
+def detect_ffprobe() -> dict[str, Any]:
+    from services.ffmpeg_util import resolve_ffprobe
+
+    path, source = resolve_ffprobe()
+    if not path:
+        return {"present": False, "path": None, "relative": None, "source": source}
+    rel = "PATH" if source == "path" else _rel_or_env(Path(path))
+    return {"present": True, "path": path, "relative": rel, "source": source}
 
 
 def detect_colmap() -> dict[str, Any]:
@@ -266,6 +268,7 @@ def detect_all() -> dict[str, Any]:
         "gpu": gpu,
         "python": detect_python(),
         "ffmpeg": detect_ffmpeg(),
+        "ffprobe": detect_ffprobe(),
         "colmap": detect_colmap(),
         "alicevision": detect_alicevision(),
         "tier": tier,

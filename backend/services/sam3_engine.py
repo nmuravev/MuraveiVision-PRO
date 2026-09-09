@@ -7,6 +7,10 @@ Text: from ultralytics.models.sam import SAM3SemanticPredictor
 """
 from __future__ import annotations
 
+from services.ultralytics_airgap import ensure_ultralytics_airgap
+
+ensure_ultralytics_airgap()
+
 import io
 import threading
 import time

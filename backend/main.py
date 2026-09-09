@@ -1,5 +1,9 @@
 """MuraveiVision PRO Backend — FastAPI entrypoint."""
 import os
+
+# Air-gap: disable Ultralytics AutoUpdate before any ultralytics import.
+os.environ.setdefault("ULTRALYTICS_SKIP_REQUIREMENTS_CHECKS", "1")
+os.environ.setdefault("YOLO_AUTOINSTALL", "0")
 import sys
 import site
 from pathlib import Path
@@ -13,15 +17,22 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from config import APP_VERSION, BASE_DIR, DIST_DIR
+from services.ultralytics_airgap import ensure_ultralytics_airgap
+
+ensure_ultralytics_airgap()
 
 # 1. Air-Gapped: block user site-packages
 site.USER_SITE = None
 site.ENABLE_USER_SITE = False
 
-# 2. Inject ffmpeg into PATH when present
-ffmpeg_path = BASE_DIR / "assets"
-if ffmpeg_path.exists():
-    os.environ["PATH"] = str(ffmpeg_path) + os.pathsep + os.environ.get("PATH", "")
+# 2. Inject pack-local ffmpeg dirs into PATH (before system PATH)
+for _ff_dir in (
+    BASE_DIR / "assets" / "ffmpeg",
+    BASE_DIR / "sidecars" / "ffmpeg",
+    BASE_DIR / "assets",
+):
+    if _ff_dir.is_dir():
+        os.environ["PATH"] = str(_ff_dir) + os.pathsep + os.environ.get("PATH", "")
 
 
 def safe_path_resolve(path: str | Path) -> Path:
@@ -45,6 +56,15 @@ def ensure_runtime_dirs() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_runtime_dirs()
+    try:
+        from services.ffmpeg_util import resolve_ffmpeg, resolve_ffprobe
+
+        _fp, _fs = resolve_ffmpeg()
+        _pp, _ps = resolve_ffprobe()
+        print(f"[ffmpeg] path={_fp} source={_fs}")
+        print(f"[ffprobe] path={_pp} source={_ps}")
+    except Exception as _ff_exc:  # noqa: BLE001
+        print(f"[ffmpeg] resolve failed: {_ff_exc}")
     from services.db import init_db
 
     init_db()

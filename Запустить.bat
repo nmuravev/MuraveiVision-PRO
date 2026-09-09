@@ -97,6 +97,13 @@ if defined ALICEVISION_ROOT (
     echo AliceVision sidecar not in kit - Dense/Mesh presets will stay disabled.
 )
 
+REM --- Air-gap: Ultralytics must not AutoUpdate / pip at runtime ---
+set "ULTRALYTICS_SKIP_REQUIREMENTS_CHECKS=1"
+set "YOLO_AUTOINSTALL=0"
+REM Prefer pack-local ffmpeg over system PATH
+if exist "%~dp0assets\ffmpeg" set "PATH=%~dp0assets\ffmpeg;%PATH%"
+if exist "%~dp0sidecars\ffmpeg" set "PATH=%~dp0sidecars\ffmpeg;%PATH%"
+
 REM --- One entry path: MODULE mode (never script-mode python backend\main.py) ---
 echo Starting backend on http://127.0.0.1:8000 ...
 REM Env vars inherit to child. Use cmd /c ""exe" args" quoting (reliable on Windows).

@@ -66,16 +66,10 @@ def status(drone_id: str | None = None) -> dict[str, Any]:
 
 
 def _ffmpeg_bin() -> str | None:
-    found = shutil.which("ffmpeg")
-    if found:
-        return found
-    local = BASE_DIR / "assets" / "ffmpeg.exe"
-    if local.is_file():
-        return str(local)
-    local2 = BASE_DIR / "assets" / "ffmpeg"
-    if local2.is_file():
-        return str(local2)
-    return None
+    from services.ffmpeg_util import ffmpeg_bin
+
+    return ffmpeg_bin()
+
 
 
 def _start_ffmpeg(source: Path, dest: Path, start_sec: float) -> subprocess.Popen:

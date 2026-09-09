@@ -10,6 +10,7 @@
 
 ## Packaging (после v3.3 rc)
 
+- [ ] **FullKit CUDA flavor** — seed `portable/cache/wheels` with `torch*+cu128*` (no runtime network); rebuild FullKit cuda zip
 - [ ] Локальный split `FullKit_Core` + `FullKit_AliceVision` (bootstrap находит sidecars; **не** GitHub assets)
 - [ ] **Tactical YOLO26 s/m/l-ft training** (tank/BMP/soldier/mines) → drop into `assets/models`; rebuild picks up via ladder. **Do not** fetch COCO stock s/m/l.
 
