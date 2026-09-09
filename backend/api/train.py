@@ -99,6 +99,8 @@ class TrainStartBody(BaseModel):
     resume_from: str | None = None
     imgsz: int = Field(default=640, ge=320, le=1024)
     batch: int = Field(default=4, ge=1, le=8)
+    use_uav_arch: bool = Field(default=False, description="Use S2DConv UAV architecture with partial weight transfer")
+    use_uav_ghost_arch: bool = Field(default=False, description="Use S2DConv + Ghost neck architecture (Phase 2)")
 
 
 @router.get("/api/train/status")
@@ -122,12 +124,16 @@ async def train_start(
     resume_from = body.resume_from if body else None
     imgsz = body.imgsz if body else 640
     batch = body.batch if body else 4
+    use_uav_arch = body.use_uav_arch if body else False
+    use_uav_ghost_arch = body.use_uav_ghost_arch if body else False
     try:
         return trainer.start(
             epochs=epochs,
             resume_from=resume_from,
             imgsz=imgsz,
             batch=batch,
+            use_uav_arch=use_uav_arch,
+            use_uav_ghost_arch=use_uav_ghost_arch,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

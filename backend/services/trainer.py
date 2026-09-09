@@ -28,6 +28,12 @@ _state: dict[str, Any] = {
     "cls_loss": None,
     "map50": None,
     "map50_95": None,
+    "ap_s": None,
+    "ap_s_95": None,
+    "ap_m": None,
+    "ap_m_95": None,
+    "ap_l": None,
+    "ap_l_95": None,
     "batch": None,
     "started_at": None,
     "finished_at": None,
@@ -361,12 +367,80 @@ def _atomic_promote(new_best: Path) -> Path:
     return target
 
 
+UAV_YAML = BASE_DIR / "assets" / "models" / "yolo26n-uav.yaml"
+UAV_GHOST_YAML = BASE_DIR / "assets" / "models" / "yolo26n-uav-ghost.yaml"
+
+
+def _register_uav_size_callbacks(model) -> None:
+    """Register on_val_start/on_val_end callbacks for AP_S/AP_M/AP_L computation.
+
+    Intercepts _prepare_batch and _prepare_pred to collect per-image GT areas
+    and predictions, then re-matches per COCO size bin in on_val_end.
+    """
+    from services.uav_metrics import UAVSizeMetrics
+
+    _uav_metrics = UAVSizeMetrics()
+
+    def _on_val_start(validator):
+        _uav_metrics.reset()
+        _orig_pb = validator._prepare_batch
+        _orig_pp = validator._prepare_pred
+
+        def _wrapped_prepare_batch(si, batch):
+            pbatch = _orig_pb(si, batch)
+            validator._uav_last_pbatch = pbatch
+            return pbatch
+
+        def _wrapped_prepare_pred(pred):
+            predn = _orig_pp(pred)
+            if hasattr(validator, "_uav_last_pbatch"):
+                _uav_metrics.store_image(validator._uav_last_pbatch, predn)
+            return predn
+
+        validator._prepare_batch = _wrapped_prepare_batch
+        validator._prepare_pred = _wrapped_prepare_pred
+        validator._uav_backup = {
+            "prepare_batch": _orig_pb,
+            "prepare_pred": _orig_pp,
+        }
+
+    def _on_val_end(validator):
+        try:
+            uav_res = _uav_metrics.compute(validator)
+            _emit(
+                {
+                    "ap_s": uav_res.get("AP_S_50", 0.0),
+                    "ap_s_95": uav_res.get("AP_S", 0.0),
+                    "ap_m": uav_res.get("AP_M_50", 0.0),
+                    "ap_m_95": uav_res.get("AP_M", 0.0),
+                    "ap_l": uav_res.get("AP_L_50", 0.0),
+                    "ap_l_95": uav_res.get("AP_L", 0.0),
+                }
+            )
+            _log(
+                f"UAV size-AP: S={uav_res.get('AP_S_50', 0):.3f} "
+                f"M={uav_res.get('AP_M_50', 0):.3f} "
+                f"L={uav_res.get('AP_L_50', 0):.3f}"
+            )
+        except Exception as exc:  # noqa: BLE001
+            _log(f"UAV size metrics error: {exc}")
+        finally:
+            if hasattr(validator, "_uav_backup"):
+                validator._prepare_batch = validator._uav_backup["prepare_batch"]
+                validator._prepare_pred = validator._uav_backup["prepare_pred"]
+
+    model.add_callback("on_val_start", _on_val_start)
+    model.add_callback("on_val_end", _on_val_end)
+
+
 def _run(
     epochs: int = 10,
     source_video: str | None = None,
     resume_ckpt: Path | None = None,
     imgsz: int = SAFE_IMGSZ_DEFAULT,
     batch: int = SAFE_BATCH_DEFAULT,
+    use_uav_arch: bool = False,
+    use_uav_ghost_arch: bool = False,
 ) -> None:
     global _thread
     try:
@@ -415,6 +489,7 @@ def _run(
                     )
 
             model.add_callback("on_train_epoch_end", _CbResume().on_train_epoch_end)
+            _register_uav_size_callbacks(model)
             try:
                 model.train(resume=True, device=device, verbose=False, plots=False)
             except Exception as exc:  # noqa: BLE001
@@ -438,7 +513,20 @@ def _run(
                 }
             )
             print(f"[TRAIN] Инициализация обучения. Base model: {base.name}")
-            model = YOLO(str(base))
+            if use_uav_ghost_arch and UAV_GHOST_YAML.is_file():
+                from services.weight_transfer import load_with_transfer
+
+                _log(f"UAV Ghost arch: loading {UAV_GHOST_YAML.name} with transfer from {base.name}")
+                model, matched, unmatched = load_with_transfer(UAV_GHOST_YAML, base, verbose=True)
+                _log(f"UAV Ghost arch: {len(matched)} weights transferred, {len(unmatched)} skipped")
+            elif use_uav_arch and UAV_YAML.is_file():
+                from services.weight_transfer import load_with_transfer
+
+                _log(f"UAV arch: loading {UAV_YAML.name} with transfer from {base.name}")
+                model, matched, unmatched = load_with_transfer(UAV_YAML, base, verbose=True)
+                _log(f"UAV arch: {len(matched)} weights transferred, {len(unmatched)} skipped")
+            else:
+                model = YOLO(str(base))
             batches = list(_train_batches(device, batch))
             last_err: Exception | None = None
             if run_dir.exists():
@@ -478,6 +566,7 @@ def _run(
                     )
 
             model.add_callback("on_train_epoch_end", _Cb().on_train_epoch_end)
+            _register_uav_size_callbacks(model)
 
             for b in batches:
                 if _stop.is_set():
@@ -577,6 +666,8 @@ def start(
     resume_from: str | None = None,
     imgsz: int = SAFE_IMGSZ_DEFAULT,
     batch: int = SAFE_BATCH_DEFAULT,
+    use_uav_arch: bool = False,
+    use_uav_ghost_arch: bool = False,
 ) -> dict[str, Any]:
     global _thread
     ckpt: Path | None = None
@@ -599,6 +690,12 @@ def start(
                 "cls_loss": None,
                 "map50": None,
                 "map50_95": None,
+                "ap_s": None,
+                "ap_s_95": None,
+                "ap_m": None,
+                "ap_m_95": None,
+                "ap_l": None,
+                "ap_l_95": None,
                 "batch": batch,
                 "started_at": time.time(),
                 "finished_at": None,
@@ -607,7 +704,7 @@ def start(
         )
         _thread = threading.Thread(
             target=_run,
-            args=(epochs, source_video, ckpt, imgsz, batch),
+            args=(epochs, source_video, ckpt, imgsz, batch, use_uav_arch, use_uav_ghost_arch),
             daemon=True,
             name="yolo-train",
         )
