@@ -577,6 +577,17 @@ if ($NoDetectWeights) {
   if ($yoloHits.Count -lt 1) {
     throw "BUILD FAIL: no tactical yolo26*.pt under assets/models after copy"
   }
+
+  # UAV custom architecture YAML configs (needed for use_uav_arch/use_uav_ghost_arch training)
+  foreach ($yamlName in @("yolo26n-uav.yaml", "yolo26n-uav-ghost.yaml")) {
+    $yamlSrc = Join-Path $Repo "assets\models\$yamlName"
+    if (Test-Path -LiteralPath $yamlSrc) {
+      Copy-Item -LiteralPath $yamlSrc -Destination (Join-Path $destA $yamlName) -Force
+      Write-Host ("  {0} → assets/models (UAV architecture config)" -f $yamlName)
+    } else {
+      Write-Host "  WARNING: $yamlName not found — UAV training will fail in this pack" -ForegroundColor Yellow
+    }
+  }
 }
 
 if (Test-Path (Join-Path $Repo "military_classes.yaml")) {
