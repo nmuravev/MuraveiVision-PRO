@@ -113,3 +113,5 @@ MuraveiVision-Pro-*/
 archive/.test_cache/
 backend/tests/.cache/
 
+
+sidecars/colmap/downloads/

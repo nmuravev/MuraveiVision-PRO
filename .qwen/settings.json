@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Agent(Explore)",
+      "WebFetch(pypi.org)",
+      "Bash(d:\\llm\\muraveivision-pro\\muravei_env\\scripts\\python.exe *)",
+      "Bash(d:\\llm\\muraveivision-pro\\muravei_env\\scripts\\pip.exe *)",
+      "Bash(findstr *)",
+      "Bash(powershell *)",
+      "Bash(git commit *)",
+      "Bash(npm run *)",
+      "WebFetch(www.nature.com)",
+      "WebFetch(idp.nature.com)",
+      "WebFetch(www.mdpi.com)",
+      "WebFetch(doi.org)",
+      "WebFetch(www.semanticscholar.org)",
+      "WebFetch(api.crossref.org)",
+      "WebFetch(scholar.google.com)",
+      "WebFetch(arxiv.org)",
+      "WebFetch(paperswithcode.com)",
+      "WebFetch(www.researchgate.net)",
+      "WebFetch(www.google.com)",
+      "WebFetch(www.bing.com)",
+      "WebFetch(api.openalex.org)",
+      "Read(c:\\Users\\MECHREVO\\Downloads\\Documents/**)",
+      "WebFetch(ieeexplore.ieee.org)",
+      "WebFetch(api.semanticscholar.org)",
+      "WebFetch(share.google)",
+      "Bash(cd *)",
+      "Bash(git diff *)",
+      "Bash(cat *)",
+      "Bash(git add *)",
+      "Bash(git status *)",
+      "Bash(type *)"
+    ]
+  },
+  "$version": 4
+}

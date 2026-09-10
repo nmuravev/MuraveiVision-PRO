@@ -292,3 +292,61 @@ body,
   text-transform: none;
   letter-spacing: 0.02em;
 }
+
+/* —— Confidence slider (Detect menu) —— */
+.confidence-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  /* Three-zone gradient: green (low) → accent (optimal) → red (high) */
+  background: linear-gradient(
+    to right,
+    #34d399 0%,           /* emerald-400 */
+    #34d399 26.7%,        /* 0.35 position: (0.35-0.15)/(0.90-0.15) = 26.7% */
+    var(--dv-accent) 26.7%,
+    var(--dv-accent) 53.3%, /* 0.55 position: (0.55-0.15)/(0.90-0.15) = 53.3% */
+    #f87171 53.3%,        /* red-400 */
+    #f87171 100%
+  );
+}
+
+.confidence-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--dv-text);
+  border: 2px solid var(--dv-bg-deep);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+}
+
+.confidence-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--dv-text);
+  border: 2px solid var(--dv-bg-deep);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+
+.confidence-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    #34d399 0%,
+    #34d399 26.7%,
+    var(--dv-accent) 26.7%,
+    var(--dv-accent) 53.3%,
+    #f87171 53.3%,
+    #f87171 100%
+  );
+}

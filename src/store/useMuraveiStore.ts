@@ -160,10 +160,23 @@ const defaultHardware: HardwareSpecs = {
   activeModel: 'best.pt',
 };
 
+const CONFIDENCE_LS_KEY = 'muravei-confidence';
+
+function readPersistedConfidence(): number {
+  try {
+    const raw = localStorage.getItem(CONFIDENCE_LS_KEY);
+    if (!raw) return 0.35;
+    const v = Number(raw);
+    return Number.isFinite(v) && v >= 0.15 && v <= 0.9 ? v : 0.35;
+  } catch {
+    return 0.35;
+  }
+}
+
 const defaultAnalysisConfig: AnalysisConfig = {
   droneMode: false,
   frameStep: 15,
-  confidenceThreshold: 0.20,
+  confidenceThreshold: readPersistedConfidence(),
   modelName: 'best.pt',
   useFinetuned: true,
   aiAnalystEnabled: false,
@@ -208,9 +221,13 @@ export const useMuraveiStore = create<MuraveiState>((set, get) => ({
   setAuthenticated: (auth) => set({ isAuthenticated: auth }),
   setHardware: (specs) => set({ hardware: specs }),
   setAnalysisConfig: (config) =>
-    set((state) => ({
-      analysisConfig: { ...state.analysisConfig, ...config },
-    })),
+    set((state) => {
+      const next = { ...state.analysisConfig, ...config };
+      if (config.confidenceThreshold != null) {
+        try { localStorage.setItem(CONFIDENCE_LS_KEY, String(config.confidenceThreshold)); } catch { /* noop */ }
+      }
+      return { analysisConfig: next };
+    }),
   addMoment: (moment) =>
     set((state) => ({
       moments: [...state.moments, moment],

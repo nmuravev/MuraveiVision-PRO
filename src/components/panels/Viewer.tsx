@@ -290,6 +290,7 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
   const [batchSegOpen, setBatchSegOpen] = useState(false);
   const [samPropOpen, setSamPropOpen] = useState(false);
   const analysisConfig = useMuraveiStore((s) => s.analysisConfig);
+  const setAnalysisConfig = useMuraveiStore((s) => s.setAnalysisConfig);
   const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
   useBatchScanHydrate(viewer?.sourcePath ?? undefined, isAuthenticated);
   const {
@@ -2271,6 +2272,43 @@ export const Viewer: React.FC<ViewerProps> = ({ viewerId }) => {
               <MenuItem disabled>
                 Модель · {inferKind !== '—' ? inferKind : mode || '—'}
               </MenuItem>
+              <div
+                className="px-3 py-2 space-y-1.5 border-t border-[var(--dv-border)]"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="uppercase tracking-wider text-[var(--dv-text-muted)]">Confidence</span>
+                  <span className="font-mono text-[var(--dv-text)]">{analysisConfig.confidenceThreshold.toFixed(2)}</span>
+                </div>
+                <div className="relative h-5 flex items-center">
+                  {/* Optimal zone background highlight */}
+                  <div
+                    className="absolute h-1 rounded-full bg-[var(--dv-accent)]/20 pointer-events-none"
+                    style={{ left: `${((0.35 - 0.15) / (0.90 - 0.15)) * 100}%`, right: `${100 - ((0.55 - 0.15) / (0.90 - 0.15)) * 100}%` }}
+                  />
+                  <input
+                    type="range"
+                    min={0.15}
+                    max={0.90}
+                    step={0.05}
+                    value={analysisConfig.confidenceThreshold}
+                    onChange={(e) => setAnalysisConfig({ confidenceThreshold: Number(e.target.value) })}
+                    className="confidence-slider w-full relative z-10"
+                    title="Порог confidence для YOLO-детекции"
+                  />
+                </div>
+                <div className="text-[9px] leading-tight">
+                  {analysisConfig.confidenceThreshold < 0.35 && (
+                    <span className="text-emerald-400/80">&#x25C4; слабее — больше целей, но возможны ложные</span>
+                  )}
+                  {analysisConfig.confidenceThreshold >= 0.35 && analysisConfig.confidenceThreshold <= 0.55 && (
+                    <span className="text-[var(--dv-accent)]/90">&#x2713; оптимально — баланс точности и полноты</span>
+                  )}
+                  {analysisConfig.confidenceThreshold > 0.55 && (
+                    <span className="text-red-400/80">строже &#x25BA; — меньше целей, но можно пропустить</span>
+                  )}
+                </div>
+              </div>
             </Menu>
           </div>
         </ToolbarGroup>
