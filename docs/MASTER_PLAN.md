@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-15
 - **Branch:** `feature/studio-v3.4-da3` (ff → main)
-- **Commit:** 9ae0581ed94edebf524be2cd6f8c48717e9771d4
+- **Commit:** 62b50d3d28cb67d0d59099591f49a5c193e94604ed94edebf524be2cd6f8c48717e9771d4
 - **Unit tests:** 355+ (+ DA3 pipeline 6 + error catalog DA3 case)
 - **Status:** DA3 Dense Backend integrated (weights pending fetch)
 - **Last updated by:** feat(recon): DA3 Dense Backend integration (MurVis export)
