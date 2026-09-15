@@ -30,6 +30,12 @@ class TestErrorCatalog(unittest.TestCase):
         self.assertEqual(result["name"], "SERVICE_UNAVAILABLE")
         self.assertTrue(any("VRAM" in c or "модель" in c.lower() for c in result["causes_ru"]))
 
+    def test_get_error_details_matches_da3_weights(self) -> None:
+        result = get_error_details(503, "DA3_WEIGHTS_NOT_FOUND")
+        self.assertEqual(result["name"], "DA3_WEIGHTS_NOT_FOUND")
+        self.assertTrue(any("da3" in c.lower() for c in result["causes_ru"]))
+        self.assertTrue(any("sidecars/da3/" in s for s in result["solutions_ru"]))
+
     def test_build_error_payload_keeps_detail(self) -> None:
         payload = build_error_payload(404, "File not found")
         self.assertEqual(payload["detail"], "File not found")

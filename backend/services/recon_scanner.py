@@ -91,6 +91,12 @@ def _emit(event: dict[str, Any]) -> None:
         if "error" in event:
             _state["error"] = event["error"]
 
+
+def emit_recon_event(event: dict[str, Any]) -> None:
+    """Public helper to push external pipeline events into recon stream."""
+    _emit(event)
+
+
 def _recover_stale_running_unlocked() -> bool:
     """If status is running but worker is dead OR disk job already terminal, reset to idle.
 

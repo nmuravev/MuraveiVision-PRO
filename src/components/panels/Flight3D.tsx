@@ -136,6 +136,7 @@ export const Flight3D: React.FC = () => {
   const [sceneKind, setSceneKind] = useState<'points' | 'dense' | 'mesh' | 'splat' | 'empty'>('empty');
   const [splatKind, setSplatKind] = useState<'train' | 'bootstrap' | null>(null);
   const [viewSlot, setViewSlot] = useState<ArtifactSlot | null>(null);
+  const [densePresetId, setDensePresetId] = useState<string>('da3_dense_base');
 
   const artifactInfo = useMemo(
     () => normalizeArtifactsFromManifest(manifest || {}),
@@ -1451,7 +1452,21 @@ export const Flight3D: React.FC = () => {
           )}
           {train.status === 'error' && (
             <div className="text-red-300 bg-red-950/40 border border-red-700/50 rounded-sm px-2 py-1">
-              Обучение не удалось: {train.error || train.message || 'ошибка'}
+              {train.error?.includes('DA3_WEIGHTS_NOT_FOUND') ? (
+                <div className="flex flex-col gap-1">
+                  <div className="font-semibold text-amber-300 flex items-center gap-1.5">
+                    <span>Веса модели DA3 не найдены</span>
+                    <span className="text-[10px] px-1 py-0.2 bg-amber-900/60 border border-amber-600 rounded">
+                      503 DA3_WEIGHTS_NOT_FOUND
+                    </span>
+                  </div>
+                  <span className="text-xs text-red-200 leading-normal">
+                    Скопируйте веса da3_base.safetensors (или da3_large.safetensors) в sidecars/da3/ из офлайн-пака FullKit либо переключитесь на AliceVision MVS.
+                  </span>
+                </div>
+              ) : (
+                <>Обучение не удалось: {train.error || train.message || 'ошибка'}</>
+              )}
             </div>
           )}
           <div className="flex flex-wrap items-center gap-1.5">
@@ -1479,15 +1494,15 @@ export const Flight3D: React.FC = () => {
           </div>
           <div className="flex flex-col gap-1">
             <div className="text-[var(--dv-text-muted)] uppercase tracking-wide text-[9px]">
-              Иерархия · Sparse → Dense (AliceVision) → Mesh (AliceVision) → Splat
+              Иерархия · Sparse → Dense (DA3 / AliceVision) → Mesh (AliceVision) → Splat
             </div>
             <div className="text-[9px] text-[var(--dv-text-muted)] leading-snug -mt-0.5 mb-0.5">
-              «Построить 3D» = только COLMAP. AliceVision запускается кнопками Dense / Mesh.
+              «Построить 3D» = только COLMAP. Плотная реконструкция: DA3-BASE (быстрый) / DA3-LARGE (SOTA) / AliceVision.
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {(
                 (() => {
-                  const primary = ['sparse', 'dense', 'mesh', 'splat'];
+                  const primary = ['sparse', 'da3_dense_base', 'da3_dense_large', 'dense', 'mesh', 'splat'];
                   const primarySet = new Set(primary);
                   const hasPrimary = trainPresets.some((p) => primarySet.has(p.id));
                   const list = hasPrimary
@@ -1516,7 +1531,11 @@ export const Flight3D: React.FC = () => {
                           ? p.disabled_reason
                           : p.eta
                 }
-                className="px-2 py-0.5 bg-[var(--dv-surface)] hover:bg-[var(--dv-hover)] disabled:opacity-40 rounded-sm"
+                className={`px-2 py-0.5 ${
+                  p.id.startsWith('da3')
+                    ? 'bg-amber-950/40 hover:bg-amber-900/50 border border-amber-700/40 text-amber-200'
+                    : 'bg-[var(--dv-surface)] hover:bg-[var(--dv-hover)]'
+                } disabled:opacity-40 rounded-sm`}
                 onPointerDown={() => {
                 }}
                 onClick={() =>
@@ -1528,6 +1547,9 @@ export const Flight3D: React.FC = () => {
               >
                 {p.label}
                 {p.eta ? ` (${p.eta})` : ''}
+                {p.license === 'CC-BY-NC-4.0' && (
+                  <span className="ml-1 text-[9px] text-amber-400 font-mono">NC</span>
+                )}
                 {p.disabled && p.disabled_reason ? ' · недоступно' : ''}
               </button>
               ))}
@@ -1649,26 +1671,54 @@ export const Flight3D: React.FC = () => {
                   (AliceVision) или Splat (gsplat ≈ 5–10 мин → model.ply).
                 </div>
                 <div className="mt-2 flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between gap-1 text-[11px] bg-black/40 px-1.5 py-1 rounded border border-[var(--dv-border)]">
+                    <span className="text-[var(--dv-text-muted)] text-[10px]">Бэкенд Dense:</span>
+                    <div className="flex items-center gap-1">
+                      <select
+                        className="bg-[var(--dv-surface)] text-[var(--dv-text-primary)] border border-[var(--dv-border)] rounded px-1 py-0.5 text-[10px]"
+                        value={densePresetId}
+                        onChange={(e) => setDensePresetId(e.target.value)}
+                      >
+                        <option value="da3_dense_base">DA3-BASE (Apache 2.0)</option>
+                        <option value="da3_dense_large">DA3-LARGE (CC BY-NC 4.0)</option>
+                        <option value="dense">AliceVision MVS</option>
+                      </select>
+                      {densePresetId === 'da3_dense_large' && (
+                        <span
+                          className="px-1 py-0.5 text-[9px] bg-amber-950 border border-amber-600 text-amber-300 font-semibold rounded whitespace-nowrap"
+                          title="Лицензия CC BY-NC 4.0: только для некоммерческого использования"
+                        >
+                          Non-Commercial Only
+                        </span>
+                      )}
+                    </div>
+                  </div>
                   <button
                     type="button"
                     className="w-full px-2 py-1 rounded-sm bg-amber-500 text-black font-medium disabled:opacity-40"
                     disabled={
                       trainBlocked ||
                       !isReconReady(manifest) ||
-                      trainPresets.some((p) => p.id === 'dense' && p.disabled)
+                      trainPresets.some((p) => p.id === densePresetId && p.disabled)
                     }
                     onClick={() =>
-                      void startTrain('dense', () => {
+                      void startTrain(densePresetId, () => {
                         framedKeyRef.current = '';
                         void loadManifest();
                       })
                     }
                     title={
-                      trainPresets.find((p) => p.id === 'dense')?.disabled_reason ||
-                      'Запустить Dense (AliceVision MVS)'
+                      trainPresets.find((p) => p.id === densePresetId)?.disabled_reason ||
+                      `Запустить ${densePresetId.startsWith('da3') ? 'DA3' : 'AliceVision'} Dense`
                     }
                   >
-                    Dense → точечное облако (локальный AliceVision)
+                    Dense → точечное облако (
+                    {densePresetId === 'da3_dense_large'
+                      ? 'DA3-LARGE'
+                      : densePresetId === 'da3_dense_base'
+                        ? 'DA3-BASE'
+                        : 'AliceVision'}
+                    )
                   </button>
                   <button
                     type="button"

@@ -13,6 +13,8 @@ export type TrainPreset = {
   disabled_reason: string;
   alias_of?: string | null;
   backend?: string | null;
+  license?: string | null;
+  variant?: string | null;
 };
 
 export type TrainStatus = {

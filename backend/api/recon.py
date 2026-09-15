@@ -265,6 +265,8 @@ async def recon_train_start(
 ) -> dict[str, Any]:
     try:
         return recon_train.start(body.job_id, body.preset)
+    except HTTPException:
+        raise
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except FileNotFoundError as exc:

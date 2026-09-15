@@ -213,6 +213,7 @@ assert sys.version.startswith('3.12')
   if ($Kit -eq "full") {
     if (-not (Test-Path (Join-Path $Stage "sidecars\colmap"))) { $missing.Add("sidecars/colmap") }
   }
+  # N3: sidecars/da3 is OPTIONAL — Mini never requires it; FullKit only when staged (do not fail if absent)
   # Forbidden
   if (Test-Path (Join-Path $Stage "ollama")) { $fail.Add("FORBIDDEN ollama/") }
   if (Test-Path (Join-Path $Stage "node_modules")) { $fail.Add("FORBIDDEN node_modules") }

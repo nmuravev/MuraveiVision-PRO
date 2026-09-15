@@ -12,7 +12,7 @@ from services.security import BASE_DIR
 
 PRESETS_PATH = BASE_DIR / "config" / "train_presets.json"
 
-_PRIMARY_ORDER = ("sparse", "dense", "mesh", "splat")
+_PRIMARY_ORDER = ("sparse", "dense", "da3_dense_base", "da3_dense_large", "mesh", "splat")
 _ALIAS_ORDER = ("bootstrap", "balanced", "high")
 
 _BUILTIN: dict[str, dict[str, Any]] = {
@@ -28,6 +28,24 @@ _BUILTIN: dict[str, dict[str, Any]] = {
         "eta": "10–40 мин",
         "min_vram_gb": 6,
         "backend": "alicevision_mvs",
+    },
+    "da3_dense_base": {
+        "label": "DA3-BASE (Dense)",
+        "script": "da3_dense",
+        "variant": "base",
+        "eta": "30–60с",
+        "min_vram_gb": 6,
+        "backend": "da3_dense",
+        "license": "Apache-2.0",
+    },
+    "da3_dense_large": {
+        "label": "DA3-LARGE (Dense)",
+        "script": "da3_dense",
+        "variant": "large",
+        "eta": "1–2 мин",
+        "min_vram_gb": 8,
+        "backend": "da3_dense",
+        "license": "CC-BY-NC-4.0",
     },
     "mesh": {
         "label": "Mesh",
@@ -80,7 +98,7 @@ def _validate(raw: dict[str, Any]) -> dict[str, dict[str, Any]] | None:
         if not isinstance(key, str) or not isinstance(val, dict):
             return None
         script = str(val.get("script") or "")
-        if script not in ("bootstrap", "gsplat", "alicevision_mvs", "alicevision_mesh", "colmap_only"):
+        if script not in ("bootstrap", "gsplat", "alicevision_mvs", "alicevision_mesh", "colmap_only", "da3_dense"):
             return None
         entry = dict(val)
         entry["label"] = str(val.get("label") or key)
@@ -93,6 +111,10 @@ def _validate(raw: dict[str, Any]) -> dict[str, dict[str, Any]] | None:
             entry["data_factor"] = int(val.get("data_factor") or 4)
         elif script == "bootstrap":
             entry["max_points"] = int(val.get("max_points") or 80_000)
+        elif script == "da3_dense":
+            entry["backend"] = "da3_dense"
+            entry["variant"] = str(val.get("variant") or "base")
+            entry["license"] = str(val.get("license") or "Apache-2.0")
         elif script in ("alicevision_mvs", "alicevision_mesh", "colmap_only"):
             entry["backend"] = script
         if "min_vram_gb" in val:
@@ -210,6 +232,25 @@ def presets_for_client() -> list[dict[str, Any]]:
                 )
             elif cpu:
                 eta = CPU_DENSE_ETA_RU
+        elif script == "da3_dense":
+            from services.da3_pipeline import find_da3_weights
+
+            variant = str(cfg.get("variant") or "base")
+            has_weights = find_da3_weights(variant) is not None
+            # N3: grey button with cause — CUDA absent OR weights missing (same pattern as Dense/Mesh)
+            if cpu or not cuda_ok:
+                disabled = True
+                reason = cuda_reason or "DA3 Dense требует NVIDIA CUDA"
+            elif not has_weights:
+                disabled = True
+                reason = f"Веса DA3 ({variant}) не найдены в sidecars/da3/ (503 DA3_WEIGHTS_NOT_FOUND)"
+            elif min_v and (vram <= 0 or vram < min_v):
+                disabled = True
+                reason = (
+                    f"Нужно ≥{min_v:g} ГБ VRAM (сейчас {vram:.1f} ГБ)"
+                    if vram > 0
+                    else f"Нужно ≥{min_v:g} ГБ VRAM (CUDA недоступна)"
+                )
         elif script == "gsplat":
             if cpu or not cuda_ok:
                 disabled = True
@@ -240,6 +281,8 @@ def presets_for_client() -> list[dict[str, Any]]:
                 "disabled_reason": reason,
                 "alias_of": cfg.get("alias_of"),
                 "backend": cfg.get("backend") or script,
+                "license": cfg.get("license"),
+                "variant": cfg.get("variant"),
             }
         )
     order = {pid: i for i, pid in enumerate((*_PRIMARY_ORDER, *_ALIAS_ORDER))}

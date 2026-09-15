@@ -181,6 +181,22 @@ ERROR_CATALOG: dict[int, dict[str, dict[str, Any]]] = {
         },
     },
     503: {
+        "DA3_WEIGHTS_NOT_FOUND": {
+            "title_ru": "Веса модели DA3 не найдены",
+            "keywords": ["da3", "depth anything", "da3_weights_not_found", "safetensors", "sidecars/da3"],
+            "causes_ru": [
+                "Файлы весов da3_base.safetensors / da3_large.safetensors отсутствуют в папке sidecars/da3/",
+                "Используется сборка Mini без нейросетевых весов плотной 3D-реконструкции",
+            ],
+            "solutions_ru": [
+                "Скопируйте веса da3_base.safetensors (или da3_large.safetensors) в sidecars/da3/ из офлайн-пака FullKit",
+                "Переключитесь на классический MVS бэкенд (AliceVision) в панели Flight3D",
+                "Проверьте доступность весов через GET /api/system/hardware",
+            ],
+            "examples": [
+                "POST /api/recon/train/start с preset=da3_dense_base при пустом каталоге sidecars/da3/",
+            ],
+        },
         "SERVICE_UNAVAILABLE": {
             "title_ru": "Сервис временно недоступен",
             "keywords": [

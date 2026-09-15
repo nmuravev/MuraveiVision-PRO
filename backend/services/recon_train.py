@@ -375,6 +375,65 @@ def _run_alicevision_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) ->
         runtime_write("error", "recon_train", f"alicevision exception job={job_id}: {err}")
 
 
+def _run_da3_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) -> None:
+    """Dense point cloud via Depth Anything 3 (DA3); never wipe COLMAP sparse on failure."""
+    job_dir = _job_dir(job_id)
+    variant = str(cfg.get("variant") or "base")
+    _emit(
+        {
+            "status": "training",
+            "job_id": job_id,
+            "preset": preset_id,
+            "steps": 0,
+            "max_steps": 2,
+            "loss": None,
+            "psnr": None,
+            "message": f"Старт DA3 Dense ({variant})…",
+            "error": None,
+            "vram_total_gb": round(total_vram_gb(), 2),
+            "vram_used_gb": round(used_vram_gb(), 2),
+        }
+    )
+    runtime_write("info", "recon_train", f"start da3_dense variant={variant} job={job_id}")
+
+    def emit_da3(ev: dict[str, Any]) -> None:
+        stage = ev.get("stage")
+        step = 1 if stage == "da3_depth" else (2 if stage in ("da3_fusion", "da3_done") else 0)
+        _emit({**ev, "steps": step, "max_steps": 2})
+        recon_scanner.emit_recon_event(ev)
+
+    try:
+        from services.da3_pipeline import DA3WeightsNotFoundError, run_da3_pipeline
+
+        result = run_da3_pipeline(job_dir, variant=variant, emit=emit_da3)
+        if result.get("ok"):
+            _emit(
+                {
+                    "status": "done",
+                    "artifact": result.get("dense_ply") or "dense.ply",
+                    "steps": 2,
+                    "max_steps": 2,
+                    "message": f"Готово · dense.ply (DA3 {variant})",
+                    "error": None,
+                    "eta_seconds": 0,
+                }
+            )
+            runtime_write("info", "recon_train", f"done da3_dense job={job_id} artifact=dense.ply")
+            return
+
+        err = result.get("error") or result.get("warning") or "DA3 не создал dense.ply"
+        _emit({"status": "error", "error": err, "message": f"DA3: {err}"})
+        runtime_write("warn", "recon_train", f"da3_dense soft-fail job={job_id}: {err}")
+    except Exception as exc:  # noqa: BLE001
+        from services.da3_pipeline import DA3WeightsNotFoundError
+
+        err = str(exc)
+        if isinstance(exc, DA3WeightsNotFoundError) or "DA3_WEIGHTS_NOT_FOUND" in err:
+            err = "DA3_WEIGHTS_NOT_FOUND"
+        _emit({"status": "error", "error": err, "message": f"DA3: {err}"})
+        runtime_write("error", "recon_train", f"da3_dense exception job={job_id}: {err}")
+
+
 def _run_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) -> None:
     global _proc
     job_dir = _job_dir(job_id)
@@ -385,6 +444,9 @@ def _run_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) -> None:
         return
     if script in _AV_SCRIPTS:
         _run_alicevision_worker(job_id, preset_id, cfg)
+        return
+    if script == "da3_dense":
+        _run_da3_worker(job_id, preset_id, cfg)
         return
     max_steps = int(cfg.get("max_steps") or 0)
     t0 = time.time()
@@ -574,6 +636,17 @@ def start(job_id: str, preset: str) -> dict[str, Any]:
         cuda_ok, cuda_reason = alicevision_cuda_ready()
         if not cuda_ok:
             raise RuntimeError(cuda_reason or "AliceVision требует CUDA")
+    if script == "da3_dense":
+        from fastapi import HTTPException
+        from services.da3_pipeline import find_da3_weights
+
+        variant = str(cfg.get("variant") or "base")
+        w_path = find_da3_weights(variant)
+        if not w_path:
+            raise HTTPException(
+                status_code=503,
+                detail=f"DA3_WEIGHTS_NOT_FOUND: Веса модели DA3 ({variant}) не найдены в sidecars/da3/",
+            )
     min_v = float(cfg.get("min_vram_gb") or 0)
     vram = total_vram_gb()
     if min_v and (vram <= 0 or vram < min_v):

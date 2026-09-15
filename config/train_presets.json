@@ -12,6 +12,24 @@
     "min_vram_gb": 6,
     "backend": "alicevision_mvs"
   },
+  "da3_dense_base": {
+    "label": "DA3-BASE (Dense)",
+    "script": "da3_dense",
+    "variant": "base",
+    "eta": "30–60с",
+    "min_vram_gb": 6,
+    "backend": "da3_dense",
+    "license": "Apache-2.0"
+  },
+  "da3_dense_large": {
+    "label": "DA3-LARGE (Dense)",
+    "script": "da3_dense",
+    "variant": "large",
+    "eta": "1–2 мин",
+    "min_vram_gb": 8,
+    "backend": "da3_dense",
+    "license": "CC-BY-NC-4.0"
+  },
   "mesh": {
     "label": "Mesh",
     "script": "alicevision_mesh",

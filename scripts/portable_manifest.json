@@ -5,6 +5,7 @@
     "mini": {
       "torch": "cpu",
       "alicevision": false,
+      "da3_dense_enabled": false,
       "yolo_weights": [
         "nano",
         "small"
@@ -22,6 +23,7 @@
     "full": {
       "torch": "cuda_with_cpu_fallback",
       "alicevision": true,
+      "da3_dense_enabled": true,
       "yolo_weights": [
         "m",
         "l"
@@ -35,6 +37,28 @@
       "gsplat_enabled_if_cuda": true,
       "viewer_lod": "high",
       "budget_label": "200–600 frames"
+    }
+  },
+  "sidecars": {
+    "da3": {
+      "dest_relative": "sidecars/da3",
+      "profiles": ["full"],
+      "optional": true,
+      "note": "Sidecar-only (FullKit); never required by Assert-PackInventory; never in assets/models",
+      "weights": {
+        "base": {
+          "filename": "da3_base.safetensors",
+          "license": "Apache-2.0",
+          "sha256": "FETCH_REAL_SHA_AFTER_FIRST_DOWNLOAD",
+          "url": "https://huggingface.co/depth-anything/DA3-BASE/resolve/main/model.safetensors"
+        },
+        "large": {
+          "filename": "da3_large.safetensors",
+          "license": "CC-BY-NC-4.0",
+          "sha256": "FETCH_REAL_SHA_AFTER_FIRST_DOWNLOAD",
+          "url": "https://huggingface.co/depth-anything/DA3-LARGE/resolve/main/model.safetensors"
+        }
+      }
     }
   },
   "components": {

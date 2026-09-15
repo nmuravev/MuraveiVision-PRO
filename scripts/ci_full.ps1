@@ -152,6 +152,98 @@ if (-not $SkipSmoke) {
   Write-Host "  SKIPPED" -ForegroundColor Yellow
 }
 
+# --- Step 7: DA3 Dense Backend smoke (A/B) ---
+Write-Step "DA3 Dense Backend smoke (Scenario A/B)"
+$env:PYTHONPATH = (Join-Path $Repo "backend")
+$smokeCodeA = @"
+import sys
+from pathlib import Path
+from unittest.mock import patch
+from services import da3_pipeline
+from services.da3_pipeline import find_da3_weights, run_da3_pipeline, DA3WeightsNotFoundError
+temp_empty = Path(r'$($Repo.Replace('\','\\'))') / 'sidecars' / 'da3_empty_test_scenario'
+temp_empty.mkdir(parents=True, exist_ok=True)
+try:
+    with patch.object(da3_pipeline, 'get_da3_sidecar_dir', return_value=temp_empty):
+        weights = find_da3_weights('base')
+        if weights is not None:
+            print('ERROR: expected None for empty sidecar', file=sys.stderr)
+            sys.exit(2)
+        try:
+            run_da3_pipeline(temp_empty, variant='base')
+            print('ERROR: expected DA3WeightsNotFoundError', file=sys.stderr)
+            sys.exit(3)
+        except DA3WeightsNotFoundError:
+            print('SCENARIO_A_OK: 503 DA3_WEIGHTS_NOT_FOUND verified')
+            sys.exit(0)
+finally:
+    if temp_empty.exists():
+        temp_empty.rmdir()
+"@
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$resA = & $Py -c $smokeCodeA 2>&1
+$ErrorActionPreference = $prevEap
+if ($LASTEXITCODE -ne 0) {
+  Write-Host ($resA | Out-String)
+  Write-Fail "DA3 Scenario A"
+} else {
+  Write-Pass "DA3 Scenario A (empty sidecar -> DA3_WEIGHTS_NOT_FOUND)"
+}
+
+$smokeCodeB = @"
+import json, sys, tempfile
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+from services import da3_pipeline
+from services.da3_pipeline import run_da3_pipeline
+with tempfile.TemporaryDirectory() as td:
+    job_dir = Path(td)
+    sidecar = job_dir / 'sidecars' / 'da3'
+    sidecar.mkdir(parents=True)
+    (sidecar / 'da3_base.safetensors').touch()
+    frames_dir = job_dir / 'frames'
+    frames_dir.mkdir()
+    frame_names = [f'frame_{i:04d}.jpg' for i in range(1, 10)]
+    for fname in frame_names:
+        (frames_dir / fname).write_bytes(b'\xff\xd8\xff\xe0' + b'\x00' * 50)
+    poses = {'frames': [{'frame': fname, 'R': [[1,0,0],[0,1,0],[0,0,1]], 't': [0,0,0], 'intrinsics': [50.0,50.0,32.0,32.0]} for fname in frame_names]}
+    (job_dir / 'camera_poses.json').write_text(json.dumps(poses), encoding='utf-8')
+    (job_dir / 'manifest.json').write_text(json.dumps({'status': 'colmap_done'}), encoding='utf-8')
+    mock_pts = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+    mock_cols = [[255, 0, 0], [0, 255, 0]]
+    class PointsMock:
+        def __len__(self): return 2
+        def __getitem__(self, item): return mock_pts[item[0]][item[1]]
+    class ColorsMock:
+        def __len__(self): return 2
+        def __getitem__(self, item): return mock_cols[item[0]][item[1]]
+    with patch.object(da3_pipeline, 'get_da3_sidecar_dir', return_value=sidecar):
+        with patch.object(da3_pipeline, '_load_image_rgb', return_value=MagicMock(shape=(64, 64, 3))):
+            with patch.object(da3_pipeline, '_predict_depth_map', return_value=MagicMock(shape=(64, 64))):
+                with patch.object(da3_pipeline, '_unproject_pixels', return_value=(PointsMock(), ColorsMock())):
+                    res = run_da3_pipeline(job_dir, variant='base')
+    if not res.get('ok'):
+        print(f'ERROR: {res.get(\"error\")}', file=sys.stderr)
+        sys.exit(4)
+    dense_ply = job_dir / 'dense.ply'
+    if not dense_ply.is_file() or dense_ply.stat().st_size < 30:
+        print('ERROR: dense.ply missing or too small', file=sys.stderr)
+        sys.exit(5)
+    print('SCENARIO_B_OK: dense.ply created')
+    sys.exit(0)
+"@
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$resB = & $Py -c $smokeCodeB 2>&1
+$ErrorActionPreference = $prevEap
+if ($LASTEXITCODE -ne 0) {
+  Write-Host ($resB | Out-String)
+  Write-Fail "DA3 Scenario B"
+} else {
+  Write-Pass "DA3 Scenario B (mock weights -> dense.ply)"
+}
+
 # --- Summary ---
 Write-Host "`n=== CI Summary ===" -ForegroundColor Cyan
 if ($Failed) {

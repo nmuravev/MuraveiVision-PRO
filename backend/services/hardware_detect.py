@@ -107,6 +107,38 @@ def detect_alicevision() -> dict[str, Any]:
     return {"present": False, "path": None, "relative": None}
 
 
+def detect_da3() -> dict[str, Any]:
+    """Detect Depth Anything 3 (DA3) weights in sidecars/da3/ (safetensors preferred or .pt)."""
+    override = _env_path("MURAVEI_SIDECARS_DIR")
+    roots: list[Path] = []
+    if override:
+        roots.append(Path(override) / "da3")
+    roots.append(_repo_path("sidecars", "da3"))
+
+    base_path: str | None = None
+    large_path: str | None = None
+
+    for root in roots:
+        for ext in (".safetensors", ".pt"):
+            if not base_path:
+                b_cand = root / f"da3_base{ext}"
+                if b_cand.is_file():
+                    base_path = str(b_cand)
+            if not large_path:
+                l_cand = root / f"da3_large{ext}"
+                if l_cand.is_file():
+                    large_path = str(l_cand)
+
+    present = bool(base_path or large_path)
+    return {
+        "present": present,
+        "base_present": bool(base_path),
+        "base_path": base_path,
+        "large_present": bool(large_path),
+        "large_path": large_path,
+    }
+
+
 def detect_gpu() -> dict[str, Any]:
     """CUDA presence for tiering (not torch install state)."""
     forced = (os.environ.get("MURAVEI_FORCE_ACCELERATOR") or "").strip().lower()
@@ -271,6 +303,7 @@ def detect_all() -> dict[str, Any]:
         "ffprobe": detect_ffprobe(),
         "colmap": detect_colmap(),
         "alicevision": detect_alicevision(),
+        "da3": detect_da3(),
         "tier": tier,
         "build_profile": build_profile,
         "kit": kit,
