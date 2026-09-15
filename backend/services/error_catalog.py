@@ -197,6 +197,29 @@ ERROR_CATALOG: dict[int, dict[str, dict[str, Any]]] = {
                 "POST /api/recon/train/start с preset=da3_dense_base при пустом каталоге sidecars/da3/",
             ],
         },
+        "DA3_RUNTIME_UNAVAILABLE": {
+            "title_ru": "Рантайм DA3 недоступен",
+            "keywords": [
+                "da3",
+                "depth_anything_3",
+                "da3_runtime_unavailable",
+                "flat fallback",
+                "анти-мусор",
+            ],
+            "causes_ru": [
+                "Пакет depth_anything_3 не импортируется в muravei_env",
+                "Веса есть, но модель не загрузилась / не поддерживает infer_image",
+                "Плоский synthetic depth (ones*2.0) отключён намеренно — иначе мусорное облако-стена",
+            ],
+            "solutions_ru": [
+                "Установите depth-anything-3 в muravei_env (и wheel в portable/cache/wheels для air-gap)",
+                "Проверьте импорт: muravei_env\\Scripts\\python.exe -c \"from depth_anything_3.api import DepthAnything3\"",
+                "Переключитесь на AliceVision Dense в панели Flight3D",
+            ],
+            "examples": [
+                "POST /api/recon/train/start с preset=da3_dense_base при отсутствии пакета depth_anything_3",
+            ],
+        },
         "SERVICE_UNAVAILABLE": {
             "title_ru": "Сервис временно недоступен",
             "keywords": [
@@ -252,11 +275,17 @@ def get_error_details(code: int, detail: Any = None) -> dict[str, Any]:
     chosen_name: str | None = None
     chosen: dict[str, Any] | None = None
     if catalog and text:
+        # Prefer exact error-name hit before fuzzy keyword match (avoids DA3_* collisions).
         for name, info in catalog.items():
-            needles = [name.lower(), *(str(k).lower() for k in info.get("keywords", []))]
-            if any(n and n in text for n in needles):
+            if name.lower() in text:
                 chosen_name, chosen = name, info
                 break
+        if chosen is None:
+            for name, info in catalog.items():
+                needles = [str(k).lower() for k in info.get("keywords", [])]
+                if any(n and n in text for n in needles):
+                    chosen_name, chosen = name, info
+                    break
 
     if chosen is None:
         if catalog:

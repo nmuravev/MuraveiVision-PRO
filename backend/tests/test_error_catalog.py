@@ -36,6 +36,14 @@ class TestErrorCatalog(unittest.TestCase):
         self.assertTrue(any("da3" in c.lower() for c in result["causes_ru"]))
         self.assertTrue(any("sidecars/da3/" in s for s in result["solutions_ru"]))
 
+    def test_get_error_details_matches_da3_runtime(self) -> None:
+        result = get_error_details(503, "DA3_RUNTIME_UNAVAILABLE")
+        self.assertEqual(result["name"], "DA3_RUNTIME_UNAVAILABLE")
+        self.assertTrue(any("depth_anything_3" in c.lower() for c in result["causes_ru"]))
+        self.assertTrue(
+            any("плоский" in c.lower() or "мусор" in c.lower() for c in result["causes_ru"])
+        )
+
     def test_build_error_payload_keeps_detail(self) -> None:
         payload = build_error_payload(404, "File not found")
         self.assertEqual(payload["detail"], "File not found")

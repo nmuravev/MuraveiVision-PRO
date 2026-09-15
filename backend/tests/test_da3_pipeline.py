@@ -277,7 +277,13 @@ class TestDA3PipelineExecution(unittest.TestCase):
                 with patch.object(da3_pipeline, "_load_image_rgb", return_value=MagicMock(shape=(64, 64, 3))):
                     with patch.object(da3_pipeline, "_predict_depth_map", return_value=MagicMock(shape=(64, 64))):
                         with patch.object(da3_pipeline, "_unproject_pixels", return_value=(PointsMock(), ColorsMock())):
-                            res = run_da3_pipeline(job_dir, variant="base", emit=collect_events)
+                            # mock_model required: empty .safetensors is not a usable runtime model
+                            res = run_da3_pipeline(
+                                job_dir,
+                                variant="base",
+                                mock_model=MagicMock(),
+                                emit=collect_events,
+                            )
 
             self.assertTrue(res["ok"])
             dense_ply = job_dir / "dense.ply"
@@ -297,6 +303,46 @@ class TestDA3PipelineExecution(unittest.TestCase):
             self.assertIn("da3_depth", stages)
             self.assertIn("da3_fusion", stages)
             self.assertIn("da3_done", stages)
+
+    def test_runtime_unavailable_no_flat_depth_no_dense_ply(self) -> None:
+        """_load_da3_model → None must raise DA3_RUNTIME_UNAVAILABLE; no dense.ply."""
+        from services.da3_pipeline import DA3WeightsNotFoundError, run_da3_pipeline
+        from services import da3_pipeline
+
+        with tempfile.TemporaryDirectory() as td:
+            job_dir = Path(td)
+            sidecar = job_dir / "sidecars" / "da3"
+            sidecar.mkdir(parents=True)
+            (sidecar / "da3_base.safetensors").write_bytes(b"fake")
+
+            frames_dir = job_dir / "frames"
+            frames_dir.mkdir()
+            frame_names = [f"frame_{i:04d}.jpg" for i in range(1, 10)]
+            for fname in frame_names:
+                (frames_dir / fname).write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 50)
+
+            poses = {
+                "frames": [
+                    {
+                        "frame": fname,
+                        "R": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                        "t": [0, 0, 0],
+                        "intrinsics": [50.0, 50.0, 32.0, 32.0],
+                    }
+                    for fname in frame_names
+                ]
+            }
+            (job_dir / "camera_poses.json").write_text(json.dumps(poses), encoding="utf-8")
+            (job_dir / "manifest.json").write_text(json.dumps({"status": "colmap_done"}), encoding="utf-8")
+
+            with patch.object(da3_pipeline, "get_da3_sidecar_dir", return_value=sidecar):
+                with patch.object(da3_pipeline, "_load_da3_model", return_value=None):
+                    with self.assertRaises(DA3WeightsNotFoundError) as ctx:
+                        run_da3_pipeline(job_dir, variant="base")
+
+            msg = str(ctx.exception)
+            self.assertIn("DA3_RUNTIME_UNAVAILABLE", msg)
+            self.assertFalse((job_dir / "dense.ply").exists())
 
 
 if __name__ == "__main__":

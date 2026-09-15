@@ -3,15 +3,15 @@
 ## Meta
 
 - **Snapshot date:** 2026-09-15
-- **Branch:** `feature/studio-v3.4-da3` (ff → main)
-- **Commit:** 62b50d3d28cb67d0d59099591f49a5c193e94604ed94edebf524be2cd6f8c48717e9771d4
-- **Unit tests:** 355+ (+ DA3 pipeline 6 + error catalog DA3 case)
-- **Status:** DA3 Dense Backend integrated (weights pending fetch)
-- **Last updated by:** feat(recon): DA3 Dense Backend integration (MurVis export)
+- **Branch:** `main`
+- **Commit:** 2de0860
+- **Unit tests:** 357 (discover OK)
+- **Status:** DA3 on main; flat-depth fail-closed (`DA3_RUNTIME_UNAVAILABLE`); weights pending seed; field: recon-raycast PASS, test_ui_toggles blocked (Playwright chromium missing)
+- **Last updated by:** fix(recon): DA3 flat-depth guard
 - **Portable local:** Mini 3.62 GB / FullKit CPU 5.27 GB (E6 smoke); DA3 sidecar optional FullKit-only
 - **Env pack:** win_cuda / win_cpu — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
 - **E6 additions:** `timm` + `safetensors`; `ci_full.ps1` (E6 + DA3 A/B); CRLF/LF launcher guards; SAM3 load cap ≤60s; validator `reject_ratio`
-- **DA3:** `sidecars.da3` SSO in portable_manifest; presets grey without CUDA/weights; real sha256 pending first download
+- **DA3:** `sidecars.da3` SSO in portable_manifest; presets grey without CUDA/weights; real sha256 pending first download; `DA3_RUNTIME_UNAVAILABLE` fail-closed (no ones*2.0)
 
 ## Major Changes in This Release
 

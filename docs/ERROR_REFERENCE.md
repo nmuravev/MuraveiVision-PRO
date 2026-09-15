@@ -169,12 +169,14 @@ Backend отдаёт тот же текст в поле `error` ответа (с
 - Внешний сервис (Ollama) недоступен
 - Превышен лимит одновременных задач
 - `DA3_WEIGHTS_NOT_FOUND`: файлы весов `da3_base.safetensors` или `da3_large.safetensors` отсутствуют в `sidecars/da3/` (Mini без sidecar или FullKit без seed)
+- `DA3_RUNTIME_UNAVAILABLE`: пакет `depth_anything_3` не импортируется / модель не загрузилась; плоский depth-fallback отключён (анти-мусорное облако-стена)
 
 **Решения:**
 - Загрузите модель (`POST /api/seg/load` или кнопка «Загрузить»)
 - Подождите ~30 секунд и повторите
 - Проверьте GPU / DA3: `GET /api/system/hardware` (`da3.base_present` / `da3.large_present`)
 - Для DA3: скопируйте веса в `sidecars/da3/` из FullKit или `scripts\stage_da3_sidecar.ps1`; либо переключитесь на AliceVision Dense
+- Для `DA3_RUNTIME_UNAVAILABLE`: установите `depth-anything-3` в `muravei_env` (+ wheel в `portable/cache/wheels` для air-gap bake)
 - Закройте другие GPU-приложения
 
-**Примеры:** `POST /api/recon/train/start` с `preset=da3_dense_base` при пустом `sidecars/da3/`; `POST /api/seg/infer` при `loaded=false`
+**Примеры:** `POST /api/recon/train/start` с `preset=da3_dense_base` при пустом `sidecars/da3/` или без `depth_anything_3`; `POST /api/seg/infer` при `loaded=false`

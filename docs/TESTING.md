@@ -38,8 +38,8 @@ cd backend
 ```
 
 Файлы в [backend/tests/](../backend/tests/):
-- `test_da3_pipeline.py` — DA3 weights detection, PLY xyzrgb writer, soft-fail &lt;8 cameras, mock end-to-end + stream events (6 кейсов).
-- `test_error_catalog.py` — каталог кодов ошибок + `DA3_WEIGHTS_NOT_FOUND` (6 кейсов).
+- `test_da3_pipeline.py` — DA3 weights detection, PLY xyzrgb writer, soft-fail &lt;8 cameras, mock end-to-end + stream events, flat-depth guard (`DA3_RUNTIME_UNAVAILABLE`, no dense.ply) (7 кейсов).
+- `test_error_catalog.py` — каталог кодов ошибок + `DA3_WEIGHTS_NOT_FOUND` + `DA3_RUNTIME_UNAVAILABLE` (7 кейсов).
 - `test_validator.py` — Response Validator, 15 кейсов (включая graceful degradation, JSONL-запись).
 - `test_validator_catalog_refresh.py` — автообновление кэша валидатора после правки класса (6 кейсов PUT/DELETE) + TTL 300 с (expiry, within-TTL, refresh bypass, failure keeps cache).
 - `test_sprint4.py` — `parse_autolabel_result` (catalog scoping, confidence clamp).

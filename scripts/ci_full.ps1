@@ -225,7 +225,7 @@ with tempfile.TemporaryDirectory() as td:
         with patch.object(da3_pipeline, '_load_image_rgb', return_value=MagicMock(shape=(64, 64, 3))):
             with patch.object(da3_pipeline, '_predict_depth_map', return_value=MagicMock(shape=(64, 64))):
                 with patch.object(da3_pipeline, '_unproject_pixels', return_value=(PointsMock(), ColorsMock())):
-                    res = run_da3_pipeline(job_dir, variant='base')
+                    res = run_da3_pipeline(job_dir, variant='base', mock_model=MagicMock())
     if not res.get('ok'):
         print(f'ERROR: {res.get(\"error\")}', file=sys.stderr)
         sys.exit(4)

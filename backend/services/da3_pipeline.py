@@ -108,19 +108,30 @@ def _predict_depth_map(
     orig_shape: tuple[int, int],
     device: str = "cpu",
 ) -> np.ndarray:
-    """Run DA3 inference or mock fallback, returning 2D float32 depth map matching orig_shape (H, W)."""
+    """Run DA3 inference; never invent flat/synthetic depth (anti-garbage cloud)."""
     orig_h, orig_w = orig_shape
-    # If model is a callable or mock object
     if hasattr(model, "predict_depth"):
         return model.predict_depth(img_rgb, orig_shape)
+    if hasattr(model, "infer_image"):
+        out = model.infer_image(img_rgb)
+        if isinstance(out, dict):
+            depth = out.get("depth") or out.get("predicted_depth") or next(iter(out.values()))
+        else:
+            depth = out
+        import numpy as _np
+
+        depth_np = _np.asarray(depth, dtype=_np.float32)
+        if depth_np.shape[:2] != (orig_h, orig_w):
+            # Caller/tests may return already-shaped maps via mocks
+            if depth_np.ndim == 2:
+                return depth_np
+        return _np.maximum(depth_np, 1e-3)
 
     try:
         import torch
 
-        # Real model inference if torch and weights loaded
         if hasattr(model, "forward") or callable(model):
             resized_img, _ = _resize_for_da3(img_rgb, DA3_MAX_LONG_SIDE)
-            # Normalize image to [0, 1] tensor
             t_img = torch.from_numpy(resized_img).permute(2, 0, 1).unsqueeze(0).float() / 255.0
             if device != "cpu" and torch.cuda.is_available():
                 t_img = t_img.to(device)
@@ -141,14 +152,51 @@ def _predict_depth_map(
                 depth_np = depth_t.cpu().numpy()
                 return np.maximum(depth_np, 1e-3)
     except Exception as exc:
-        runtime_write("warn", "da3_pipeline", f"Inference fallback to geometric estimator: {exc}")
+        runtime_write("error", "da3_pipeline", f"DA3 inference failed (flat fallback disabled): {exc}")
+        raise DA3WeightsNotFoundError(
+            "DA3_RUNTIME_UNAVAILABLE: инференс depth_anything_3 завершился ошибкой; "
+            "плоский fallback отключён намеренно (анти-мусор)."
+        ) from exc
 
-    # Fallback synthetic/mock gradient depth estimator (used in mock/CI environments)
-    # Provides smooth positive values in meters for unprojection
-    y = np.linspace(5.0, 15.0, orig_h, dtype=np.float32)
-    x = np.linspace(0.9, 1.1, orig_w, dtype=np.float32)
-    synthetic_depth = np.outer(y, x)
-    return synthetic_depth
+    raise DA3WeightsNotFoundError(
+        "DA3_RUNTIME_UNAVAILABLE: модель не поддерживает predict_depth/infer_image/forward; "
+        "плоский fallback отключён намеренно (анти-мусор)."
+    )
+
+
+def _da3_model_usable(model: Any) -> bool:
+    if model is None:
+        return False
+    return (
+        hasattr(model, "predict_depth")
+        or hasattr(model, "infer_image")
+        or hasattr(model, "forward")
+        or callable(model)
+    )
+
+
+def _load_da3_model(weight_path: Path, device: str = "cpu") -> Any:
+    """Load DepthAnything3 API or fail closed (no bare state-dict as runnable model)."""
+    try:
+        import torch
+
+        if DepthAnything3 is not None and hasattr(DepthAnything3, "from_pretrained"):
+            model = DepthAnything3.from_pretrained(
+                str(weight_path.parent if weight_path.is_file() else weight_path)
+            )
+            if hasattr(model, "to"):
+                model = model.to(device)
+            return model
+        # Bare safetensors/pt without API cannot produce depth maps — fail closed
+        runtime_write(
+            "warn",
+            "da3_pipeline",
+            "depth_anything_3.api unavailable; refusing bare state-dict as runnable model",
+        )
+        return None
+    except Exception as exc:
+        runtime_write("warn", "da3_pipeline", f"DA3 model load failed: {exc}")
+        return None
 
 
 def _align_depth_scale(
@@ -350,7 +398,7 @@ def run_da3_pipeline(
         except Exception:
             pass
 
-    # 4. Initialize model / load weights
+    # 4. Initialize model / load weights (fail closed — no flat synthetic depth)
     model = mock_model
     device = "cpu"
     if model is None and weight_path:
@@ -360,22 +408,16 @@ def run_da3_pipeline(
 
             if torch.cuda.is_available():
                 device = "cuda"
+        except Exception:
+            device = "cpu"
+        model = _load_da3_model(weight_path, device=device)
 
-            if DepthAnything3 is not None and hasattr(DepthAnything3, "from_pretrained"):
-                model = DepthAnything3.from_pretrained(str(weight_path.parent if weight_path.is_file() else weight_path))
-                if hasattr(model, "to"):
-                    model = model.to(device)
-            elif weight_path.suffix == ".safetensors":
-                from safetensors.torch import load_file
-
-                state_dict = load_file(str(weight_path), device=device)
-                model = state_dict
-            else:
-                state_dict = torch.load(str(weight_path), map_location=device, weights_only=True)
-                model = state_dict
-        except Exception as exc:
-            runtime_write("warn", "da3_pipeline", f"Weights loaded with fallback container: {exc}")
-            model = None
+    if not _da3_model_usable(model):
+        runtime_write("error", "da3_pipeline", "DA3 runtime unavailable (no usable model)")
+        raise DA3WeightsNotFoundError(
+            "DA3_RUNTIME_UNAVAILABLE: пакет depth_anything_3 не импортируется в muravei_env "
+            "или веса нечитаемы. Плоский fallback отключён намеренно (анти-мусор)."
+        )
 
     # Intermediate depths directory (Decision Q4)
     depths_dir = job_dir / "da3" / "depths"
@@ -393,7 +435,7 @@ def run_da3_pipeline(
         img_name = fmeta.get("image") or f"frame_{idx:04d}.png"
         img_path = frames_dir / img_name
         if not img_path.is_file():
-            # Try flat fallback
+            # Filename soft-match (not depth fallback)
             cands = list(frames_dir.glob(f"*{img_name}*"))
             if cands:
                 img_path = cands[0]
