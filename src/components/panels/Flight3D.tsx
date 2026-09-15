@@ -1461,7 +1461,7 @@ export const Flight3D: React.FC = () => {
                     </span>
                   </div>
                   <span className="text-xs text-red-200 leading-normal">
-                    Скопируйте веса da3_base.safetensors (или da3_large.safetensors) в sidecars/da3/ из офлайн-пака FullKit либо переключитесь на AliceVision MVS.
+                    Скопируйте веса da3_*.safetensors в sidecars/da3/ из офлайн-пака FullKit (BASE/LARGE/METRIC; GIANT при ≥16 ГБ VRAM). Dense = DA3; Mesh = AliceVision (opt-in).
                   </span>
                 </div>
               ) : (

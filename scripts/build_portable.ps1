@@ -926,8 +926,11 @@ if ($FullKit) {
     if ($da3HasWeights) {
       $da3Dest = Join-Path $sidecarDest "da3"
       New-Item -ItemType Directory -Force -Path $da3Dest | Out-Null
-      Copy-Item -LiteralPath (Join-Path $da3Src "*") -Destination $da3Dest -Force -EA SilentlyContinue
-      Write-Host "  sidecars\da3 copied (FullKit optional DA3 weights + NOTICE)"
+      # Copy only root files (weights + NOTICE + config_*.json). Skip HF staging dirs (base/large/…).
+      Get-ChildItem -LiteralPath $da3Src -File -EA SilentlyContinue | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $da3Dest $_.Name) -Force
+      }
+      Write-Host "  sidecars\da3 copied (FullKit optional DA3 weights + NOTICE; no HF staging dirs)"
     } else {
       Write-Host "  DA3 sidecar skipped (no weights under sidecars\da3 — stage via fetch_da3_weights.py)"
     }
@@ -941,7 +944,7 @@ $modelsLine = if ($NoDetectWeights) {
   "assets\models\        (tactical yolo26*.pt + sam3.pt exactly once)"
 }
 $sidecarLine = if ($FullKit) {
-  "sidecars\colmap\      (COLMAP)`nsidecars\gsplat_examples\  (trainer)`nsidecars\alicevision\  (optional Dense/Mesh)`nPORTABLE_README.md`n(Ollama не в комплекте — поставьте отдельно)"
+  "sidecars\colmap\      (COLMAP)`nsidecars\gsplat_examples\  (trainer)`nsidecars\da3\         (optional Dense weights)`nsidecars\alicevision\  (optional Mesh)`nPORTABLE_README.md`n(Ollama не в комплекте — поставьте отдельно)"
 } else {
   "README.md`n(Ollama не в комплекте — поставьте отдельно)"
 }
@@ -1039,8 +1042,20 @@ if (-not $SkipZip) {
   $zipMb = [math]::Round($zipBytes / 1MB, 1)
   Write-Host "ZIP: $ZipPath ($zipGb GB / $zipMb MB)" -ForegroundColor Green
   if ($FullKit) {
-    if ($zipGb -gt 10) { throw "FULLKIT SIZE ASSERT FAILED: ZIP is $zipGb GB (>10). Reject." }
-    if ($zipGb -gt 9.5) { Write-Host "WARNING: FullKit ZIP is $zipGb GB (band ~7.5–9 GB)" -ForegroundColor Yellow }
+    $da3Stage = Join-Path $Stage "sidecars\da3"
+    $da3WeightCount = 0
+    if (Test-Path -LiteralPath $da3Stage) {
+      $da3WeightCount = @(Get-ChildItem -LiteralPath $da3Stage -File -EA SilentlyContinue |
+        Where-Object { $_.Extension -match '\.(safetensors|pt)$' }).Count
+    }
+    if ($da3WeightCount -gt 0) {
+      # DA3 all-variants (base+large+metric+giant) ≈ +8.5 GB compressed poorly → higher band
+      if ($zipGb -gt 22) { throw "FULLKIT+DA3 SIZE ASSERT FAILED: ZIP is $zipGb GB (>22). Reject." }
+      if ($zipGb -gt 18) { Write-Host "WARNING: FullKit+DA3 ZIP is $zipGb GB (band ~12–18 GB with all DA3 variants)" -ForegroundColor Yellow }
+    } else {
+      if ($zipGb -gt 10) { throw "FULLKIT SIZE ASSERT FAILED: ZIP is $zipGb GB (>10). Reject." }
+      if ($zipGb -gt 9.5) { Write-Host "WARNING: FullKit ZIP is $zipGb GB (band ~7.5–9 GB)" -ForegroundColor Yellow }
+    }
   } elseif ($Mini -or $KitMarker -eq "mini") {
     if ($zipGb -gt 5) { throw "MINI SIZE ASSERT FAILED: ZIP is $zipGb GB (>5). Reject." }
     if ($zipGb -gt 4.5) { Write-Host "WARNING: Mini ZIP is $zipGb GB (band ~3.5–4.5 GB)" -ForegroundColor Yellow }

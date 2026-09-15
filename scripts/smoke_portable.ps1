@@ -144,6 +144,25 @@ function Assert-PackLayout([string]$Root) {
     if ($names -contains $want) { $defaultOk = $true; break }
   }
   if (-not $defaultOk) { return "config default ladder names missing from pack: $($names -join ',')" }
+  # DA3: Mini must never ship weights; FullKit may omit; NC weights require NOTICE
+  $da3Dir = Join-Path $Root "sidecars\da3"
+  $da3Bins = @()
+  if (Test-Path -LiteralPath $da3Dir) {
+    $da3Bins = @(Get-ChildItem -LiteralPath $da3Dir -File -EA SilentlyContinue |
+      Where-Object { $_.Extension -match '\.(safetensors|pt)$' })
+  }
+  if ($kitVal -eq "mini" -and $da3Bins.Count -gt 0) {
+    return "Mini must not contain sidecars/da3 weights"
+  }
+  if ($kitVal -eq "full" -and $da3Bins.Count -gt 0) {
+    $nc = @($da3Bins | Where-Object { $_.Name -match '^da3_(large|giant)\.' })
+    if ($nc.Count -gt 0) {
+      $notice = Join-Path $da3Dir "NOTICE_CC-BY-NC-4.0.txt"
+      if (-not (Test-Path -LiteralPath $notice)) {
+        return "FullKit NC DA3 weights present but NOTICE_CC-BY-NC-4.0.txt missing"
+      }
+    }
+  }
   return $null
 }
 
