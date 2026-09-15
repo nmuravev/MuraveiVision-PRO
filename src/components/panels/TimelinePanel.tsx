@@ -109,7 +109,10 @@ export const TimelinePanel: React.FC = () => {
     ];
   }, [detections, liveMarks, sourcePath, classCatalog]);
 
-  const duration = mediaDuration > 0 ? mediaDuration : Math.max(120, playheadPosition + 10);
+  const safeMediaDur = Number.isFinite(mediaDuration) && mediaDuration > 0 ? mediaDuration : 0;
+  const safePlayhead = Number.isFinite(playheadPosition) && playheadPosition > 0 ? playheadPosition : 0;
+  const duration = safeMediaDur > 0 ? safeMediaDur : Math.max(120, safePlayhead + 10);
+  const currentTime = Math.min(safePlayhead, duration);
 
   const activeGps = useMemo(() => {
     if (!activeDetectionId) return null;
@@ -133,7 +136,7 @@ export const TimelinePanel: React.FC = () => {
       <div className="flex-1 min-h-0">
         <Timeline
           duration={duration}
-          currentTime={Math.min(playheadPosition, duration)}
+          currentTime={currentTime}
           detections={markers}
           isPlaying={playbackState === 'playing'}
           onSeek={seekTo}

@@ -210,14 +210,15 @@ export async function loadPlyAsPoints(
   let arr = pos.array as Float32Array;
   const maxPoints = opts?.maxPoints ?? 0;
   if (maxPoints > 0 && pos.count > maxPoints) {
-    const step = Math.ceil(pos.count / maxPoints);
-    const outCount = Math.floor(pos.count / step);
-    const xyz = new Float32Array(outCount * 3);
+    const step = Math.max(1, Math.ceil(pos.count / maxPoints));
+    const outCount = Math.max(0, Math.floor(pos.count / step));
+    const safeOutCount = Number.isFinite(outCount) ? outCount : 0;
+    const xyz = new Float32Array(safeOutCount * 3);
     const hasColor = Boolean(geo.getAttribute('color'));
     const colAttr = geo.getAttribute('color') as THREE.BufferAttribute | undefined;
-    const colors = hasColor && colAttr ? new Float32Array(outCount * 3) : null;
+    const colors = hasColor && colAttr ? new Float32Array(safeOutCount * 3) : null;
     let o = 0;
-    for (let i = 0; i < pos.count && o < outCount; i += step) {
+    for (let i = 0; i < pos.count && o < safeOutCount; i += step) {
       xyz[o * 3] = pos.getX(i);
       xyz[o * 3 + 1] = pos.getY(i);
       xyz[o * 3 + 2] = pos.getZ(i);
@@ -238,8 +239,9 @@ export async function loadPlyAsPoints(
     pos.itemSize === 3 && arr.length === pos.count * 3
       ? arr
       : (() => {
-          const out = new Float32Array(pos.count * 3);
-          for (let i = 0; i < pos.count; i++) {
+          const safeCount = Number.isFinite(pos.count) && pos.count > 0 ? Math.floor(pos.count) : 0;
+          const out = new Float32Array(safeCount * 3);
+          for (let i = 0; i < safeCount; i++) {
             out[i * 3] = pos.getX(i);
             out[i * 3 + 1] = pos.getY(i);
             out[i * 3 + 2] = pos.getZ(i);
@@ -257,8 +259,9 @@ function pointsFromGeometry(geo: THREE.BufferGeometry): THREE.Points {
     pos.itemSize === 3 && arr.length === pos.count * 3
       ? arr
       : (() => {
-          const out = new Float32Array(pos.count * 3);
-          for (let i = 0; i < pos.count; i++) {
+          const safeCount = Number.isFinite(pos.count) && pos.count > 0 ? Math.floor(pos.count) : 0;
+          const out = new Float32Array(safeCount * 3);
+          for (let i = 0; i < safeCount; i++) {
             out[i * 3] = pos.getX(i);
             out[i * 3 + 1] = pos.getY(i);
             out[i * 3 + 2] = pos.getZ(i);

@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Pause, SkipBack, SkipForward, ZoomIn, ZoomOut, X } from 'lucide-react';
 import { classLabelRu } from '../lib/classLabels';
 import { useTimelineStore, ZOOM_PRESETS } from '../store/timeline-store';
@@ -57,16 +57,19 @@ const CLASS_COLORS: Record<string, string> = {
 };
 
 function formatTime(seconds: number): string {
-  const mins = Math.floor(Math.max(0, seconds) / 60);
-  const secs = Math.floor(Math.max(0, seconds) % 60);
+  if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
 function tickStep(pps: number, duration: number): number {
-  if (pps >= 80) return 1;
-  if (pps >= 40) return 2;
-  if (pps >= 20) return 5;
-  if (duration > 180) return 30;
+  const safePps = Number.isFinite(pps) && pps > 0 ? pps : 10;
+  const safeDur = Number.isFinite(duration) && duration > 0 ? duration : 120;
+  if (safePps >= 80) return 1;
+  if (safePps >= 40) return 2;
+  if (safePps >= 20) return 5;
+  if (safeDur > 180) return 30;
   return 10;
 }
 
@@ -144,8 +147,10 @@ export const Timeline: React.FC<TimelineProps> = ({
   const playbackRate = useTimelineStore((s) => s.playbackRate);
   const setPlaybackRate = useTimelineStore((s) => s.setPlaybackRate);
   const { startScrubbing, updateScrubPosition, endScrubbing } = useTimelineScrub();
-  const safeDur = Math.max(0.001, duration);
-  const innerWidth = Math.max(viewportWidth || 1, duration * pixelsPerSecond);
+  const finiteDur = Number.isFinite(duration) && duration > 0 ? duration : 120;
+  const safeDur = Math.max(0.001, finiteDur);
+  const safePps = Number.isFinite(pixelsPerSecond) && pixelsPerSecond > 0 ? pixelsPerSecond : 10;
+  const innerWidth = Math.max(viewportWidth || 1, finiteDur * safePps);
   const fittedKeyRef = useRef('');
   const filmstripPath = useTimelineStore((s) => s.filmstripPath);
 
@@ -171,7 +176,7 @@ export const Timeline: React.FC<TimelineProps> = ({
   }, [setViewportDimensions]);
 
   useEffect(() => {
-    if (duration <= 1) return;
+    if (!Number.isFinite(duration) || duration <= 1) return;
     const key = `${filmstripPath ?? ''}|${Math.round(duration)}`;
     if (fittedKeyRef.current === key) return;
     fittedKeyRef.current = key;
@@ -189,8 +194,8 @@ export const Timeline: React.FC<TimelineProps> = ({
   const timeFromEvent = (clientX: number) => {
     if (!timelineRef.current) return 0;
     const rect = timelineRef.current.getBoundingClientRect();
-    const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    return percent * duration;
+    const percent = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+    return percent * finiteDur;
   };
 
   const timeFromFilmstrip = (clientX: number) => {
@@ -198,7 +203,7 @@ export const Timeline: React.FC<TimelineProps> = ({
     if (!el) return 0;
     const rect = el.getBoundingClientRect();
     const percent = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
-    return percent * duration;
+    return percent * finiteDur;
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -254,8 +259,15 @@ export const Timeline: React.FC<TimelineProps> = ({
 
   const playheadPct = Math.max(0, Math.min(100, (currentTime / safeDur) * 100));
   const hasRange = inPoint != null && outPoint != null && outPoint > inPoint;
-  const step = tickStep(pixelsPerSecond, duration);
-  const tickCount = Math.ceil(duration / step) + 1;
+  const step = tickStep(safePps, finiteDur);
+  const tickCount = Math.min(500, Math.max(1, Math.ceil(finiteDur / step) + 1));
+  const tickIndices = useMemo(() => {
+    const list: number[] = [];
+    for (let i = 0; i < tickCount; i++) {
+      list.push(i);
+    }
+    return list;
+  }, [tickCount]);
   const [timelineNarrow, setTimelineNarrow] = useState(false);
   const chromeRef = useRef<HTMLDivElement>(null);
   const storeZoomIn = useTimelineStore((s) => s.zoomIn);
@@ -499,11 +511,11 @@ export const Timeline: React.FC<TimelineProps> = ({
             </div>
 
             <div className="absolute bottom-0 left-0 right-0 h-6 bg-[#0a0a0a] border-t border-gray-800">
-              {Array.from({ length: tickCount }).map((_, i) => (
+              {tickIndices.map((i: number) => (
                 <div
                   key={i}
                   className="absolute text-[10px] font-mono text-gray-500"
-                  style={{ left: `${((i * step) / safeDur) * 100}%` }}
+                  style={{ left: `${Math.max(0, Math.min(100, ((i * step) / safeDur) * 100))}%` }}
                 >
                   {formatTime(i * step)}
                 </div>
