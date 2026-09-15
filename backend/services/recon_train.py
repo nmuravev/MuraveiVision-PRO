@@ -631,6 +631,17 @@ def start(job_id: str, preset: str) -> dict[str, Any]:
         if not ok:
             raise RuntimeError(reason or MSVC_NEED_MSG)
     if script in _AV_SCRIPTS:
+        import os
+
+        from services.db import get_setting
+
+        if script == "alicevision_mvs" and (os.environ.get("MURAVEI_LEGACY_AV_DENSE") or "").strip() != "1":
+            raise RuntimeError(
+                "AliceVision Dense (MVS) отключён по умолчанию. "
+                "Установите MURAVEI_LEGACY_AV_DENSE=1 или используйте DA3 Dense / Mesh."
+            )
+        if (get_setting("alicevision_enabled") or "1") != "1":
+            raise RuntimeError("AliceVision отключён инженером")
         if not alicevision_available():
             raise RuntimeError("AliceVision не установлен (sidecar / ALICEVISION_ROOT)")
         cuda_ok, cuda_reason = alicevision_cuda_ready()

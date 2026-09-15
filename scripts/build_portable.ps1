@@ -32,6 +32,7 @@ param(
   [switch]$NoDetectWeights,
   [switch]$IncludeAliceVision,
   [switch]$NoAliceVision,
+  [switch]$NoDA3,
   [switch]$Offline,
   [ValidateSet("cuda", "cpu")]
   [string]$TorchFlavor = "cuda"
@@ -214,6 +215,26 @@ assert sys.version.startswith('3.12')
     if (-not (Test-Path (Join-Path $Stage "sidecars\colmap"))) { $missing.Add("sidecars/colmap") }
   }
   # N3: sidecars/da3 is OPTIONAL — Mini never requires it; FullKit only when staged (do not fail if absent)
+  $da3Stage = Join-Path $Stage "sidecars\da3"
+  if ($Kit -eq "mini") {
+    if (Test-Path -LiteralPath $da3Stage) {
+      $da3Bins = @(Get-ChildItem -LiteralPath $da3Stage -File -EA SilentlyContinue |
+        Where-Object { $_.Extension -match '\.(safetensors|pt)$' })
+      if ($da3Bins.Count -gt 0) { $fail.Add("FORBIDDEN Mini sidecars/da3 weights") }
+    }
+  } else {
+    # FullKit: if any NC weight staged, NOTICE must sit beside it
+    if (Test-Path -LiteralPath $da3Stage) {
+      $ncWeights = @(Get-ChildItem -LiteralPath $da3Stage -File -EA SilentlyContinue |
+        Where-Object { $_.Name -match '^da3_(large|giant)\.(safetensors|pt)$' })
+      if ($ncWeights.Count -gt 0) {
+        $notice = Join-Path $da3Stage "NOTICE_CC-BY-NC-4.0.txt"
+        if (-not (Test-Path -LiteralPath $notice)) {
+          $fail.Add("MISSING sidecars/da3/NOTICE_CC-BY-NC-4.0.txt (NC weights present)")
+        }
+      }
+    }
+  }
   # Forbidden
   if (Test-Path (Join-Path $Stage "ollama")) { $fail.Add("FORBIDDEN ollama/") }
   if (Test-Path (Join-Path $Stage "node_modules")) { $fail.Add("FORBIDDEN node_modules") }
@@ -890,6 +911,26 @@ if ($FullKit) {
     }
   } else {
     Write-Host "  AliceVision sidecar skipped (Mini never bundles; FullKit use -IncludeAliceVision or stage bins)"
+  }
+
+  # DA3 neural dense weights (optional FullKit-only; Mini never)
+  if ($NoDA3) {
+    Write-Host "  DA3 sidecar skipped (-NoDA3)"
+  } else {
+    $da3Src = Join-Path $Repo "sidecars\da3"
+    $da3HasWeights = $false
+    if (Test-Path -LiteralPath $da3Src) {
+      $da3HasWeights = @(Get-ChildItem -LiteralPath $da3Src -File -EA SilentlyContinue |
+        Where-Object { $_.Extension -match '\.(safetensors|pt)$' }).Count -gt 0
+    }
+    if ($da3HasWeights) {
+      $da3Dest = Join-Path $sidecarDest "da3"
+      New-Item -ItemType Directory -Force -Path $da3Dest | Out-Null
+      Copy-Item -LiteralPath (Join-Path $da3Src "*") -Destination $da3Dest -Force -EA SilentlyContinue
+      Write-Host "  sidecars\da3 copied (FullKit optional DA3 weights + NOTICE)"
+    } else {
+      Write-Host "  DA3 sidecar skipped (no weights under sidecars\da3 — stage via fetch_da3_weights.py)"
+    }
   }
 }
 

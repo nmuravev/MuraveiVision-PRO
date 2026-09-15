@@ -1,0 +1,45 @@
+Depth Anything 3 (DA3) — Non-Commercial Weight NOTICE
+=====================================================
+
+This FullKit sidecar may include Depth Anything 3 model weights licensed under
+Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0):
+
+  - DA3-LARGE  (da3_large.safetensors)
+  - DA3-GIANT  (da3_giant.safetensors)
+
+Upstream project
+----------------
+  Depth Anything 3 (DA3)
+  https://github.com/bytedance-seed/depth-anything-3
+  Paper / citation: arXiv:2511.10647
+  Model cards: https://huggingface.co/depth-anything
+
+Apache-2.0 weights in the same sidecar (not under NC):
+  - DA3-BASE   (da3_base.safetensors)
+  - DA3-METRIC (da3_metric.safetensors) — DA3METRIC-LARGE upstream
+
+License URI (CC BY-NC 4.0)
+--------------------------
+  https://creativecommons.org/licenses/by-nc/4.0/
+
+Attribution
+-----------
+  Depth Anything 3 (DA3) by the Depth Anything team / ByteDance Seed et al.
+  If you redistribute these NC weights, retain this NOTICE and upstream attribution.
+
+Changes
+-------
+  Format packaging only: renamed/staged as da3_*.safetensors under sidecars/da3/
+  for MuraveiVision PRO FullKit offline air-gap distribution. No model weights
+  were fine-tuned or otherwise altered for this packaging step.
+
+Non-commercial project declaration
+----------------------------------
+  MuraveiVision PRO is distributed as an open, non-commercial project.
+  CC BY-NC 4.0 weights are included only for non-commercial use consistent with
+  that declaration. Commercial use of NC-licensed weights is not permitted.
+
+UI
+--
+  The application surfaces a Non-Commercial Only badge for DA3-LARGE and DA3-GIANT
+  presets (see docs/ATTRIBUTION.md).

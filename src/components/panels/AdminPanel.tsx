@@ -64,6 +64,9 @@ export const AdminPanel: React.FC = () => {
   };
   const [detectCfg, setDetectCfg] = useState<DetectCfg | null>(null);
   const [detectCfgSaved, setDetectCfgSaved] = useState<string | null>(null);
+  type ReconCfg = { alicevision_enabled: boolean };
+  const [reconCfg, setReconCfg] = useState<ReconCfg | null>(null);
+  const [reconCfgSaved, setReconCfgSaved] = useState<string | null>(null);
   const [segStatus, setSegStatus] = useState<{
     ready: boolean;
     loaded: boolean;
@@ -79,6 +82,13 @@ export const AdminPanel: React.FC = () => {
     const res = await fetch('/api/system/detect-config', { headers: authHeaders() });
     if (!res.ok) throw new Error('detect-config load failed');
     setDetectCfg(await res.json());
+  }, [isEng]);
+
+  const loadReconCfg = useCallback(async () => {
+    if (!isEng) return;
+    const res = await fetch('/api/system/recon-config', { headers: authHeaders() });
+    if (!res.ok) throw new Error('recon-config load failed');
+    setReconCfg(await res.json());
   }, [isEng]);
 
   const saveDetectCfg = useCallback(
@@ -97,10 +107,24 @@ export const AdminPanel: React.FC = () => {
     [],
   );
 
+  const saveReconCfg = useCallback(async (next: ReconCfg) => {
+    const res = await fetch('/api/system/recon-config', {
+      method: 'PUT',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(next),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data as { detail?: string }).detail || 'recon-config save failed');
+    setReconCfg(data as ReconCfg);
+    setReconCfgSaved('Сохранено');
+    window.setTimeout(() => setReconCfgSaved(null), 2000);
+  }, []);
+
   useEffect(() => {
     if (!isAuthenticated || !isEng) return;
     void loadDetectCfg().catch((e) => setError(String(e)));
-  }, [isAuthenticated, isEng, loadDetectCfg]);
+    void loadReconCfg().catch((e) => setError(String(e)));
+  }, [isAuthenticated, isEng, loadDetectCfg, loadReconCfg]);
 
   const refreshSegStatus = useCallback(async () => {
     const res = await fetch('/api/seg/status', { headers: authHeaders() });
@@ -559,6 +583,49 @@ export const AdminPanel: React.FC = () => {
               </button>
               {detectCfgSaved && (
                 <span className="text-[10px] text-[var(--dv-accent)]">{detectCfgSaved}</span>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="border border-[var(--dv-border)] bg-[var(--dv-bg-deep)] p-3 space-y-2" data-testid="recon-config">
+        <div className="font-semibold flex items-center gap-2">Конфигурация 3D</div>
+        <p className="text-[10px] text-[var(--dv-text-muted)]">
+          Dense = DA3. Mesh = AliceVision (textured OBJ+MTL). Отключение Mesh не влияет на Sparse/DA3/Splat.
+        </p>
+        {!reconCfg ? (
+          <div className="text-[10px] text-[var(--dv-text-muted)]">Загрузка…</div>
+        ) : (
+          <>
+            <label className="flex items-center gap-2 cursor-pointer text-[11px]">
+              <input
+                type="checkbox"
+                data-testid="cfg-alicevision-enabled"
+                checked={reconCfg.alicevision_enabled}
+                onChange={(e) =>
+                  setReconCfg({ ...reconCfg, alicevision_enabled: e.target.checked })
+                }
+              />
+              <span>AliceVision Mesh включён (инженерный тумблер)</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="px-2 py-1 bg-[#333] rounded-sm"
+                onClick={() => void saveReconCfg(reconCfg).catch((e) => setError(String(e)))}
+              >
+                Сохранить
+              </button>
+              <button
+                type="button"
+                className="px-2 py-1 bg-[#333] rounded-sm"
+                onClick={() => void loadReconCfg().catch((e) => setError(String(e)))}
+              >
+                Сбросить
+              </button>
+              {reconCfgSaved && (
+                <span className="text-[10px] text-[var(--dv-accent)]">{reconCfgSaved}</span>
               )}
             </div>
           </>

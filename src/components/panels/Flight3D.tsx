@@ -1494,15 +1494,23 @@ export const Flight3D: React.FC = () => {
           </div>
           <div className="flex flex-col gap-1">
             <div className="text-[var(--dv-text-muted)] uppercase tracking-wide text-[9px]">
-              Иерархия · Sparse → Dense (DA3 / AliceVision) → Mesh (AliceVision) → Splat
+              Иерархия · Sparse → Dense (DA3) → Mesh (AliceVision, opt-in) → Splat
             </div>
             <div className="text-[9px] text-[var(--dv-text-muted)] leading-snug -mt-0.5 mb-0.5">
-              «Построить 3D» = только COLMAP. Плотная реконструкция: DA3-BASE (быстрый) / DA3-LARGE (SOTA) / AliceVision.
+              «Построить 3D» = только COLMAP. Dense = DA3-BASE / LARGE / METRIC / GIANT (≥16 ГБ). Mesh = AliceVision.
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {(
                 (() => {
-                  const primary = ['sparse', 'da3_dense_base', 'da3_dense_large', 'dense', 'mesh', 'splat'];
+                  const primary = [
+                    'sparse',
+                    'da3_dense_base',
+                    'da3_dense_large',
+                    'da3_dense_metric',
+                    'da3_dense_giant',
+                    'mesh',
+                    'splat',
+                  ];
                   const primarySet = new Set(primary);
                   const hasPrimary = trainPresets.some((p) => primarySet.has(p.id));
                   const list = hasPrimary
@@ -1678,15 +1686,18 @@ export const Flight3D: React.FC = () => {
                         className="bg-[var(--dv-surface)] text-[var(--dv-text-primary)] border border-[var(--dv-border)] rounded px-1 py-0.5 text-[10px]"
                         value={densePresetId}
                         onChange={(e) => setDensePresetId(e.target.value)}
+                        data-testid="dense-backend-select"
                       >
                         <option value="da3_dense_base">DA3-BASE (Apache 2.0)</option>
                         <option value="da3_dense_large">DA3-LARGE (CC BY-NC 4.0)</option>
-                        <option value="dense">AliceVision MVS</option>
+                        <option value="da3_dense_metric">DA3-METRIC (Apache 2.0)</option>
+                        <option value="da3_dense_giant">DA3-GIANT (CC BY-NC 4.0, ≥16 ГБ)</option>
                       </select>
-                      {densePresetId === 'da3_dense_large' && (
+                      {(densePresetId === 'da3_dense_large' || densePresetId === 'da3_dense_giant') && (
                         <span
                           className="px-1 py-0.5 text-[9px] bg-amber-950 border border-amber-600 text-amber-300 font-semibold rounded whitespace-nowrap"
-                          title="Лицензия CC BY-NC 4.0: только для некоммерческого использования"
+                          title="CC BY-NC 4.0 — только некоммерческое использование. См. https://creativecommons.org/licenses/by-nc/4.0/ и sidecars/da3/NOTICE_CC-BY-NC-4.0.txt (arXiv:2511.10647)"
+                          data-testid="da3-nc-badge"
                         >
                           Non-Commercial Only
                         </span>
@@ -1709,15 +1720,17 @@ export const Flight3D: React.FC = () => {
                     }
                     title={
                       trainPresets.find((p) => p.id === densePresetId)?.disabled_reason ||
-                      `Запустить ${densePresetId.startsWith('da3') ? 'DA3' : 'AliceVision'} Dense`
+                      `Запустить DA3 Dense (${densePresetId})`
                     }
                   >
                     Dense → точечное облако (
-                    {densePresetId === 'da3_dense_large'
-                      ? 'DA3-LARGE'
-                      : densePresetId === 'da3_dense_base'
-                        ? 'DA3-BASE'
-                        : 'AliceVision'}
+                    {densePresetId === 'da3_dense_giant'
+                      ? 'DA3-GIANT'
+                      : densePresetId === 'da3_dense_metric'
+                        ? 'DA3-METRIC'
+                        : densePresetId === 'da3_dense_large'
+                          ? 'DA3-LARGE'
+                          : 'DA3-BASE'}
                     )
                   </button>
                   <button

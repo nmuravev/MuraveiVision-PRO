@@ -404,3 +404,31 @@ async def put_detect_config(
     set_setting("hud_exclude_live", "1" if body.hud_exclude_live else "0")
     set_setting("yolo_inference_backend", body.yolo_inference_backend)
     return _read_detect_config()
+
+
+# --- Recon / 3D engineer config (AliceVision Mesh toggle) ---
+
+class ReconConfigBody(BaseModel):
+    alicevision_enabled: bool = True
+
+
+def _read_recon_config() -> dict[str, Any]:
+    return {
+        "alicevision_enabled": (get_setting("alicevision_enabled") or "1") == "1",
+    }
+
+
+@router.get("/recon-config")
+async def get_recon_config(
+    _user: dict[str, Any] = Depends(require_role("engineer")),
+) -> dict[str, Any]:
+    return _read_recon_config()
+
+
+@router.put("/recon-config")
+async def put_recon_config(
+    body: ReconConfigBody,
+    _user: dict[str, Any] = Depends(require_role("engineer")),
+) -> dict[str, Any]:
+    set_setting("alicevision_enabled", "1" if body.alicevision_enabled else "0")
+    return _read_recon_config()
