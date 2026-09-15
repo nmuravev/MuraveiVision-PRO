@@ -130,18 +130,27 @@ $env:GSPLAT_INLINE = "1"
 
 ### UI presets (`config/train_presets.json`)
 
-Repo-root JSON controls Flight3D **Сцена** buttons. Canonical: `sparse` / `dense` / `mesh` / `splat`; aliases `bootstrap` / `balanced` / `high`. Scripts: `colmap_only` | `alicevision_mvs` | `alicevision_mesh` | `bootstrap` | `gsplat`. Missing/invalid file → built-in hierarchy.
+Repo-root JSON controls Flight3D **Сцена** buttons. Canonical hierarchy: `sparse` / `da3_dense_*` / `mesh` / `splat`; aliases `bootstrap` / `balanced` / `high`. Scripts: `colmap_only` | `da3_dense` | `alicevision_mesh` | `gsplat` (legacy `alicevision_mvs` behind `MURAVEI_LEGACY_AV_DENSE=1`). Missing/invalid file → built-in hierarchy.
 
-VRAM gate uses `torch.cuda.get_device_properties(0).total_memory` (no `nvidia-smi`). Dense/Mesh also require AliceVision sidecar + CUDA.
+VRAM gate uses `torch.cuda.get_device_properties(0).total_memory` (no `nvidia-smi`). Dense = DA3 (CUDA + `sidecars/da3`). Mesh requires AliceVision sidecar + CUDA + `alicevision_enabled=1`.
 
-### AliceVision sidecar
+### DA3 Dense sidecar (FullKit optional)
+
+```powershell
+# Seed weights (Z1 URLs+sha in scripts/portable_manifest.json) then verify:
+.\muravei_env\Scripts\python.exe scripts\fetch_da3_weights.py --variants base,large,metric,giant
+.\muravei_env\Scripts\python.exe backend\scripts\verify_da3_weights.py
+# NOTICE_CC-BY-NC-4.0.txt must sit next to NC weights (large/giant) before FullKit build.
+```
+
+### AliceVision Mesh sidecar (opt-in)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\fetch_alicevision.ps1
 $env:ALICEVISION_ROOT = (Resolve-Path ".\sidecars\alicevision\windows-x64").Path
 ```
 
-VC++ Redistributable x64 required. Depth maps need NVIDIA CUDA (no CPU fallback).
+VC++ Redistributable x64 required. Depth maps need NVIDIA CUDA (no CPU fallback). Engineer toggle: Система → Конфигурация 3D → `alicevision_enabled`.
 
 ### CLI (optional)
 

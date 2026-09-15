@@ -8,7 +8,7 @@
 
 | Команда | Что запускает |
 |---------|---------------|
-| `npm run test:field` | все 6 приёмочных: `yolo-scrub-gate` + `field-regression` + `recon-raycast` + `test_ui_toggles` + `test_hotkeys` + `test_event_timeline` |
+| `npm run test:field` | приёмочные: `yolo-scrub-gate` + `field-regression` + `recon-raycast` + `test_ui_toggles` + `test_hotkeys` + `test_event_timeline` (+ отдельно `da3_ui`) |
 | `npm run test:yolo-scrub` | только YOLO scrub gate |
 | `npm run test:yolo-scrub-gate` | alias scrub gate |
 | `npm run test` / `npm run test:all` | **единый оркестратор** (unit + compileall + build + smoke + E2E) → `reports/test_report.html` |
@@ -21,6 +21,14 @@
 - `test_ui_toggles.test.ts` — тумблеры SAHI/валидатора в AdminPanel: toggle → save → SQLite → API → переживает F5.
 - `test_hotkeys.test.ts` — Space, стрелки, 1–4, I/O, guard ввода в input, Ctrl+Z undo patch.
 - `test_event_timeline.test.ts` — пресет 4×Live (4 Viewer), лента событий, seek по клику на локальную детекцию.
+- `da3_ui.test.ts` — Dense selector (4 DA3, без AV MVS), NC-бейдж LARGE/GIANT, `alicevision_enabled` в Система, presets API.
+
+## P4 — Detect weight integrity (DA3 mission)
+
+| Asset | Check | Result |
+|-------|--------|--------|
+| `assets/models/yolo26n-ft.pt` | SHA256 before/after portable rebuild + gates | must match (no train side-effect) |
+| Detect / scan / SAHI / validator / train UI | functional smoke via pack + `test:field` | OK / blocked (note) |
 
 ## Backend — unittest
 

@@ -1,66 +1,40 @@
-# AliceVision dense photogrammetry (v3.2+) & DA3 Neural Dense positioning
+# AliceVision Mesh-only backend (v3.4 demotion) & DA3 Dense
 
-Optional **dense MVS + textured mesh** after COLMAP sparse SfM. AliceVision does **not** replace COLMAP.
+**Product rule:** Dense = **DA3 family**. AliceVision is the **opt-in textured Mesh** backend (spectral context: vegetation vs structure / camo-net). OBJ+MTL is the external GIS/CAD export path; splat remains view-dependent photorealism.
 
-**Depth Anything 3 (DA3 Dense):** Fast Neural Dense backend (Apache 2.0 / CC BY-NC 4.0). Predicts dense depth in ~1–2 min when weights are staged under `sidecars/da3/`. Positioned as the recommended Dense path when CUDA + sidecar are available; AliceVision remains the classical MVS/Mesh path.
+AliceVision does **not** replace COLMAP SfM. AliceVision MVS Dense (`preset=dense`) is **legacy** behind `MURAVEI_LEGACY_AV_DENSE=1`.
 
 ## Capabilities
 
 | Preset | Backend | Output | Needs |
 |--------|---------|--------|--------|
-| Sparse | `colmap_only` | `sparse_points.json` (already from Build3D) | COLMAP |
-| Dense (DA3-BASE) | `da3_dense_base` | `dense.ply` | `sidecars/da3/` (Apache-2.0, ~30–60 с) + CUDA |
-| Dense (DA3-LARGE) | `da3_dense_large` | `dense.ply` | `sidecars/da3/` (CC BY-NC 4.0, ~1–2 мин) + CUDA |
-| Dense | `alicevision_mvs` | `dense_point_cloud.ply` | AliceVision sidecar + **NVIDIA CUDA** (≥6 GB VRAM) |
-| Mesh | `alicevision_mesh` | `textured_mesh.obj` (+ `.mtl` / textures) | AliceVision + CUDA (≥8 GB VRAM) |
-| Splat | `gsplat` | `model.ply` | CUDA + MSVC (as before) |
+| Sparse | `colmap_only` | `sparse_points.json` | COLMAP |
+| Dense (DA3-BASE) | `da3_dense_base` | `dense.ply` | `sidecars/da3/` Apache-2.0 + CUDA (≥6 GB) |
+| Dense (DA3-LARGE) | `da3_dense_large` | `dense.ply` | NC weights + CUDA (≥8 GB) |
+| Dense (DA3-METRIC) | `da3_dense_metric` | `dense.ply` | Apache metric weights + CUDA (≥8 GB) |
+| Dense (DA3-GIANT) | `da3_dense_giant` | `dense.ply` | NC + CUDA (**≥16 GB**) |
+| Dense (AV legacy) | `alicevision_mvs` | `dense_point_cloud.ply` | `MURAVEI_LEGACY_AV_DENSE=1` + AV sidecar + CUDA |
+| Mesh | `alicevision_mesh` | `textured_mesh.obj` (+ `.mtl`) | AV sidecar + CUDA (≥8 GB) + `alicevision_enabled=1` |
+| Splat | `gsplat` | `model.ply` | CUDA + MSVC |
 
-Aliases: `bootstrap`→sparse/bootstrap script, `balanced`/`high`→splat.
+Aliases: `bootstrap`→sparse, `balanced`/`high`→splat.
 
-## Pipeline (after COLMAP)
+## Engineer toggle
 
-1. Copy HUD-masked frames → `alicevision_input/` (originals under `frames/` untouched)
-2. `cameraInit` → inject COLMAP poses into `.sfm`
-3. `prepareDenseScene` → `depthMapEstimation` → `depthMapFiltering` → `meshing`
-4. Dense: export PLY; Mesh: `meshFiltering` + `texturing`
+SQLite setting `alicevision_enabled` (default `"1"`). UI: **Система → Конфигурация 3D**. When `"0"`, Mesh is grey with RU `disabled_reason`: «AliceVision отключён инженером».
 
-On failure: sparse stays intact; `manifest.alicevision_warning` + train channel error. Never wipe COLMAP.
+## Pipeline (Mesh, after COLMAP + optional DA3)
 
-### Soft-fail gates (anti-crash)
+1. Copy HUD-masked frames → `alicevision_input/`
+2. `cameraInit` → inject COLMAP poses
+3. `prepareDenseScene` → depth → `meshing` → `meshFiltering` + `texturing`
 
-- **Matched views &lt; 8:** Dense/Mesh aborts before depth/meshing with a clear Russian message (avoids native `0xC0000409` on degenerate SfM).
-- **Stub depth EXR (~7 KB):** meshing skipped — empty depth maps usually mean weak multi-view overlap.
-- **Meshing native abort:** translated to RU; partial dense PLY recovered if AliceVision flushed one.
+On failure: sparse stays intact; soft-fail gates unchanged (views &lt; 8, stub EXR, native abort).
 
-### Field 9-minute clip
+## Sidecar / pack
 
-Integration tests (`backend/tests/test_long_clip_field.py`) use `archive/video_2026-08-25_09-17-15.mp4` or `MURAVEI_TEST_LONG_CLIP`. Shared frames cache: `archive/.test_cache/long_clip_frames/` (gitignored). Frame budget for ~9 min stays within `COLMAP_MAX_FRAMES` (default 600); matcher stays **sequential**.
+- Windows-x64 only; fetch via `scripts/fetch_alicevision.ps1`.
+- FullKit includes AV only when staged / `-IncludeAliceVision`; otherwise Mesh is unavailable (size saving).
+- Mini never bundles AliceVision or DA3.
 
-## Sidecar
-
-- Manifest: [`scripts/alicevision_manifest.json`](../scripts/alicevision_manifest.json) (version **3.3.0**, SHA256, tool list)
-- Layout: `sidecars/alicevision/windows-x64/{bin,lib,share}` (gitignored binaries)
-- Fetch (offline build machine): `scripts/fetch_alicevision.ps1` / `.sh` — **do not** auto-download at runtime
-- Env: `ALICEVISION_ROOT` → platform root containing `bin/` (launchers set this when present)
-- License: MPL-2.0 — see [ATTRIBUTION.md](ATTRIBUTION.md) and `sidecars/alicevision/LICENSE.MPL-2.0`
-
-## CUDA honesty
-
-Shipping AliceVision `depthMapEstimation` is CUDA/NVIDIA-backed. **No reliable CPU fallback.** Dense/Mesh presets show Russian `disabled_reason` when sidecar missing or CUDA unavailable.
-
-## Comparison
-
-| | Sparse COLMAP | Dense AV | Mesh AV | Splat gsplat |
-|--|---------------|----------|---------|--------------|
-| Photorealism | low | medium (points) | medium–high (textured) | high (Gaussian) |
-| GPU | optional for SfM | **required** | **required** | required |
-| Typical ETA | Build3D only | 10–40 мин | 20–60 мин | 5–30 мин |
-| Portable | FullKit COLMAP | FullKit optional AV | same | FullKit gsplat |
-
-## Portable
-
-FullKit copies AliceVision when `windows-x64/bin` is staged (`-IncludeAliceVision` / default-on if present; `-NoAliceVision` to skip). Mini never bundles it. See [PORTABLE.md](PORTABLE.md).
-
-## Operator path
-
-Flight3D → Build3D (sparse) → hierarchy **Sparse / Dense / Mesh / Splat** → artifact selector «Показать» → export per artifact (mesh = ZIP).
+See also: [RECON_3D.md](RECON_3D.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md), [ATTRIBUTION.md](ATTRIBUTION.md).

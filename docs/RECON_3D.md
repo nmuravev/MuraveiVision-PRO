@@ -6,7 +6,7 @@ Visual-only photogrammetry for archive MP4 **without GPS**. Designed for EW/jamm
 
 **v3.2:** optional AliceVision dense MVS / textured mesh after COLMAP — see [ALICEVISION.md](ALICEVISION.md).
 
-**v3.4:** Depth Anything 3 (DA3) Neural Dense backend (`da3_dense_base` / `da3_dense_large`) — pose-conditioned dense depth aligned to COLMAP; weights in `sidecars/da3/` (FullKit optional, Mini never). Soft-fail if &lt;8 registered cameras (COLMAP sparse preserved). Intermediate depths cleaned unless `MURAVEI_DA3_KEEP_DEPTHS=1`.
+**v3.4:** Depth Anything 3 (DA3) Neural Dense — `da3_dense_base` / `large` / `metric` / `giant` (≥16 GB). Weights in `sidecars/da3/` (FullKit optional, Mini never). Soft-fail if &lt;8 registered cameras. AliceVision is **Mesh-only** (opt-in); AV MVS Dense is legacy (`MURAVEI_LEGACY_AV_DENSE=1`).
 
 ## Requirements
 
@@ -14,8 +14,8 @@ Visual-only photogrammetry for archive MP4 **without GPS**. Designed for EW/jamm
 |-----------|--------|
 | Python 3.12.10 | `muravei_env\Scripts\python.exe` only |
 | COLMAP | Sidecar `sidecars/colmap` — auto-detect или `COLMAP_ROOT` |
-| DA3 Dense Backend | Sidecar `sidecars/da3/` (`da3_base.safetensors` / `da3_large.safetensors`, FullKit-only, optional) |
-| AliceVision (Dense/Mesh) | `sidecars/alicevision/windows-x64` or `ALICEVISION_ROOT` + NVIDIA CUDA |
+| DA3 Dense Backend | Sidecar `sidecars/da3/` (`da3_{base,large,metric,giant}.safetensors` + `config_*.json`, FullKit-only, optional) |
+| AliceVision (Mesh) | `sidecars/alicevision/windows-x64` or `ALICEVISION_ROOT` + NVIDIA CUDA; toggle `alicevision_enabled` |
 | gsplat (train) | Prebuilt wheel on build machine + NVIDIA CUDA |
 | ffmpeg/ffprobe | pack-first `assets/ffmpeg` / `sidecars/ffmpeg` or PATH |
 
@@ -43,9 +43,9 @@ npm run backend
 ```
 
 3. In UI: open MP4 → **Flight3D** → **Построить 3D** (segment ≤120 s from playhead).
-4. After sparse: hierarchy **Sparse / Dense (DA3 or AliceVision) / Mesh / Splat** (DA3 needs `sidecars/da3/` + CUDA; AliceVision Dense/Mesh need AliceVision+CUDA; Splat = gsplat). Artifact selector «Показать» + export.
+4. After sparse: hierarchy **Sparse → Dense (DA3) → Mesh (AliceVision, opt-in) → Splat**. Artifact selector «Показать» + export.
 
-   **Product rule:** «Построить 3D» = **COLMAP sparse only** (`colmap_done`). Ops modal title stays «Построение 3D (COLMAP)» with subtitle that dense backends are next — **AliceVision/DA3 do not run inside Build 3D**. After `colmap_done`, Scene tab shows Dense backend selector (DA3-BASE / DA3-LARGE / AliceVision) + hierarchy buttons. Photorealism = **Splat** (aliases Balanced / High). Grey disabled buttons expose RU `disabled_reason` when CUDA or DA3 weights are missing.
+   **Product rule:** «Построить 3D» = **COLMAP sparse only** (`colmap_done`). Ops modal title stays «Построение 3D (COLMAP)» with subtitle that dense backends are next — **DA3/AliceVision do not run inside Build 3D**. After `colmap_done`, Scene tab shows Dense backend selector (**DA3-BASE / LARGE / METRIC / GIANT**; no AliceVision MVS by default) + hierarchy buttons. Photorealism = **Splat** (aliases Balanced / High). Grey disabled buttons expose RU `disabled_reason` when CUDA or DA3 weights are missing. Mesh = AliceVision textured OBJ+MTL (`alicevision_enabled`).
 
    **Matching (drone video):** frames use **sequential_matcher** (overlap ≈10–15 neighbors, env `COLMAP_SEQUENTIAL_OVERLAP`). Exhaustive matching is **not** the default — it is O(n²) and often crashes GPU (8 GB) mid «Exhaustive feature matching». Opt-in: `COLMAP_MATCHER=exhaustive` only for small sets (≤`COLMAP_EXHAUSTIVE_MAX_IMAGES`, default 80).
 
@@ -60,12 +60,13 @@ After COLMAP (`colmap_done`), open **Гео 3D → Сцена**. Yellow banner p
 | Button | Preset | Typical time | Notes |
 |--------|--------|--------------|--------|
 | Sparse | `sparse` | после COLMAP | только sparse |
-| DA3-BASE | `da3_dense_base` | ≈30–60 с | Neural Dense, Apache-2.0; sidecar `sidecars/da3/` |
-| DA3-LARGE | `da3_dense_large` | ≈1–2 мин | SOTA, CC BY-NC 4.0 (non-commercial) |
-| Dense | `dense` | 10–40 мин | AliceVision MVS |
-| Mesh | `mesh` | 20–60 мин | AliceVision textured mesh |
-| Bootstrap | `bootstrap` | ≈30 с | COLMAP→minimal `model.ply` (not photoreal) |
-| Balanced | `balanced` (default) | 5–10 мин | gsplat ~7000 steps |
+| DA3-BASE | `da3_dense_base` | ≈30–60 с | default Dense, Apache-2.0 |
+| DA3-LARGE | `da3_dense_large` | ≈1–2 мин | CC BY-NC 4.0 |
+| DA3-METRIC | `da3_dense_metric` | ≈1–2 мин | Apache metric-scale |
+| DA3-GIANT | `da3_dense_giant` | ≈2–5 мин | CC BY-NC; **≥16 ГБ VRAM** |
+| Mesh | `mesh` | 20–60 мин | AliceVision textured mesh (opt-in) |
+| Bootstrap | `bootstrap` | ≈30 с | COLMAP→minimal `model.ply` |
+| Balanced | `balanced` | 5–10 мин | gsplat ~7000 steps |
 | High Quality | `high` | 15–30 мин | ~30000 steps; **disabled if VRAM &lt; 12 ГБ** |
 
 Stage DA3 weights (builder machine only): `powershell -File scripts\stage_da3_sidecar.ps1` — URLs/sha256 from `scripts/portable_manifest.json` → `sidecars.da3` (Z1).

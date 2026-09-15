@@ -77,8 +77,17 @@
 
 ## DA3 Dense Backend (v3.4)
 
-- **DA3 weights not fetched:** sha256 placeholder `FETCH_REAL_SHA_AFTER_FIRST_DOWNLOAD` in `sidecars.da3`; real-inference field test pending sidecar seed.
-- **Optional everywhere:** Mini never bundles DA3; FullKit Assert-PackInventory does not require `sidecars/da3`; presets grey out with RU cause when CUDA or weights missing.
+- **Weights seeded locally** under `sidecars/da3/` (not in git); sha256 live in `scripts/portable_manifest.json` → `sidecars.da3`.
+- **Variants:** base (Apache, default) / large (CC BY-NC) / metric (Apache) / giant (CC BY-NC, **gated ≥16 ГБ VRAM** — grey with RU reason below that).
+- **Not used:** nested (giant+metric combo, redundant) and mono (monocular-only, not in multi-view dense path).
+- **Optional everywhere:** Mini never bundles DA3; FullKit Assert-PackInventory does not require `sidecars/da3` (`-NoDA3` skip); NC weights require `NOTICE_CC-BY-NC-4.0.txt` in stage.
+- **Runtime:** package `depth_anything_3` must import in `muravei_env`; flat synthetic depth disabled (`DA3_RUNTIME_UNAVAILABLE`).
+
+## AliceVision Mesh-only (v3.4 demotion)
+
+- **Dense = DA3 family.** AliceVision MVS preset `dense` is hidden unless `MURAVEI_LEGACY_AV_DENSE=1`.
+- **Mesh** remains AliceVision textured mesh; engineer toggle `alicevision_enabled` (SQLite, default on) greys Mesh with «AliceVision отключён инженером».
+- **Pack size:** AV sidecar only when staged (`-IncludeAliceVision` / bins present); FullKit without staged AV ships without Mesh backend.
 - Soft-fail &lt;8 COLMAP cameras preserves sparse; events `da3_depth` / `da3_fusion` / `da3_done` on recon stream.
 
 ## Other platform notes

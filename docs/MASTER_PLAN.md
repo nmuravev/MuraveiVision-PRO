@@ -2,24 +2,25 @@
 
 ## Meta
 
-- **Snapshot date:** 2026-09-15
-- **Branch:** `main`
-- **Commit:** 5da59b422f506812517a3107c3b0c4d6b01f9af5
-- **Unit tests:** 357 (discover OK)
-- **Status:** DA3 on main; flat-depth fail-closed (`DA3_RUNTIME_UNAVAILABLE`); weights pending seed; field: recon-raycast PASS, test_ui_toggles blocked (Playwright chromium missing)
-- **Last updated by:** fix(recon): DA3 flat-depth guard
-- **Portable local:** Mini 3.62 GB / FullKit CPU 5.27 GB (E6 smoke); DA3 sidecar optional FullKit-only
+- **Snapshot date:** 2026-09-16
+- **Branch:** `feature/da3-verify-20260916` (ff-merge → `main` pending gates)
+- **Commit:** 125bf39810dae03b8cd03ea0ba0653288d2a1da7
+- **Unit tests:** 359 (discover OK)
+- **Status:** DA3 all-variants seeded (base/large/metric/giant), NC compliance in place; Dense=DA3 / Mesh=AV opt-in; verify PASS base/large/metric, giant GATE_SKIPPED (VRAM&lt;16)
+- **Last updated by:** feat(recon): DA3 inference API + all-variants verify + AV Mesh demotion
+- **Portable local:** Mini 3.67 GB / FullKit+DA3 band ~12–18 GB (reject &gt;22); DA3 sidecar optional FullKit-only; Mini NEVER
 - **Env pack:** win_cuda / win_cpu — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
 - **E6 additions:** `timm` + `safetensors`; `ci_full.ps1` (E6 + DA3 A/B); CRLF/LF launcher guards; SAM3 load cap ≤60s; validator `reject_ratio`
-- **DA3:** `sidecars.da3` SSO in portable_manifest; presets grey without CUDA/weights; real sha256 pending first download; `DA3_RUNTIME_UNAVAILABLE` fail-closed (no ones*2.0)
+- **DA3:** `sidecars.da3` SSO in portable_manifest (real sha256); HF `config_*.json` + `inference()` path; `DA3_RUNTIME_UNAVAILABLE` fail-closed (no ones*2.0); NOTICE_CC-BY-NC-4.0 for LARGE/GIANT
+- **Non-commercial project declaration:** CC BY-NC DA3 weights allowed only under non-commercial distribution — see README + [ATTRIBUTION.md](ATTRIBUTION.md)
 
 ## Major Changes in This Release
 
-- **Depth Anything 3 (DA3) Dense Backend (Phase 1):** pose-conditioned neural dense (`da3_dense_base` / `da3_dense_large`), sidecar-only, soft-fail preserves COLMAP
-- AliceVision optional dense MVS + textured mesh after COLMAP sparse
-- Preset hierarchy Sparse / Dense (DA3|AV) / Mesh / Splat (+ aliases)
-- Flight3D multi-artifact viewer + export
-- FullKit `-IncludeAliceVision` portable bundling
+- **Depth Anything 3 (DA3) Dense Backend (all-variants):** `da3_dense_base` / `large` / `metric` / `giant` (≥16 GB), sidecar-only, soft-fail preserves COLMAP
+- AliceVision demoted to **Mesh-only** opt-in (`alicevision_enabled`); AV MVS Dense legacy behind `MURAVEI_LEGACY_AV_DENSE=1`
+- Preset hierarchy Sparse → Dense (DA3) → Mesh (AV) → Splat
+- Flight3D multi-artifact viewer + export + NC badge
+- FullKit `-IncludeAliceVision` + optional DA3 sidecar portable bundling
 - 3D Reconstruction: COLMAP sequential matching + frame budget (stable on 8GB VRAM)
 - HUD Exclusion: Auto-detection + blur/crop for detect/CD/recon
 - Session Trace: Page-lifetime singleton + sessionStorage UUID

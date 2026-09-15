@@ -2,6 +2,8 @@
 
 Автономный тактический видеоанализ (YOLO) для Windows. Portable ZIP — без установки Node/Python на полевом ноутбуке.
 
+**Non-commercial project:** MuraveiVision PRO is distributed as an open **non-commercial** project. CC BY-NC 4.0 DA3 weights (LARGE / GIANT) in FullKit are for non-commercial use only — see [`docs/ATTRIBUTION.md`](docs/ATTRIBUTION.md) and `sidecars/da3/NOTICE_CC-BY-NC-4.0.txt`.
+
 **Latest release:** [v3.1.0](https://github.com/nmuravev/MuraveiVision-PRO/releases/tag/v3.1.0)  
 **Документация:** [`docs/`](docs/README.md) — архитектура, API, обучение, portable, гайд оператора, roadmap.
 

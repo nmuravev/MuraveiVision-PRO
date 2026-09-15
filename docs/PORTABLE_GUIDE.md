@@ -16,11 +16,11 @@ Scripts: `bootstrap_portable.ps1` / `.sh`, `portable_manifest.json`, `setup_env.
 
 ## Contents table (detect out-of-box contract)
 
-| | **Mini** (~3.5–4.5 GB, warn &gt;4.5, reject &gt;5) | **FullKit** (~7.5–9 GB, warn &gt;9.5, reject &gt;10) |
+| | **Mini** (~3.5–4.5 GB, warn &gt;4.5, reject &gt;5) | **FullKit** (~7.5–9 GB without DA3; **~12–18 GB** with all DA3 variants, reject &gt;22) |
 |--|--|--|
 | Offline stack | tactical YOLO26 (ladder **l-ft &gt; m-ft &gt; s-ft &gt; n-ft &gt; n**) + **SAHI default ON** + **sam3.pt** exactly once | same weights policy + larger tactical weights when present in `assets/models` |
 | Runtime | CPU torch + onnxruntime-directml | CUDA torch cu128 (+ CPU fallback) |
-| 3D | — | COLMAP + gsplat + AliceVision (when staged) |
+| 3D | — | COLMAP + optional **DA3** Dense (`sidecars/da3` + NOTICE for NC) + optional **AliceVision Mesh** (`-IncludeAliceVision`) |
 | Ollama | **НЕ в комплекте** | **НЕ в комплекте** |
 | KIT marker | pack-root `KIT` = `mini` | `KIT` = `full` |
 | Badge | `Сборка: Mini · класс: … (tier N)` | `Сборка: Full · класс: … (tier N)` |
@@ -72,7 +72,8 @@ Smoke sample: `assets/smoke_sample/frame_person_car.jpg` (synthetic CC0 — see 
 | yolo26n-ft.pt (+ yolo26n.pt), ladder l-ft>m-ft>s-ft>n-ft>n | yes | yes | YES |
 | sam3.pt exactly one | yes | yes | YES |
 | **ffmpeg + ffprobe pack-local** (`assets/ffmpeg/`) | yes | yes | YES |
-| COLMAP + AliceVision sidecars | — | yes | YES (Full) |
+| COLMAP + AliceVision sidecars | — | optional (Mesh) | Full 3D |
+| DA3 Dense weights + NOTICE | — | optional (`sidecars/da3`, NC NOTICE if large/giant) | Full Dense |
 | backend/ + dist/ + assets/smoke_sample/ | yes | yes | YES |
 | KIT + VERSION + Запустить.bat | yes | yes | YES |
 | FORBIDDEN: ollama/, node_modules, runs/detect >50 MB, sam dups, archive media, .git, *.part/*.tmp | assert | assert | assert |
