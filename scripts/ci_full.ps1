@@ -66,8 +66,11 @@ if ($utExit -ne 0) { Write-Fail "unittest exit=$utExit" } else { Write-Pass "uni
 # --- Step 3: TypeScript check ---
 if (-not $SkipTsc) {
   Write-Step "TypeScript (tsc --noEmit)"
+  $prevEap = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
   $tscOut = & npx tsc --noEmit 2>&1
   $tscExit = $LASTEXITCODE
+  $ErrorActionPreference = $prevEap
   if ($tscExit -ne 0) {
     Write-Host ($tscOut | Select-Object -Last 15 | Out-String).Trim()
     Write-Fail "tsc exit=$tscExit"
