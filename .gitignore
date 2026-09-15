@@ -104,6 +104,13 @@ sidecars/colmap/lib/
 sidecars/alicevision/windows-x64/
 sidecars/alicevision/downloads/
 
+# DA3 neural dense weights (FullKit local seed only; keep NOTICE / .gitkeep trackable)
+sidecars/da3/*.safetensors
+sidecars/da3/*.pt
+sidecars/da3/*.part
+sidecars/da3/**/*.safetensors
+sidecars/da3/**/*.pt
+
 # Runtime log dumps (keep directory placeholder)
 logs/*
 !logs/.gitkeep
