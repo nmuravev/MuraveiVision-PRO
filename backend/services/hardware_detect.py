@@ -117,6 +117,8 @@ def detect_da3() -> dict[str, Any]:
 
     base_path: str | None = None
     large_path: str | None = None
+    metric_path: str | None = None
+    giant_path: str | None = None
 
     for root in roots:
         for ext in (".safetensors", ".pt"):
@@ -128,14 +130,26 @@ def detect_da3() -> dict[str, Any]:
                 l_cand = root / f"da3_large{ext}"
                 if l_cand.is_file():
                     large_path = str(l_cand)
+            if not metric_path:
+                m_cand = root / f"da3_metric{ext}"
+                if m_cand.is_file():
+                    metric_path = str(m_cand)
+            if not giant_path:
+                g_cand = root / f"da3_giant{ext}"
+                if g_cand.is_file():
+                    giant_path = str(g_cand)
 
-    present = bool(base_path or large_path)
+    present = bool(base_path or large_path or metric_path or giant_path)
     return {
         "present": present,
         "base_present": bool(base_path),
         "base_path": base_path,
         "large_present": bool(large_path),
         "large_path": large_path,
+        "metric_present": bool(metric_path),
+        "metric_path": metric_path,
+        "giant_present": bool(giant_path),
+        "giant_path": giant_path,
     }
 
 

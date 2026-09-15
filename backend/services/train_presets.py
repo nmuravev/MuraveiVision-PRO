@@ -12,7 +12,16 @@ from services.security import BASE_DIR
 
 PRESETS_PATH = BASE_DIR / "config" / "train_presets.json"
 
-_PRIMARY_ORDER = ("sparse", "dense", "da3_dense_base", "da3_dense_large", "mesh", "splat")
+_PRIMARY_ORDER = (
+    "sparse",
+    "da3_dense_base",
+    "da3_dense_large",
+    "da3_dense_metric",
+    "da3_dense_giant",
+    "dense",
+    "mesh",
+    "splat",
+)
 _ALIAS_ORDER = ("bootstrap", "balanced", "high")
 
 _BUILTIN: dict[str, dict[str, Any]] = {
@@ -23,7 +32,7 @@ _BUILTIN: dict[str, dict[str, Any]] = {
         "backend": "colmap_only",
     },
     "dense": {
-        "label": "Dense",
+        "label": "Dense (AliceVision legacy)",
         "script": "alicevision_mvs",
         "eta": "10–40 мин",
         "min_vram_gb": 6,
@@ -37,6 +46,8 @@ _BUILTIN: dict[str, dict[str, Any]] = {
         "min_vram_gb": 6,
         "backend": "da3_dense",
         "license": "Apache-2.0",
+        "commercial_use": True,
+        "default": True,
     },
     "da3_dense_large": {
         "label": "DA3-LARGE (Dense)",
@@ -46,6 +57,27 @@ _BUILTIN: dict[str, dict[str, Any]] = {
         "min_vram_gb": 8,
         "backend": "da3_dense",
         "license": "CC-BY-NC-4.0",
+        "commercial_use": False,
+    },
+    "da3_dense_metric": {
+        "label": "DA3-METRIC (Dense)",
+        "script": "da3_dense",
+        "variant": "metric",
+        "eta": "1–2 мин",
+        "min_vram_gb": 8,
+        "backend": "da3_dense",
+        "license": "Apache-2.0",
+        "commercial_use": True,
+    },
+    "da3_dense_giant": {
+        "label": "DA3-GIANT (Dense)",
+        "script": "da3_dense",
+        "variant": "giant",
+        "eta": "2–5 мин",
+        "min_vram_gb": 16,
+        "backend": "da3_dense",
+        "license": "CC-BY-NC-4.0",
+        "commercial_use": False,
     },
     "mesh": {
         "label": "Mesh",
@@ -115,6 +147,10 @@ def _validate(raw: dict[str, Any]) -> dict[str, dict[str, Any]] | None:
             entry["backend"] = "da3_dense"
             entry["variant"] = str(val.get("variant") or "base")
             entry["license"] = str(val.get("license") or "Apache-2.0")
+            if "commercial_use" in val:
+                entry["commercial_use"] = bool(val["commercial_use"])
+            else:
+                entry["commercial_use"] = not str(entry["license"]).upper().startswith("CC-BY-NC")
         elif script in ("alicevision_mvs", "alicevision_mesh", "colmap_only"):
             entry["backend"] = script
         if "min_vram_gb" in val:
@@ -181,6 +217,8 @@ def used_vram_gb() -> float:
 
 
 def presets_for_client() -> list[dict[str, Any]]:
+    import os
+
     from services.accelerator import (
         CPU_DENSE_DISABLED_RU,
         CPU_DENSE_ETA_RU,
@@ -190,6 +228,7 @@ def presets_for_client() -> list[dict[str, Any]]:
         log_profile_once,
     )
     from services.alicevision import alicevision_available, alicevision_cuda_ready
+    from services.db import get_setting
     from services.gsplat_msvc import gsplat_train_ready
 
     log_profile_once()
@@ -199,15 +238,23 @@ def presets_for_client() -> list[dict[str, Any]]:
     av_ok = alicevision_available()
     cuda_ok, cuda_reason = alicevision_cuda_ready()
     cpu = is_cpu_profile()
+    legacy_av_dense = (os.environ.get("MURAVEI_LEGACY_AV_DENSE") or "").strip() == "1"
+    av_enabled = (get_setting("alicevision_enabled") or "1") == "1"
     items: list[dict[str, Any]] = []
     for pid, cfg in presets.items():
+        # P8: hide AliceVision MVS dense unless legacy escape-hatch
+        if pid == "dense" and not legacy_av_dense:
+            continue
         min_v = float(cfg.get("min_vram_gb") or 0)
         script = str(cfg.get("script") or "")
         disabled = False
         reason = ""
         eta = str(cfg.get("eta") or "")
         if script in ("alicevision_mvs", "alicevision_mesh"):
-            if cpu and cpu_dense_mesh_disabled():
+            if not av_enabled:
+                disabled = True
+                reason = "AliceVision отключён инженером"
+            elif cpu and cpu_dense_mesh_disabled():
                 disabled = True
                 reason = CPU_DENSE_DISABLED_RU
                 eta = CPU_DENSE_ETA_RU
@@ -283,6 +330,8 @@ def presets_for_client() -> list[dict[str, Any]]:
                 "backend": cfg.get("backend") or script,
                 "license": cfg.get("license"),
                 "variant": cfg.get("variant"),
+                "commercial_use": cfg.get("commercial_use"),
+                "min_vram_gb": cfg.get("min_vram_gb"),
             }
         )
     order = {pid: i for i, pid in enumerate((*_PRIMARY_ORDER, *_ALIAS_ORDER))}

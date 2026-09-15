@@ -42,21 +42,43 @@
   "sidecars": {
     "da3": {
       "dest_relative": "sidecars/da3",
-      "profiles": ["full"],
+      "profiles": [
+        "full"
+      ],
       "optional": true,
       "note": "Sidecar-only (FullKit); never required by Assert-PackInventory; never in assets/models",
       "weights": {
         "base": {
+          "file": "da3_base.safetensors",
           "filename": "da3_base.safetensors",
           "license": "Apache-2.0",
-          "sha256": "FETCH_REAL_SHA_AFTER_FIRST_DOWNLOAD",
+          "params_b": 0.12,
+          "sha256": "e01067dc1659613083d9145a9a2547ccdbe6ccbbf83c4fe7b3e8a4e2bdae78b5",
           "url": "https://huggingface.co/depth-anything/DA3-BASE/resolve/main/model.safetensors"
         },
         "large": {
+          "file": "da3_large.safetensors",
           "filename": "da3_large.safetensors",
           "license": "CC-BY-NC-4.0",
-          "sha256": "FETCH_REAL_SHA_AFTER_FIRST_DOWNLOAD",
+          "params_b": 0.35,
+          "sha256": "eaf2ae06df55889ad23eb245c82e2dd2a30c0cbf7e3d873a118fa5ed27a3e421",
           "url": "https://huggingface.co/depth-anything/DA3-LARGE/resolve/main/model.safetensors"
+        },
+        "metric": {
+          "file": "da3_metric.safetensors",
+          "filename": "da3_metric.safetensors",
+          "license": "Apache-2.0",
+          "params_b": 0.35,
+          "sha256": "bbea5b0b3ee389849cffa7ddae89de064a90abd2b055fc5aa99aac68db324776",
+          "url": "https://huggingface.co/depth-anything/DA3METRIC-LARGE/resolve/main/model.safetensors"
+        },
+        "giant": {
+          "file": "da3_giant.safetensors",
+          "filename": "da3_giant.safetensors",
+          "license": "CC-BY-NC-4.0",
+          "params_b": 1.15,
+          "sha256": "1e47a08338ca73a6d6a21d37fd060b26b993b672bc6ddf6295fe474df2592001",
+          "url": "https://huggingface.co/depth-anything/DA3-GIANT/resolve/main/model.safetensors"
         }
       }
     }
@@ -122,6 +144,16 @@
         "full"
       ],
       "note": "timm transitive dep; platform-specific wheel"
+    },
+    "depth_anything_3": {
+      "url": "https://files.pythonhosted.org/packages/py3/d/depth-anything-3/depth_anything_3-0.1.1-py3-none-any.whl",
+      "sha256": "d7de119f5d235bb06044d83e0e41ee63dee7f30126776b23d648e4dbcf106542",
+      "dest_relative": "portable/cache/wheels",
+      "profiles": [
+        "full"
+      ],
+      "optional": true,
+      "note": "DA3 inference API; install --no-deps + antlr4/omegaconf/einops/evo/moviepy (see DEPLOYMENT.md)"
     }
   },
   "notes": "URLs + sha256 live ONLY here (Z1). Never hardcode download URLs in .py/.ps1 logic."

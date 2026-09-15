@@ -6,7 +6,7 @@
     "backend": "colmap_only"
   },
   "dense": {
-    "label": "Dense",
+    "label": "Dense (AliceVision legacy)",
     "script": "alicevision_mvs",
     "eta": "10–40 мин",
     "min_vram_gb": 6,
@@ -19,7 +19,9 @@
     "eta": "30–60с",
     "min_vram_gb": 6,
     "backend": "da3_dense",
-    "license": "Apache-2.0"
+    "license": "Apache-2.0",
+    "commercial_use": true,
+    "default": true
   },
   "da3_dense_large": {
     "label": "DA3-LARGE (Dense)",
@@ -28,7 +30,28 @@
     "eta": "1–2 мин",
     "min_vram_gb": 8,
     "backend": "da3_dense",
-    "license": "CC-BY-NC-4.0"
+    "license": "CC-BY-NC-4.0",
+    "commercial_use": false
+  },
+  "da3_dense_metric": {
+    "label": "DA3-METRIC (Dense)",
+    "script": "da3_dense",
+    "variant": "metric",
+    "eta": "1–2 мин",
+    "min_vram_gb": 8,
+    "backend": "da3_dense",
+    "license": "Apache-2.0",
+    "commercial_use": true
+  },
+  "da3_dense_giant": {
+    "label": "DA3-GIANT (Dense)",
+    "script": "da3_dense",
+    "variant": "giant",
+    "eta": "2–5 мин",
+    "min_vram_gb": 16,
+    "backend": "da3_dense",
+    "license": "CC-BY-NC-4.0",
+    "commercial_use": false
   },
   "mesh": {
     "label": "Mesh",

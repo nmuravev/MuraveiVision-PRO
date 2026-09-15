@@ -86,3 +86,21 @@ npm install
 npm run build
 ```
 Схема БД мигрируется автоматически при старте (`init_db`, аддитивные `ALTER TABLE`).
+
+## DA3 Dense (Depth Anything 3) — builder machine
+
+Веса — только в `sidecars/da3/` (не в git). URL/sha256 — `scripts/portable_manifest.json` → `sidecars.da3` (Z1).
+
+```powershell
+# Fetch (curl preferred for large HF files)
+.\muravei_env\Scripts\python.exe scripts\fetch_da3_weights.py --variant all --update-manifest
+.\muravei_env\Scripts\python.exe scripts\fetch_da3_weights.py --variant all --verify-only
+
+# Inference package (naive pip install may fail building antlr4-python3-runtime)
+.\muravei_env\Scripts\pip.exe install --no-cache-dir "antlr4-python3-runtime==4.9.3" omegaconf
+.\muravei_env\Scripts\pip.exe install --no-deps --no-cache-dir portable\cache\wheels\depth_anything_3-0.1.1-py3-none-any.whl
+.\muravei_env\Scripts\pip.exe install --no-cache-dir einops
+.\muravei_env\Scripts\python.exe -c "from depth_anything_3.api import DepthAnything3; print('ok')"
+```
+
+Wheel bake: keep `depth_anything_3-*.whl` under `portable/cache/wheels` (+ URL/sha in `portable_manifest.json` components when pinned). NC weights require `sidecars/da3/NOTICE_CC-BY-NC-4.0.txt` in FullKit stage.

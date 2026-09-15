@@ -104,10 +104,13 @@ class TestAliceVisionPresetAliases(unittest.TestCase):
                         "services.gsplat_msvc.gsplat_train_ready",
                         return_value=(True, ""),
                     ):
-                        items = train_presets.presets_for_client()
+                        with patch("services.db.get_setting", return_value="1"):
+                            items = train_presets.presets_for_client()
         ids = [i["id"] for i in items]
-        self.assertLess(ids.index("sparse"), ids.index("dense"))
-        self.assertLess(ids.index("dense"), ids.index("mesh"))
+        # P8: AV-MVS `dense` hidden by default; order Sparse → DA3 → Mesh → Splat
+        self.assertNotIn("dense", ids)
+        self.assertLess(ids.index("sparse"), ids.index("da3_dense_base"))
+        self.assertLess(ids.index("da3_dense_base"), ids.index("mesh"))
         self.assertLess(ids.index("mesh"), ids.index("splat"))
         self.assertLess(ids.index("splat"), ids.index("bootstrap"))
 
@@ -120,7 +123,8 @@ class TestAliceVisionPresetAliases(unittest.TestCase):
                     "services.alicevision.alicevision_cuda_ready",
                     return_value=(False, "нет CUDA"),
                 ):
-                    items = train_presets.presets_for_client()
+                    with patch("services.db.get_setting", return_value="1"):
+                        items = train_presets.presets_for_client()
         mesh = next(i for i in items if i["id"] == "mesh")
         self.assertTrue(mesh["disabled"])
         self.assertIn("CUDA", mesh["disabled_reason"])

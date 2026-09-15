@@ -57,16 +57,18 @@ class TestTrainPresets(unittest.TestCase):
                     "services.alicevision.alicevision_cuda_ready",
                     return_value=(True, ""),
                 ):
-                    items = train_presets.presets_for_client()
+                    with patch("services.db.get_setting", return_value="1"):
+                        items = train_presets.presets_for_client()
         ids = [i["id"] for i in items]
         self.assertIn("high", ids)
         self.assertIn("sparse", ids)
-        self.assertIn("dense", ids)
+        self.assertIn("da3_dense_base", ids)
+        self.assertNotIn("dense", ids)  # P8: AV-MVS hidden unless MURAVEI_LEGACY_AV_DENSE=1
         high = next(i for i in items if i["id"] == "high")
         self.assertTrue(high["disabled"])
         self.assertIn("VRAM", high["disabled_reason"])
 
-    def test_dense_disabled_without_alicevision(self) -> None:
+    def test_mesh_disabled_without_alicevision(self) -> None:
         with patch.object(train_presets, "total_vram_gb", return_value=16.0):
             with patch(
                 "services.alicevision.alicevision_available",
@@ -76,10 +78,11 @@ class TestTrainPresets(unittest.TestCase):
                     "services.alicevision.alicevision_cuda_ready",
                     return_value=(True, ""),
                 ):
-                    items = train_presets.presets_for_client()
-        dense = next(i for i in items if i["id"] == "dense")
-        self.assertTrue(dense["disabled"])
-        self.assertIn("AliceVision", dense["disabled_reason"])
+                    with patch("services.db.get_setting", return_value="1"):
+                        items = train_presets.presets_for_client()
+        mesh = next(i for i in items if i["id"] == "mesh")
+        self.assertTrue(mesh["disabled"])
+        self.assertIn("AliceVision", mesh["disabled_reason"])
 
     def test_aliases_present(self) -> None:
         presets, from_file = train_presets.load_presets()
