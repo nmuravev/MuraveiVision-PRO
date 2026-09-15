@@ -102,13 +102,40 @@ def _resize_for_da3(img_rgb: np.ndarray, max_side: int = DA3_MAX_LONG_SIDE) -> t
         return resized, scale
 
 
+def _depth_to_orig_hw(depth_np: np.ndarray, orig_h: int, orig_w: int) -> np.ndarray:
+    """Normalize DA3 depth tensors (N,H,W)/(H,W)/… to (orig_h, orig_w) float32."""
+    d = np.asarray(depth_np, dtype=np.float32)
+    while d.ndim > 2:
+        d = d[0]
+    if d.ndim != 2:
+        raise ValueError(f"unexpected depth ndim={d.ndim} shape={getattr(d, 'shape', None)}")
+    if d.shape == (orig_h, orig_w):
+        return np.maximum(d, 1e-3)
+    try:
+        import cv2
+
+        d = cv2.resize(d, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+    except Exception:
+        from PIL import Image
+
+        d = np.array(
+            Image.fromarray(d).resize((orig_w, orig_h), Image.Resampling.BILINEAR),
+            dtype=np.float32,
+        )
+    return np.maximum(d.astype(np.float32, copy=False), 1e-3)
+
+
 def _predict_depth_map(
     model: Any,
     img_rgb: np.ndarray,
     orig_shape: tuple[int, int],
     device: str = "cpu",
 ) -> np.ndarray:
-    """Run DA3 inference; never invent flat/synthetic depth (anti-garbage cloud)."""
+    """Run DA3 inference; never invent flat/synthetic depth (anti-garbage cloud).
+
+    Depth Anything 3 expects multi-view input ``(B, N, 3, H, W)``. Prefer the
+    public ``inference([image])`` API; fall back to ``forward`` with N=1.
+    """
     orig_h, orig_w = orig_shape
     if hasattr(model, "predict_depth"):
         return model.predict_depth(img_rgb, orig_shape)
@@ -118,21 +145,47 @@ def _predict_depth_map(
             depth = out.get("depth") or out.get("predicted_depth") or next(iter(out.values()))
         else:
             depth = out
-        import numpy as _np
-
-        depth_np = _np.asarray(depth, dtype=_np.float32)
-        if depth_np.shape[:2] != (orig_h, orig_w):
+        depth_np = np.asarray(depth, dtype=np.float32)
+        if depth_np.ndim == 2 and depth_np.shape != (orig_h, orig_w):
             # Caller/tests may return already-shaped maps via mocks
-            if depth_np.ndim == 2:
-                return depth_np
-        return _np.maximum(depth_np, 1e-3)
+            return depth_np
+        return _depth_to_orig_hw(depth_np, orig_h, orig_w)
+
+    # Preferred path: DepthAnything3.inference (handles preprocess + (B,N,C,H,W))
+    if hasattr(model, "inference"):
+        try:
+            pred = model.inference([img_rgb], process_res=min(DA3_MAX_LONG_SIDE, 504))
+            depth = getattr(pred, "depth", None)
+            if depth is None and isinstance(pred, dict):
+                depth = pred.get("depth") or pred.get("predicted_depth")
+            if depth is None:
+                raise RuntimeError("DA3 inference returned no depth")
+            return _depth_to_orig_hw(depth, orig_h, orig_w)
+        except Exception as exc:
+            runtime_write(
+                "error",
+                "da3_pipeline",
+                f"DA3 inference() failed (flat fallback disabled): {exc}",
+            )
+            raise DA3WeightsNotFoundError(
+                "DA3_RUNTIME_UNAVAILABLE: инференс depth_anything_3 завершился ошибкой; "
+                "плоский fallback отключён намеренно (анти-мусор)."
+            ) from exc
 
     try:
         import torch
 
         if hasattr(model, "forward") or callable(model):
             resized_img, _ = _resize_for_da3(img_rgb, DA3_MAX_LONG_SIDE)
-            t_img = torch.from_numpy(resized_img).permute(2, 0, 1).unsqueeze(0).float() / 255.0
+            # DA3 forward: (B, N, 3, H, W) — add view dimension N=1
+            t_img = (
+                torch.from_numpy(resized_img)
+                .permute(2, 0, 1)
+                .unsqueeze(0)
+                .unsqueeze(0)
+                .float()
+                / 255.0
+            )
             if device != "cpu" and torch.cuda.is_available():
                 t_img = t_img.to(device)
             with torch.no_grad():
@@ -141,15 +194,20 @@ def _predict_depth_map(
                     depth_t = out.get("depth") or out.get("predicted_depth") or list(out.values())[0]
                 else:
                     depth_t = out
-                if depth_t.dim() == 4:
-                    depth_t = depth_t.squeeze(1)
+                # Common shapes: (B,N,H,W) or (B,N,1,H,W)
+                while depth_t.dim() > 3:
+                    depth_t = depth_t[:, 0]
+                if depth_t.dim() == 3:
+                    depth_t = depth_t[0]  # first batch → (H,W) or squeeze N
+                if depth_t.dim() == 3:
+                    depth_t = depth_t[0]
                 depth_t = torch.nn.functional.interpolate(
-                    depth_t.unsqueeze(1),
+                    depth_t.unsqueeze(0).unsqueeze(0),
                     size=(orig_h, orig_w),
                     mode="bilinear",
                     align_corners=False,
                 ).squeeze()
-                depth_np = depth_t.cpu().numpy()
+                depth_np = depth_t.detach().float().cpu().numpy()
                 return np.maximum(depth_np, 1e-3)
     except Exception as exc:
         runtime_write("error", "da3_pipeline", f"DA3 inference failed (flat fallback disabled): {exc}")
@@ -159,7 +217,7 @@ def _predict_depth_map(
         ) from exc
 
     raise DA3WeightsNotFoundError(
-        "DA3_RUNTIME_UNAVAILABLE: модель не поддерживает predict_depth/infer_image/forward; "
+        "DA3_RUNTIME_UNAVAILABLE: модель не поддерживает predict_depth/infer_image/inference/forward; "
         "плоский fallback отключён намеренно (анти-мусор)."
     )
 
@@ -170,20 +228,57 @@ def _da3_model_usable(model: Any) -> bool:
     return (
         hasattr(model, "predict_depth")
         or hasattr(model, "infer_image")
+        or hasattr(model, "inference")
         or hasattr(model, "forward")
         or callable(model)
     )
 
 
-def _load_da3_model(weight_path: Path, device: str = "cpu") -> Any:
+def _ensure_hf_model_dir(weight_path: Path, variant: str) -> Path:
+    """Prepare a HF-style dir (config.json + model.safetensors) for from_pretrained.
+
+    Weights live as da3_<variant>.safetensors at sidecar root (Z1 filenames).
+    DepthAnything3.from_pretrained expects a directory with model.safetensors.
+    """
+    sidecar = get_da3_sidecar_dir()
+    vdir = sidecar / variant
+    vdir.mkdir(parents=True, exist_ok=True)
+    target = vdir / "model.safetensors"
+    if not target.is_file():
+        try:
+            os.link(str(weight_path.resolve()), str(target))
+        except OSError:
+            if target.exists() or target.is_symlink():
+                target.unlink(missing_ok=True)  # type: ignore[call-arg]
+            try:
+                target.symlink_to(weight_path.resolve())
+            except OSError as exc:
+                raise DA3WeightsNotFoundError(
+                    f"DA3_RUNTIME_UNAVAILABLE: cannot link {weight_path.name} → {target}: {exc}"
+                ) from exc
+    cfg = vdir / "config.json"
+    if not cfg.is_file():
+        # Optional staged copy next to weights
+        alt = sidecar / f"config_{variant}.json"
+        if alt.is_file():
+            shutil.copy2(alt, cfg)
+        else:
+            raise DA3WeightsNotFoundError(
+                f"DA3_RUNTIME_UNAVAILABLE: отсутствует config.json для variant={variant} "
+                f"(ожидается {cfg.as_posix()} или sidecars/da3/config_{variant}.json). "
+                "Скачайте с Hugging Face model card рядом с весами."
+            )
+    return vdir
+
+
+def _load_da3_model(weight_path: Path, device: str = "cpu", variant: str = "base") -> Any:
     """Load DepthAnything3 API or fail closed (no bare state-dict as runnable model)."""
     try:
         import torch
 
         if DepthAnything3 is not None and hasattr(DepthAnything3, "from_pretrained"):
-            model = DepthAnything3.from_pretrained(
-                str(weight_path.parent if weight_path.is_file() else weight_path)
-            )
+            model_dir = _ensure_hf_model_dir(weight_path, variant)
+            model = DepthAnything3.from_pretrained(str(model_dir))
             if hasattr(model, "to"):
                 model = model.to(device)
             return model
@@ -194,6 +289,8 @@ def _load_da3_model(weight_path: Path, device: str = "cpu") -> Any:
             "depth_anything_3.api unavailable; refusing bare state-dict as runnable model",
         )
         return None
+    except DA3WeightsNotFoundError:
+        raise
     except Exception as exc:
         runtime_write("warn", "da3_pipeline", f"DA3 model load failed: {exc}")
         return None
@@ -410,7 +507,7 @@ def run_da3_pipeline(
                 device = "cuda"
         except Exception:
             device = "cpu"
-        model = _load_da3_model(weight_path, device=device)
+        model = _load_da3_model(weight_path, device=device, variant=str(variant or "base"))
 
     if not _da3_model_usable(model):
         runtime_write("error", "da3_pipeline", "DA3 runtime unavailable (no usable model)")

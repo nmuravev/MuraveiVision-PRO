@@ -56,10 +56,22 @@ def _copy_job(src: Path, dst: Path) -> None:
     frames_src = src / "frames"
     frames_dst = dst / "frames"
     frames_dst.mkdir(parents=True, exist_ok=True)
-    # Cap frames for wall-time (verification, not full field run)
-    frames = sorted(frames_src.glob("*.jpg")) + sorted(frames_src.glob("*.png"))
-    for f in frames[:48]:
-        shutil.copy2(f, frames_dst / f.name)
+    poses = json.loads((src / "camera_poses.json").read_text(encoding="utf-8"))
+    needed: list[str] = []
+    for fmeta in poses.get("frames") or []:
+        name = fmeta.get("image") or fmeta.get("frame")
+        if name:
+            needed.append(str(name))
+    # Cap for wall-time but always prefer pose-referenced frames
+    for name in needed[:64]:
+        src_f = frames_src / name
+        if src_f.is_file():
+            shutil.copy2(src_f, frames_dst / name)
+    if not any(frames_dst.iterdir()):
+        # Fallback: copy first frames by name
+        frames = sorted(frames_src.glob("*.jpg")) + sorted(frames_src.glob("*.png"))
+        for f in frames[:48]:
+            shutil.copy2(f, frames_dst / f.name)
     if (src / "sparse_points.json").is_file():
         shutil.copy2(src / "sparse_points.json", dst / "sparse_points.json")
 
@@ -142,8 +154,17 @@ def verify_variant(variant: str, job_src: Path) -> dict[str, Any]:
             row["verdict"] = "FAIL_PLY"
             return row
 
-        # Point count from result or PLY header
-        pts = int(res.get("points") or 0)
+        # Point count from pipeline result (points_count) or PLY header
+        pts = int(res.get("points_count") or res.get("points") or 0)
+        if pts <= 0 and dense.is_file():
+            try:
+                head = dense.read_bytes()[:512].decode("latin-1", errors="ignore")
+                for line in head.splitlines():
+                    if line.startswith("element vertex"):
+                        pts = int(line.split()[-1])
+                        break
+            except Exception:
+                pass
         row["points"] = pts
         if pts <= 0:
             row["error"] = "zero points"
