@@ -1,12 +1,16 @@
-# AliceVision dense photogrammetry (v3.2)
+# AliceVision dense photogrammetry (v3.2+) & DA3 Neural Dense positioning
 
 Optional **dense MVS + textured mesh** after COLMAP sparse SfM. AliceVision does **not** replace COLMAP.
+
+**Depth Anything 3 (DA3 Dense):** Fast Neural Dense backend (Apache 2.0 / CC BY-NC 4.0). Predicts dense depth in ~1–2 min when weights are staged under `sidecars/da3/`. Positioned as the recommended Dense path when CUDA + sidecar are available; AliceVision remains the classical MVS/Mesh path.
 
 ## Capabilities
 
 | Preset | Backend | Output | Needs |
 |--------|---------|--------|--------|
 | Sparse | `colmap_only` | `sparse_points.json` (already from Build3D) | COLMAP |
+| Dense (DA3-BASE) | `da3_dense_base` | `dense.ply` | `sidecars/da3/` (Apache-2.0, ~30–60 с) + CUDA |
+| Dense (DA3-LARGE) | `da3_dense_large` | `dense.ply` | `sidecars/da3/` (CC BY-NC 4.0, ~1–2 мин) + CUDA |
 | Dense | `alicevision_mvs` | `dense_point_cloud.ply` | AliceVision sidecar + **NVIDIA CUDA** (≥6 GB VRAM) |
 | Mesh | `alicevision_mesh` | `textured_mesh.obj` (+ `.mtl` / textures) | AliceVision + CUDA (≥8 GB VRAM) |
 | Splat | `gsplat` | `model.ply` | CUDA + MSVC (as before) |

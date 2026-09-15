@@ -2,20 +2,22 @@
 
 ## Meta
 
-- **Snapshot date:** 2026-09-09
-- **Branch:** `main` @ S2DConv + FasterGhostC3k2 + AP_S/AP_M/AP_L
-- **Commit:** `4e5d50f` feat(detect): S2DConv + FasterGhostC3k2 custom architecture + AP_S/AP_M/AP_L evaluator
-- **Unit tests:** 378+ (+ detect contract / KIT / SAHI / validator / S2DConv 35/35 / UAV metrics 18/18)
-- **Status:** Phase 1+2 custom architecture complete — S2DConv lossless downsampling + FasterGhostC3k2 ghost neck + UAVSizeMetrics AP_S/AP_M/AP_L evaluator (trainer callbacks + standalone script)
-- **Last updated by:** `4e5d50f` feat(detect): S2DConv + FasterGhostC3k2 custom architecture + AP_S/AP_M/AP_L evaluator
-- **Portable local:** Mini 3.62 GB (sha256 `09904BB0…C8AE49B4`) ✓ smoke; FullKit CPU 5.27 GB (sha256 `8D6FA6A5…269EB345`) ✓ smoke
+- **Snapshot date:** 2026-09-15
+- **Branch:** `feature/studio-v3.4-da3` (ff → main)
+- **Commit:** 9ae0581ed94edebf524be2cd6f8c48717e9771d4
+- **Unit tests:** 355+ (+ DA3 pipeline 6 + error catalog DA3 case)
+- **Status:** DA3 Dense Backend integrated (weights pending fetch)
+- **Last updated by:** feat(recon): DA3 Dense Backend integration (MurVis export)
+- **Portable local:** Mini 3.62 GB / FullKit CPU 5.27 GB (E6 smoke); DA3 sidecar optional FullKit-only
 - **Env pack:** win_cuda / win_cpu — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
-- **E6 additions:** `timm>=0.9.0` + `safetensors>=0.4.0` in requirements; wheels in `portable_manifest.json`; `ci_full.ps1` local CI; CRLF/LF launcher guards in build+smoke; SAM3 load cap ≤60s; validator `reject_ratio` / `raw_n` in infer envelope
+- **E6 additions:** `timm` + `safetensors`; `ci_full.ps1` (E6 + DA3 A/B); CRLF/LF launcher guards; SAM3 load cap ≤60s; validator `reject_ratio`
+- **DA3:** `sidecars.da3` SSO in portable_manifest; presets grey without CUDA/weights; real sha256 pending first download
 
 ## Major Changes in This Release
 
+- **Depth Anything 3 (DA3) Dense Backend (Phase 1):** pose-conditioned neural dense (`da3_dense_base` / `da3_dense_large`), sidecar-only, soft-fail preserves COLMAP
 - AliceVision optional dense MVS + textured mesh after COLMAP sparse
-- Preset hierarchy Sparse / Dense / Mesh / Splat (+ aliases)
+- Preset hierarchy Sparse / Dense (DA3|AV) / Mesh / Splat (+ aliases)
 - Flight3D multi-artifact viewer + export
 - FullKit `-IncludeAliceVision` portable bundling
 - 3D Reconstruction: COLMAP sequential matching + frame budget (stable on 8GB VRAM)

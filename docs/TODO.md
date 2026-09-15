@@ -13,6 +13,9 @@
 - [ ] **FullKit CUDA flavor** — seed `portable/cache/wheels` with `torch*+cu128*` (no runtime network); rebuild FullKit cuda zip
 - [ ] Локальный split `FullKit_Core` + `FullKit_AliceVision` (bootstrap находит sidecars; **не** GitHub assets)
 - [ ] **Tactical YOLO26 s/m/l-ft training** (tank/BMP/soldier/mines) → drop into `assets/models`; rebuild picks up via ladder. **Do not** fetch COCO stock s/m/l.
+- [x] **DA3 Dense Backend Phase 1** — integrated on `feature/studio-v3.4-da3` (pose-conditioned, sidecar-only, optional inventory)
+- [ ] **DA3 weights fetch** — replace `FETCH_REAL_SHA_AFTER_FIRST_DOWNLOAD` after first download; field real-inference smoke
+- [ ] **DA3 rescue / metric scale** — backlog after Phase 1
 
 ## Backlog (после Phase 3)
 

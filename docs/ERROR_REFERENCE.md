@@ -161,18 +161,20 @@ Backend отдаёт тот же текст в поле `error` ответа (с
 
 ## 503 Service Unavailable
 
-**Заголовок:** Сервис временно недоступен
+**Заголовок:** Сервис временно недоступен / веса DA3 не найдены
 
 **Причины:**
 - Модель не загружена в VRAM
 - Backend или GPU перегружены
 - Внешний сервис (Ollama) недоступен
 - Превышен лимит одновременных задач
+- `DA3_WEIGHTS_NOT_FOUND`: файлы весов `da3_base.safetensors` или `da3_large.safetensors` отсутствуют в `sidecars/da3/` (Mini без sidecar или FullKit без seed)
 
 **Решения:**
 - Загрузите модель (`POST /api/seg/load` или кнопка «Загрузить»)
 - Подождите ~30 секунд и повторите
-- Проверьте GPU: `GET /api/system/hardware`
+- Проверьте GPU / DA3: `GET /api/system/hardware` (`da3.base_present` / `da3.large_present`)
+- Для DA3: скопируйте веса в `sidecars/da3/` из FullKit или `scripts\stage_da3_sidecar.ps1`; либо переключитесь на AliceVision Dense
 - Закройте другие GPU-приложения
 
-**Примеры:** `POST /api/seg/infer` при `loaded=false`
+**Примеры:** `POST /api/recon/train/start` с `preset=da3_dense_base` при пустом `sidecars/da3/`; `POST /api/seg/infer` при `loaded=false`

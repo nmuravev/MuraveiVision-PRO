@@ -292,11 +292,13 @@ Train (один job за раз; блокирует `POST /start` COLMAP пок�
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| GET | `/train/presets` | профили из `config/train_presets.json` + VRAM gate (`disabled` для HQ) |
+| GET | `/train/presets` | профили из `config/train_presets.json` + VRAM/CUDA/weights gate (`disabled` + RU `disabled_reason`; DA3: `da3_dense_base`/`da3_dense_large`) |
 | GET | `/train/status` | текущий train state |
-| POST | `/train/start` | `{ job_id, preset }` — 409 если уже train/COLMAP |
+| POST | `/train/start` | `{ job_id, preset }` — 409 если уже train/COLMAP; **503** `DA3_WEIGHTS_NOT_FOUND` если DA3 preset без sidecar |
 | POST | `/train/stop` | остановить subprocess |
-| GET | `/train/stream` | SSE progress (steps/loss/psnr/vram) |
+| GET | `/train/stream` | SSE progress (steps/loss/psnr/vram; DA3 stages `da3_depth`/`da3_fusion`/`da3_done`) |
+
+`GET /api/system/hardware` включает блок `da3` (`present`, `base_present`, `large_present`, paths).
 
 ## Network — `/api/network`
 

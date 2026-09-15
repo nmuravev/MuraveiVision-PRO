@@ -12,6 +12,7 @@
 - Ollama proxy, HTML-отчёт, portable Lite  
 - Force-load ft, smoke LBS
 - **v3.2 recon (branch only):** COLMAP multi-model best sparse (`points3D` primary), AliceVision Dense/Mesh, Windows CPU+DirectML / `win_cpu` pack — на `feature/alicevision-v3.2`, **не смержено в main**. См. [ALICEVISION.md](ALICEVISION.md), [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md).
+- **v3.4 DA3 Dense Backend (Phase 1 = DONE):** pose-conditioned neural dense (`da3_dense_base` / `da3_dense_large`), sidecar `sidecars/da3/` optional FullKit; weights fetch/sha pending. Rescue/metric = backlog.
 
 ## P0 — операторский конвейер
 

@@ -74,12 +74,14 @@
 - **Portable bootstrap:** first-run may use network only after offline-first miss (`wheels/` / `sidecars/`); URLs+sha256 in `scripts/portable_manifest.json`. Incomplete/broken `muravei_env` self-heals (see [PORTABLE_GUIDE.md](PORTABLE_GUIDE.md)).
 - **GitHub release size:** single assets ≤2 GB — FullKit ships as `.001`–`.010` parts on v3.2.0 (see `README_FullKit_parts.md` on the release).
 - **Field smoke** of full Dense/Mesh on production footage: pending after RC tag; integration tests cover 9-min clip segment + soft-fail gates.
-- **RESOLVED (2026-09-05): Dense used tiny sparse/0** — multi-model COLMAP left 3 views in `sparse/0` and 24 in `sparse/4`; Dense hardcoded `sparse/0` → soft-fail «только 3 кадров». First patch (`resolve_sparse_dir_for_dense`) was incomplete: (1) landed ~16:56 after a 16:51 Dense click on a pre-fix `:8001`; (2) honored legacy `sparse_dir=sparse/0` overrides; (3) dead-job salvage still converted only `sparse/0`. Hardened: always prefer `get_best_sparse_dir` (points size primary, TXT view count secondary — never `images.bin`÷N heuristics), ignore under-`sparse/` overrides, salvage uses best model. Re-click Dense after backend reload (stale `alicevision_warning` / `alicevision/` cleared on fix).
-- **RESOLVED (2026-09-05): COLMAP text model missing** — Dense failed when `sparse/0` had only `.bin`. Fix: `ensure_colmap_text_model()` auto-runs COLMAP `model_converter` → TXT before AliceVision. Retry Dense after backend reload.
-- **RESOLVED (2026-09-05): meshing exit 0xC0000409** — native crash on empty depth / &lt;8 SfM views. Fix: preflight matched_views≥8, stub-depth gate, safer meshing flags, crash-code translation. Re-run «Построить 3D» until COLMAP registers enough frames, then Dense.
-- **RESOLVED (2026-09-05): all depth maps stub (~13 KB)** — job `0fa90b993e88` had best sparse/1, 103 views, ~90k COLMAP points, valid `prepareDenseScene` EXRs (~2 MB), but `inject_colmap_poses` wrote **pose-only** `sfm_colmap.sfm` (`structure=[]`). AliceVision `depthMapEstimation` needs landmarks as SGM depth-range seeds → finished in ~16s with 103× stub EXR. Fix: inject `points3D` (+ POINTS2D coords) into SfM `structure` (cap 50k); preflight landmarks≥100. Re-click Dense after `:8001` reload.
-- **RESOLVED (2026-09-05): Dense meshing OK but no PLY artifact** — after landmarks fix, depth 97/103 real (~250–480 KB), meshing produced `mesh.obj` (28 MB) + `densePointCloud_raw.abc` without `0xC0000409`, but `exportMeshlab` only wrote `.mlp` and `convertMesh` fatals on `.ply` → soft-fail «without dense/mesh artifacts». Fix: OBJ→PLY fallback → `dense_point_cloud.ply`.
-- **RESOLVED (2026-09-05): Flight3D status «нет облака» after Dense** — cloud rendered (`sceneKind=dense`, «Показать: Dense») but status bar only handled `splat`/`points`, so dense/mesh fell through to «нет облака» / «нет сцены». Fix: label branches for dense/mesh; `finishPoints(..., 'dense')`.
+
+## DA3 Dense Backend (v3.4)
+
+- **DA3 weights not fetched:** sha256 placeholder `FETCH_REAL_SHA_AFTER_FIRST_DOWNLOAD` in `sidecars.da3`; real-inference field test pending sidecar seed.
+- **Optional everywhere:** Mini never bundles DA3; FullKit Assert-PackInventory does not require `sidecars/da3`; presets grey out with RU cause when CUDA or weights missing.
+- Soft-fail &lt;8 COLMAP cameras preserves sparse; events `da3_depth` / `da3_fusion` / `da3_done` on recon stream.
+
+## Other platform notes
 
 - **Intel Arc/XPU** — не тестируется, провайдеры ORT могут отсутствовать. Только CUDA и CPU.
 - **Native multi-monitor windows** — только in-app floating panels; нативных окон на отдельные мониторы нет.
