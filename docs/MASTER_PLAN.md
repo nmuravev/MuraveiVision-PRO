@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-15
 - **Branch:** `main`
-- **Commit:** 2de0860
+- **Commit:** 5da59b422f506812517a3107c3b0c4d6b01f9af5
 - **Unit tests:** 357 (discover OK)
 - **Status:** DA3 on main; flat-depth fail-closed (`DA3_RUNTIME_UNAVAILABLE`); weights pending seed; field: recon-raycast PASS, test_ui_toggles blocked (Playwright chromium missing)
 - **Last updated by:** fix(recon): DA3 flat-depth guard
