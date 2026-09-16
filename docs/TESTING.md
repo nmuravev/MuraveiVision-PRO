@@ -21,7 +21,7 @@
 - `test_ui_toggles.test.ts` — тумблеры SAHI/валидатора в AdminPanel: toggle → save → SQLite → API → переживает F5.
 - `test_hotkeys.test.ts` — Space, стрелки, 1–4, I/O, guard ввода в input, Ctrl+Z undo patch.
 - `test_event_timeline.test.ts` — пресет 4×Live (4 Viewer), лента событий, seek по клику на локальную детекцию.
-- `da3_ui.test.ts` — Dense selector (4 DA3, без AV MVS), NC-бейдж LARGE/GIANT, `alicevision_enabled` в Система, presets API.
+- `da3_ui.test.ts` — presets API (4 DA3 + no AV MVS), recon-config round-trip, AdminPanel «Dense = DA3» copy (Dense `<select>` mounts only after sparse).
 
 ## P4 — Detect weight integrity (DA3 mission)
 

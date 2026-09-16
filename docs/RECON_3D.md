@@ -69,7 +69,15 @@ After COLMAP (`colmap_done`), open **Гео 3D → Сцена**. Yellow banner p
 | Balanced | `balanced` | 5–10 мин | gsplat ~7000 steps |
 | High Quality | `high` | 15–30 мин | ~30000 steps; **disabled if VRAM &lt; 12 ГБ** |
 
-Stage DA3 weights (builder machine only): `powershell -File scripts\stage_da3_sidecar.ps1` — URLs/sha256 from `scripts/portable_manifest.json` → `sidecars.da3` (Z1).
+Stage DA3 weights (builder machine only): `powershell -File scripts\stage_da3_sidecar.ps1` — URLs/sha256 from `scripts/portable_manifest.json` → `sidecars.da3` (Z1). Verify: `backend/scripts/verify_da3_weights.py` (writes `logs/da3_verify.json` with points + in-memory depth median/std).
+
+**DA3 pipeline contracts:**
+
+- Soft-fail if &lt;8 registered COLMAP cameras (sparse preserved).
+- Scale alignment of neural depth to COLMAP sparse points per view.
+- Binary PLY = 6 fields (x y z r g b).
+- SSE stages: `da3_depth` → `da3_fusion` → `da3_done`.
+- Intermediate `da3/depths/*.npy` deleted after fusion unless `MURAVEI_DA3_KEEP_DEPTHS=1`.
 
 **UI note:** after COLMAP, «Сцена» may show a light-blue **point cloud** (sparse). That is expected — not a broken canvas. Photorealism requires Balanced/High. Square «cubes» were WebGL point sprites; UI now uses circular discs + CTA banner.
 

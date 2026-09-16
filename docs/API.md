@@ -292,13 +292,22 @@ Train (один job за раз; блокирует `POST /start` COLMAP пок�
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| GET | `/train/presets` | профили из `config/train_presets.json` + VRAM/CUDA/weights gate (`disabled` + RU `disabled_reason`; DA3: `da3_dense_base`/`da3_dense_large`) |
+| GET | `/train/presets` | профили из `config/train_presets.json` + VRAM/CUDA/weights gate (`disabled` + RU `disabled_reason`; DA3: `da3_dense_base` / `large` / `metric` / `giant` ≥16 ГБ; Mesh: `alicevision_enabled`) |
 | GET | `/train/status` | текущий train state |
-| POST | `/train/start` | `{ job_id, preset }` — 409 если уже train/COLMAP; **503** `DA3_WEIGHTS_NOT_FOUND` если DA3 preset без sidecar |
+| POST | `/train/start` | `{ job_id, preset }` — 409 если уже train/COLMAP; **503** `DA3_WEIGHTS_NOT_FOUND` / `DA3_RUNTIME_UNAVAILABLE` |
 | POST | `/train/stop` | остановить subprocess |
 | GET | `/train/stream` | SSE progress (steps/loss/psnr/vram; DA3 stages `da3_depth`/`da3_fusion`/`da3_done`) |
 
-`GET /api/system/hardware` включает блок `da3` (`present`, `base_present`, `large_present`, paths).
+`GET /api/system/hardware` включает блок `da3` (`present`, `base_present`, `large_present`, `metric_present`, `giant_present`, paths).
+
+System (engineer+):
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/api/system/detect-config` | SAHI / validator defaults |
+| PUT | `/api/system/detect-config` | сохранить detect defaults в SQLite |
+| GET | `/api/system/recon-config` | `{ alicevision_enabled: bool }` — Mesh opt-in toggle (default true) |
+| PUT | `/api/system/recon-config` | тело `{ alicevision_enabled }` → SQLite `alicevision_enabled` `"1"`/`"0"`; при `"0"` Mesh серый с RU «AliceVision отключён инженером» |
 
 ## Network — `/api/network`
 

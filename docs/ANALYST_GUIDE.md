@@ -84,7 +84,7 @@
 
 ## Гео 3D (кратко)
 
-После «Построить 3D» на canvas — **sparse COLMAP** (облако точек), не фотореализм. В статус-баре: **`sparse COLMAP · нужен train для splat`**. Во время COLMAP/обучения — модалка шагов; в idle — карточка «→ Balanced». Фотореализм = Gaussian splat после Balanced/High (`model.ply`). Тестировать UI через Vite `:3000` (после снятия debug-логов — **Ctrl+Shift+R**, иначе возможны CSP-ошибки на устаревший `:7307`). Подробнее: [OPERATOR_GUIDE.md](OPERATOR_GUIDE.md).
+После «Построить 3D» на canvas — **sparse COLMAP** (облако точек), не фотореализм. Иерархия: **Sparse → Dense (DA3: BASE/LARGE/METRIC/GIANT) → Mesh (AliceVision, opt-in) → Splat**. Dense-селектор без AliceVision MVS (legacy `MURAVEI_LEGACY_AV_DENSE=1`). NC-бейдж на LARGE/GIANT. GIANT серый при VRAM&lt;16 ГБ. Фотореализм = Gaussian splat после Splat/Balanced/High (`model.ply`). Тестировать UI через Vite `:3000` (**Ctrl+Shift+R**). Подробнее: [OPERATOR_GUIDE.md](OPERATOR_GUIDE.md), [RECON_3D.md](RECON_3D.md).
 
 ## Достоверность (важно)
 

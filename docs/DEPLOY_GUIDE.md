@@ -95,5 +95,9 @@ AI-анализ **не требует** Ollama при старте — спок�
 
 ## Связь с portable ZIP
 
-`build_portable.ps1 -FullKit -TorchFlavor cpu|cuda` — отдельный канал (embeddable Python).  
+`build_portable.ps1 -FullKit -TorchFlavor cpu|cuda` — отдельный канал (embeddable Python).
+
+**Size bands (OPERATOR-SANCTIONED 2026-09-16):** Mini warn&gt;4.5 / reject&gt;5; FullKit без DA3 warn&gt;9.5 / reject&gt;10; FullKit+DA3 (все 4 варианта включая giant) warn&gt;18 / reject&gt;22.
+
+**DA3 FullKit:** seed `sidecars/da3/` (`da3_*.safetensors` + `config_*.json` + `NOTICE_CC-BY-NC-4.0.txt` для NC) + bake `depth_anything_3` wheel from `portable/cache/wheels`. Mini never bundles DA3. AliceVision = Mesh opt-in (`-IncludeAliceVision`). See [PORTABLE.md](PORTABLE.md), [ATTRIBUTION.md](ATTRIBUTION.md).  
 Env-пак — способ поднять **dev/исходники** на полевой машине офлайн без копирования venv.
