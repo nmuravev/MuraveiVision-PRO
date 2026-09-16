@@ -228,6 +228,14 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 | GET | `/api/train/status` | состояние |
 | GET | `/api/train/stream` | SSE прогресс |
 | POST | `/api/export/dataset-zip` | YOLO dataset zip |
+| GET | `/api/export/masks-geotiff?video_path=&detection_id=&time_sec=` | GeoTIFF масок (400 без GPS, 404 без масок, 503 без rasterio) |
+| GET | `/api/export/masks-kml?video_path=&detection_id=&time_sec=` | KML масок (пустой Document без GPS, 404 без масок) |
+
+**Матрица GPS для mask export:**
+- `detection_id` → GPS берётся из детекции (gps_lat/gps_lon/gps_alt)
+- `time_sec` → GPS интерполируется из трека (flight_tracks)
+- Без detection_id и time_sec → 400 для GeoTIFF (RU `disabled_reason`), пустой KML с пояснением
+- `time_sec` опционален для обоих эндпоинтов (R3 fix)
 | POST | `/api/export/queue-zip` | нарезка In/Out через ffmpeg |
 | GET | `/api/export/kml?source_video=` | KML 2.2 (Google Earth), оператор+. Детекции без GPS пропускаются |
 | GET | `/api/export/geojson?source_video=` | GeoJSON FeatureCollection, CRS WGS84 |

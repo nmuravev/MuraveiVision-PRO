@@ -45,6 +45,8 @@ _state: dict[str, Any] = {
     "max_frames": MAX_PROPAGATE_FRAMES,
     "persist": False,
     "results": [],
+    "frame_w": 0,
+    "frame_h": 0,
 }
 
 
@@ -62,6 +64,8 @@ def _snapshot(*, include_results: bool = False) -> dict[str, Any]:
             "error": _state["error"],
             "video_path": _state["video_path"],
             "max_frames": int(_state["max_frames"]),
+            "frame_w": int(_state.get("frame_w") or 0),
+            "frame_h": int(_state.get("frame_h") or 0),
             "persist": bool(_state["persist"]),
         }
         if include_results or _state["status"] in ("done", "aborted", "error"):
@@ -190,6 +194,9 @@ def _write_temp_clip(
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        # H3: write frame_w/frame_h from first frame
+        if w > 0 and h > 0 and _state.get("frame_w") == 0:
+            _set(frame_w=w, frame_h=h)
         if w < 1 or h < 1:
             raise RuntimeError("invalid video size")
 

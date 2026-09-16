@@ -34,6 +34,8 @@ _state: dict[str, Any] = {
     "results": [],
     "owned_load": False,
     "sam_unloaded": False,
+    "frame_w": 0,
+    "frame_h": 0,
 }
 
 
@@ -52,6 +54,8 @@ def _snapshot(*, include_results: bool = False) -> dict[str, Any]:
             "frame_step": int(_state["frame_step"]),
             "confidence": float(_state["confidence"]),
             "sam_unloaded": bool(_state.get("sam_unloaded")),
+            "frame_w": int(_state.get("frame_w") or 0),
+            "frame_h": int(_state.get("frame_h") or 0),
         }
         if include_results or _state["status"] in ("done", "aborted", "error"):
             out["results"] = list(_state["results"])
@@ -141,6 +145,9 @@ def _run(
 
             cap.set(cv2.CAP_PROP_POS_FRAMES, float(frame_idx))
             ok, frame = cap.read()
+            # H3: write frame_w/frame_h from first frame
+            if ok and frame is not None and _state.get("frame_w") == 0:
+                _set(frame_w=int(frame.shape[1]), frame_h=int(frame.shape[0]))
             if not ok or frame is None:
                 if total_frames <= 0:
                     break

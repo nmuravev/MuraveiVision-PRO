@@ -61,6 +61,9 @@
 - **PDF/geo-карта:** вкладка отчётов, GPS-точки по SRT/CSV телеметрии (если есть).
 - **Экспорт датасета YOLO:** для внешнего дообучения (формат YOLO).
 - **Diagnostic ZIP:** если нужна помощь инженера — собрать Support-архив (роль инженера, см. [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md)).
+- **Masks GeoTIFF/KML:** после batch seg или SAM3 propagate → экспорт масок в GeoTIFF (GPS gate, rasterio) или KML (OGC Polygon). `GET /api/export/masks-geotiff|kml?video_path=&detection_id=&time_sec=`. Маски доступны только из in-memory результатов (после рестарта недоступны до persist opt-in).
+
+## Compare Sync (сверка двух ракурсов)
 
 ## Compare Sync (сверка двух ракурсов)
 

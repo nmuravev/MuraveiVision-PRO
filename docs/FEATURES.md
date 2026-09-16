@@ -84,6 +84,12 @@
 - **Custom UAV architecture (Phase 1+2)** — S2DConv (lossless downsampling layer 0) + FasterGhostC3k2 (Ghost-lightweight neck layers 13/16/19, layer 22 attention preserved). YAML configs `yolo26n-uav.yaml` (Phase 1) and `yolo26n-uav-ghost.yaml` (Phase 2). Partial weight transfer (strict=False) with 87.8% param transfer from pretrained `yolo26n.pt`. API params: `use_uav_arch`, `use_uav_ghost_arch`.
 - **AP_S/AP_M/AP_L metrics** — COCO-correct area-based AP (<32², 32²–96², >96² original px). Re-matching per size bin via `UAVSizeMetrics`. Integrated as SSE-streaming callbacks (`on_val_start`/`on_val_end`) and standalone `backend/scripts/validate_uav_sizes.py`. Zero external dependencies.
 
+## Экспорт
+
+- **CSV детекций** — `GET /api/detections/export?source_video=` (координаты нормализованы [0–1]).
+- **KML / GeoJSON детекций** — `GET /api/export/kml?source_video=` и `/api/export/geojson?source_video=` (GPS из детекции или интерполяция трека).
+- **Masks GeoTIFF/KML** — `GET /api/export/masks-geotiff|kml?video_path=&detection_id=&time_sec=` (GPS gate: GeoTIFF требует GPS 400 RU; KML пустой Document без GPS; rasterio-only для GeoTIFF; dims из task meta; first-mask-only).
+
 ## Portable
 
 - **Lite / Full Kit** — embeddable Python 3.12.10, запуск `.bat`. См. [PORTABLE.md](PORTABLE.md).

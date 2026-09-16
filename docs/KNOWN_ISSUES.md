@@ -109,6 +109,13 @@
 - **Seg-модель** занимает ~2–4 ГБ VRAM. На RTX 5060 Laptop (8 ГБ) не держать seg и detect одновременно: выгружайте seg (Viewer «Выгрузить» / SEG→Детекция / Admin) перед live-детекцией.
 - **SAM3** (`sam3.pt`, ~3.5 ГБ) и YOLO-seg взаимно исключают VRAM; **Detect (YOLO) не выгружается** при load SAM3. Batch seg выгружает SAM3 без auto-reload. Propagate ограничен ≤30 кадрами (temp clip); VideoPredictor / VideoSemanticPredictor могут кратковно увеличить VRAM. Live SAM = только freeze-кадр (не continuous).
 
+## Экспорт масок
+
+- **GeoTIFF требует rasterio** — не установлен в muravei_env по умолчанию. `GET /api/export/masks-geotiff` возвращает 503 `geo_libs_missing`. Seed wheel в `portable/cache/wheels` + `portable_manifest.json` для включения.
+- **GPS georef приблизительный** — центр = GPS детекции + нормализованный офсет ~10 м. Не орторектификация.
+- **First-mask-only** — GeoTIFF растеризует только первую валидную маску. KML экспортирует все маски с валидным GPS.
+- **In-memory only** — маски доступны из результатов batch seg / SAM3 propagate; после рестарта недоступны до persist opt-in (B3).
+
 ## Совместимость
 
 - **Python**: только 3.12.10 (`muravei_env`). Системный 3.14 несовместим — см. [.cursor/rules/muravei-python-env.mdc](../.cursor/rules/muravei-python-env.mdc).
