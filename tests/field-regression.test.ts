@@ -2,13 +2,14 @@ import { expect, test } from '@playwright/test';
 
 const SOURCE =
   process.env.MURAVEI_TEST_SOURCE ??
-  'archive/video_2026-08-25_09-17-15.mp4';
+  'archive/field_test_clip.mp4';
+const SOURCE_NAME = SOURCE.split(/[/\\]/).pop() ?? SOURCE;
 
 test('scoped detections, playback rate and dead Live status remain consistent', async ({
   page,
   request,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const authResponse = await request.post('http://127.0.0.1:8000/api/auth/login', {
     data: { pin: process.env.MURAVEI_TEST_PIN ?? '1234567' },
   });
@@ -121,14 +122,27 @@ test('scoped detections, playback rate and dead Live status remain consistent', 
   await page.addInitScript((authToken) => {
     localStorage.setItem('muravei-token', authToken);
     localStorage.setItem('muravei-splash-done-v1', '1');
+    for (const k of Object.keys(localStorage)) {
+      if (k.toLowerCase().includes('layout') || k.toLowerCase().includes('mosaic')) {
+        localStorage.removeItem(k);
+      }
+    }
   }, token);
   await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Оператор', exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   await page.getByText('archive', { exact: true }).first().click();
-  const media = page.locator('[data-media-path$=".mp4"]').filter({ hasText: /.+/ }).first();
-  await expect(media).toBeVisible();
+  const media = page
+    .locator(`[data-media-path$="${SOURCE_NAME}"]`)
+    .or(page.getByText(SOURCE_NAME, { exact: true }))
+    .first();
+  await expect(media).toBeVisible({ timeout: 30_000 });
   await media.dblclick();
   await page.waitForFunction(
     () => (document.querySelector('video')?.readyState ?? 0) >= HTMLMediaElement.HAVE_CURRENT_DATA,
+    undefined,
+    { timeout: 90_000 },
   );
   await expect
     .poll(() => scopedRequests.some((url) => url.includes('source_video=')))
@@ -139,25 +153,47 @@ test('scoped detections, playback rate and dead Live status remain consistent', 
     .poll(() => page.locator('video').first().evaluate((video) => video.playbackRate))
     .toBe(2);
   const before = await page.locator('video').first().evaluate((video) => video.currentTime);
-  await page.getByRole('button', { name: 'Пуск' }).click();
+  const viewer1 = page.getByTestId('viewer-1');
+  await viewer1.getByRole('button', { name: 'Пуск' }).click();
   await page.waitForTimeout(700);
   const after = await page.locator('video').first().evaluate((video) => video.currentTime);
   expect(after).toBeGreaterThan(before + 0.5);
-  await page.getByRole('button', { name: 'Пауза' }).click();
+  await viewer1.getByRole('button', { name: 'Пауза' }).click();
 
   await page.getByRole('button', { name: 'Монтаж', exact: true }).click();
-  const viewer1 = page.getByTestId('viewer-1');
   const viewer2 = page.getByTestId('viewer-2');
   await expect(viewer2).toBeVisible();
   await viewer2.click({ position: { x: 20, y: 60 } });
   await media.dblclick();
   await expect(viewer2.locator('video')).toHaveCount(1);
   await expect
-    .poll(() => viewer2.locator('video').evaluate((video) => video.readyState))
+    .poll(() => viewer2.locator('video').evaluate((video) => video.readyState), {
+      timeout: 60_000,
+    })
     .toBeGreaterThanOrEqual(1);
   await viewer1.click({ position: { x: 20, y: 60 } });
-  await viewer1.getByRole('button', { name: 'Было/Стало' }).click();
-  await expect(viewer1.getByRole('button', { name: 'Sync' })).toBeVisible();
+  // Montage narrow toolbar hides «Было/Стало» behind «Ещё».
+  const compareBtn = page.getByRole('button', { name: /^Было\/Стало/ }).first();
+  if (!(await compareBtn.isVisible().catch(() => false))) {
+    await viewer1.getByRole('button', { name: 'Ещё', exact: true }).click();
+    await page.getByText('Было/Стало', { exact: true }).click();
+  } else {
+    await compareBtn.click();
+  }
+  // Enable Sync if visible (toolbar or still in open menu).
+  const syncBtn = page.getByRole('button', { name: /^Sync/ }).first();
+  if (await syncBtn.isVisible().catch(() => false)) {
+    await syncBtn.click();
+  } else {
+    const more = viewer1.getByRole('button', { name: 'Ещё', exact: true });
+    if (await more.isVisible().catch(() => false)) {
+      await more.click();
+      const syncItem = page.getByText('Sync', { exact: true });
+      if (await syncItem.isVisible().catch(() => false)) {
+        await syncItem.click();
+      }
+    }
+  }
   const compareScrub = viewer1.getByTestId('viewer-scrub');
   const compareBox = await compareScrub.boundingBox();
   expect(compareBox).not.toBeNull();

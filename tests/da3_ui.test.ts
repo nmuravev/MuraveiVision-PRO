@@ -79,6 +79,9 @@ test('Система AdminPanel shows Конфигурация 3D Dense=DA3 copy
     }
   }, auth.token);
   await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Инженер', exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   await page.getByRole('button', { name: 'Система', exact: true }).click();
   await expect(page.getByTestId('detect-config')).toBeVisible({ timeout: 45_000 });
   const recon = page.getByTestId('recon-config');

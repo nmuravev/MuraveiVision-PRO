@@ -124,7 +124,10 @@ export const AdminPanel: React.FC = () => {
     if (!isAuthenticated || !isEng) return;
     void loadDetectCfg().catch((e) => setError(String(e)));
     void loadReconCfg().catch((e) => setError(String(e)));
-  }, [isAuthenticated, isEng, loadDetectCfg, loadReconCfg]);
+    // Intentionally omit load* from deps — recreating callbacks must not re-fetch and
+    // clobber in-progress engineer edits (field flake: SAHI toggle + Сохранить).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, isEng]);
 
   const refreshSegStatus = useCallback(async () => {
     const res = await fetch('/api/seg/status', { headers: authHeaders() });
