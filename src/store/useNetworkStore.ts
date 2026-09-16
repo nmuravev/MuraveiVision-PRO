@@ -60,6 +60,7 @@ export interface NetworkMessage {
   sender: string;
   body: string;
   synced_at?: number | null;
+  attachment_id?: string | null;
 }
 
 interface NetworkState {
@@ -88,10 +89,23 @@ interface NetworkState {
     gps_lat?: number | null;
     gps_lon?: number | null;
   }) => Promise<void>;
-  sendMessage: (body: string) => Promise<void>;
+  sendMessage: (body: string, attachmentId?: string) => Promise<void>;
+  sendAttachment: (file: File, caption?: string) => Promise<void>;
   connectChatSocket: () => void;
   disconnectChatSocket: () => void;
   mergeChatMessage: (msg: NetworkMessage) => void;
+}
+
+export function networkAttachmentSrc(attachmentId: string): string {
+  const token = encodeURIComponent(authToken());
+  return `/api/network/attachments/${encodeURIComponent(attachmentId)}/bytes?token=${token}`;
+}
+
+async function sha256Hex(buf: ArrayBuffer): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 function chatWsLocalUrl(): string {
@@ -349,11 +363,13 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     logger.info('network', `Цель отправлена: ${payload.class_name}`);
   },
 
-  sendMessage: async (body) => {
+  sendMessage: async (body, attachmentId) => {
+    const payload: Record<string, unknown> = { body };
+    if (attachmentId) payload.attachment_id = attachmentId;
     const res = await fetch('/api/network/messages', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ body }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Ошибка сообщения');
@@ -362,5 +378,68 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     } else {
       await get().fetchMessages();
     }
+  },
+
+  sendAttachment: async (file, caption) => {
+    const maxBytes = 8 * 1024 * 1024;
+    if (file.size <= 0 || file.size > maxBytes) {
+      throw new Error('Файл до 8 МБ');
+    }
+    const buf = await file.arrayBuffer();
+    const digest = await sha256Hex(buf);
+    const initRes = await fetch('/api/network/attachments', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        filename: file.name || 'screenshot.jpg',
+        content_type: file.type || 'image/jpeg',
+        size: file.size,
+        sha256: digest,
+      }),
+    });
+    const initData = await initRes.json().catch(() => ({}));
+    if (!initRes.ok) {
+      throw new Error(
+        typeof initData.detail === 'string' ? initData.detail : 'Ошибка вложения',
+      );
+    }
+    const att = initData.attachment || {};
+    const aid = String(att.id || '');
+    const chunkSize = Number(att.chunk_size) || 256 * 1024;
+    const total = Number(att.total_chunks) || Math.ceil(file.size / chunkSize);
+    if (!aid) throw new Error('Нет attachment_id');
+    if (!att.complete) {
+      const bytes = new Uint8Array(buf);
+      for (let i = 0; i < total; i += 1) {
+        const start = i * chunkSize;
+        const end = Math.min(bytes.length, start + chunkSize);
+        const slice = bytes.subarray(start, end);
+        const put = await fetch(`/api/network/attachments/${encodeURIComponent(aid)}/chunks/${i}`, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${authToken()}`,
+            'Content-Type': 'application/octet-stream',
+          },
+          body: slice,
+        });
+        if (!put.ok) {
+          const err = await put.json().catch(() => ({}));
+          throw new Error(typeof err.detail === 'string' ? err.detail : `Чанк ${i}`);
+        }
+      }
+      const fin = await fetch(`/api/network/attachments/${encodeURIComponent(aid)}/finalize`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: '{}',
+      });
+      const finData = await fin.json().catch(() => ({}));
+      if (!fin.ok) {
+        throw new Error(
+          typeof finData.detail === 'string' ? finData.detail : 'Ошибка сборки вложения',
+        );
+      }
+    }
+    const text = (caption || '').trim() || file.name || 'вложение';
+    await get().sendMessage(text, aid);
   },
 }));

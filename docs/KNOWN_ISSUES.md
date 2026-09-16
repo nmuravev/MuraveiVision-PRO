@@ -65,7 +65,7 @@
 - Chat **realtime via local `/ws/chat`** when network `mode≠off`; cross-base acceleration uses **backend peer WS** to hub (`ws_peer` in `/api/network/status`). REST tick (~15 s) remains fallback if WS down.
 - **Single-worker uvicorn:** chat browser/peer registries in-memory per process — do not run multi-worker uvicorn for hub WS relay (see [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md)).
 - Hub-and-spoke only; no mesh (LAN beacon = N5 opt-in).
-- Crop **bytes** not replicated yet (`crop_path` string only; attachments = N2).
+- Crop **bytes** in chat: **N2** chunked `/api/network/attachments` (≤8 MiB, sha256); WS carries `attachment_id` only. Target `crop_path` string-only remains.
 - Job/recon package share = N4 (was deferred to locked v3.3).
 
 ## AliceVision / Dense-Mesh (v3.2 branch)

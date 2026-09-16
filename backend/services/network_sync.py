@@ -13,6 +13,7 @@ import websockets
 
 from services import chat_ws
 from services import network as net
+from services import network_attachments as nattach
 
 SYNC_INTERVAL_SEC = 15.0
 HTTP_TIMEOUT_SEC = 10.0
@@ -130,20 +131,26 @@ class NetworkSyncWorker:
         *,
         json: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
+        content: bytes | None = None,
+        content_type: str | None = None,
         retried: bool = False,
+        timeout: float | None = None,
     ) -> httpx.Response | None:
         if not await self.login_to_hub():
             return None
+        headers = {"Authorization": f"Bearer {self.hub_token}"}
+        if content is not None:
+            headers["Content-Type"] = content_type or "application/octet-stream"
+        elif json is not None:
+            headers["Content-Type"] = "application/json"
         try:
-            async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SEC) as client:
+            async with httpx.AsyncClient(timeout=timeout or HTTP_TIMEOUT_SEC) as client:
                 resp = await client.request(
                     method,
                     self._hub_url(path),
-                    headers={
-                        "Authorization": f"Bearer {self.hub_token}",
-                        "Content-Type": "application/json",
-                    },
-                    json=json,
+                    headers=headers,
+                    json=json if content is None else None,
+                    content=content,
                     params=params,
                 )
         except Exception as exc:  # noqa: BLE001
@@ -154,12 +161,103 @@ class NetworkSyncWorker:
         if resp.status_code == 401 and not retried:
             if await self.login_to_hub(force=True):
                 return await self._authed_request(
-                    method, path, json=json, params=params, retried=True
+                    method,
+                    path,
+                    json=json,
+                    params=params,
+                    content=content,
+                    content_type=content_type,
+                    retried=True,
+                    timeout=timeout,
                 )
             return resp
         if resp.status_code < 500:
             self.hub_reachable = True
         return resp
+
+    async def push_attachment(self, attachment_id: str) -> bool:
+        aid = (attachment_id or "").strip()
+        if not aid or not nattach.is_complete(aid):
+            return False
+        meta = nattach.read_meta(aid)
+        if meta is None:
+            return False
+        init = await self._authed_request(
+            "POST",
+            "/api/network/attachments",
+            json={
+                "id": aid,
+                "filename": meta.get("filename") or "attach.bin",
+                "content_type": meta.get("content_type") or "image/jpeg",
+                "size": int(meta.get("size") or 0),
+                "sha256": meta.get("sha256"),
+            },
+        )
+        if init is None or init.status_code >= 400:
+            return False
+        hub_meta = (init.json() or {}).get("attachment") or {}
+        if hub_meta.get("complete"):
+            return True
+        total = int(meta.get("total_chunks") or 0)
+        for i in range(total):
+            raw = nattach.read_chunk_bytes(aid, i)
+            put = await self._authed_request(
+                "PUT",
+                f"/api/network/attachments/{aid}/chunks/{i}",
+                content=raw,
+                content_type="application/octet-stream",
+                timeout=60.0,
+            )
+            if put is None or put.status_code >= 400:
+                return False
+        fin = await self._authed_request(
+            "POST",
+            f"/api/network/attachments/{aid}/finalize",
+            json={},
+        )
+        return fin is not None and fin.status_code < 400
+
+    async def pull_attachment(self, attachment_id: str) -> bool:
+        aid = (attachment_id or "").strip()
+        if not aid:
+            return False
+        if nattach.is_complete(aid):
+            return True
+        resp = await self._authed_request("GET", f"/api/network/attachments/{aid}")
+        if resp is None or resp.status_code >= 400:
+            return False
+        remote = (resp.json() or {}).get("attachment") or {}
+        if not remote.get("complete"):
+            return False
+        try:
+            nattach.init_attachment(
+                filename=str(remote.get("filename") or "attach.bin"),
+                content_type=str(remote.get("content_type") or "image/jpeg"),
+                size=int(remote.get("size") or 0),
+                sha256=str(remote.get("sha256") or ""),
+                attachment_id=aid,
+            )
+        except ValueError:
+            return False
+        total = int(remote.get("total_chunks") or 0)
+        for i in range(total):
+            chunk = await self._authed_request(
+                "GET",
+                f"/api/network/attachments/{aid}/chunks/{i}",
+                timeout=60.0,
+            )
+            if chunk is None or chunk.status_code >= 400:
+                return False
+            try:
+                nattach.put_chunk(aid, i, chunk.content)
+            except ValueError:
+                return False
+        try:
+            nattach.finalize_attachment(aid)
+        except ValueError as exc:
+            print(f"[NETWORK] attachment pull finalize failed id={aid}: {exc}")
+            return False
+        return True
 
     async def send_heartbeat(self) -> bool:
         self.advertise_ip = net.resolve_lan_ipv4()
@@ -268,15 +366,23 @@ class NetworkSyncWorker:
             mid = str(row.get("id") or "")
             if not mid:
                 continue
+            aid = str(row.get("attachment_id") or "").strip()
+            if aid:
+                if not await self.push_attachment(aid):
+                    print(f"[NETWORK] attachment push failed id={aid} for msg={mid}")
+                    continue
+            payload: dict[str, Any] = {
+                "id": mid,
+                "body": row.get("body") or "",
+                "sender": row.get("sender") or self.base_name,
+                "created_at": row.get("created_at"),
+            }
+            if aid:
+                payload["attachment_id"] = aid
             resp = await self._authed_request(
                 "POST",
                 "/api/network/messages",
-                json={
-                    "id": mid,
-                    "body": row.get("body") or "",
-                    "sender": row.get("sender") or self.base_name,
-                    "created_at": row.get("created_at"),
-                },
+                json=payload,
             )
             if resp is None or resp.status_code >= 400:
                 code = resp.status_code if resp is not None else "offline"
@@ -321,12 +427,16 @@ class NetworkSyncWorker:
             existing = net.get_message(mid)
             if existing is not None and str(existing.get("direction")) == "out":
                 continue
+            aid = str(item.get("attachment_id") or "").strip() or None
+            if aid:
+                await self.pull_attachment(aid)
             net.upsert_message(
                 message_id=mid,
                 sender=sender or "База",
                 body=body,
                 created_at=float(created) if created is not None else None,
                 expires_at=item.get("expires_at"),
+                attachment_id=aid,
             )
             upserted += 1
             row = net.get_message(mid)
@@ -367,11 +477,15 @@ class NetworkSyncWorker:
         if not mid or not body:
             return
         created = raw.get("created_at")
+        aid = str(raw.get("attachment_id") or "").strip() or None
+        if aid:
+            await self.pull_attachment(aid)
         net.upsert_message(
             message_id=mid,
             sender=sender or "База",
             body=body,
             created_at=float(created) if created is not None else None,
+            attachment_id=aid,
         )
         got = net.get_message(mid)
         if got is not None:

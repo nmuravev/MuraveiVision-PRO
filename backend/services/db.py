@@ -159,7 +159,8 @@ def init_db() -> None:
                     sender TEXT NOT NULL,
                     body TEXT NOT NULL,
                     expires_at REAL,
-                    synced_at REAL
+                    synced_at REAL,
+                    attachment_id TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_net_targets_created
                     ON network_targets(created_at DESC);
@@ -247,6 +248,8 @@ def init_db() -> None:
                 conn.execute("ALTER TABLE network_messages ADD COLUMN synced_at REAL")
             if "expires_at" not in network_message_cols:
                 conn.execute("ALTER TABLE network_messages ADD COLUMN expires_at REAL")
+            if "attachment_id" not in network_message_cols:
+                conn.execute("ALTER TABLE network_messages ADD COLUMN attachment_id TEXT")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_net_messages_synced ON network_messages(synced_at)"
             )

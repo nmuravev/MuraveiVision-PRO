@@ -18,13 +18,17 @@ _peers: dict[WebSocket, dict[str, str]] = {}
 
 
 def public_message(row: dict[str, Any]) -> dict[str, Any]:
-    return {
+    out = {
         "id": str(row.get("id") or ""),
         "created_at": float(row.get("created_at") or 0),
         "direction": str(row.get("direction") or ""),
         "sender": str(row.get("sender") or ""),
         "body": str(row.get("body") or ""),
     }
+    aid = row.get("attachment_id")
+    if aid:
+        out["attachment_id"] = str(aid)
+    return out
 
 
 def envelope_message(row: dict[str, Any]) -> str:
@@ -127,12 +131,14 @@ async def handle_peer_inbound(ws: WebSocket, text: str) -> None:
         return
     sender = str(raw.get("sender") or "").strip() or "База"
     created = raw.get("created_at")
+    aid = str(raw.get("attachment_id") or "").strip() or None
     row = net.add_message(
         direction="out",
         sender=sender,
         body=body,
         message_id=mid,
         created_at=float(created) if created is not None else None,
+        attachment_id=aid,
     )
     origin = (_peers.get(ws) or {}).get("base_id")
     payload = envelope_message(row)

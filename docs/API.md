@@ -324,11 +324,17 @@ System (engineer+):
 | POST | `/heartbeat` | operator+ | `{base_id, base_name, ip}` |
 | GET | `/targets` | operator+ | TTL 24 ч; `?since=<epoch>` |
 | POST | `/targets` | operator+ | `direction=out`; опциональный `id`; GPS/`source_video` |
-| GET | `/messages` | operator+ | чат; `?since=<epoch>` для инкрементального pull |
-| POST | `/messages` | operator+ | `direction=out`; опциональные `id`, `sender`, `created_at` (идемпотентно) |
+| GET | `/messages` | operator+ | чат; `?since=<epoch>` для инкрементального pull; поле `attachment_id` опционально |
+| POST | `/messages` | operator+ | `direction=out`; опциональные `id`, `sender`, `created_at`, `attachment_id` (идемпотентно; вложение должно быть finalize) |
 | GET | `/messages/unread` | operator+ | `{count}` входящих с `created_at > since` |
+| POST | `/attachments` | operator+ | init: `{filename, content_type, size≤8MiB, sha256, id?}` → meta + `chunk_size` |
+| PUT | `/attachments/{id}/chunks/{index}` | operator+ | raw bytes чанка |
+| POST | `/attachments/{id}/finalize` | operator+ | сборка + sha256 verify |
+| GET | `/attachments/{id}` | operator+ | meta |
+| GET | `/attachments/{id}/chunks/{index}` | operator+ | байты чанка (sync) |
+| GET | `/attachments/{id}/bytes` | operator+ | готовый blob (`?token=` для `<img>`) |
 
-Цели несут GPS и `source_video`. `crop_path` — путь, байты кропа не гоняются. Messages: `synced_at` / TTL 24 ч; upsert newer-wins.
+Цели несут GPS и `source_video`. `crop_path` — путь; **байты кропа/скрина в чате** — через `/attachments` (WS несёт только `attachment_id`). Messages: `synced_at` / TTL 24 ч; upsert newer-wins.
 
 ### WebSocket — `/ws/chat`
 

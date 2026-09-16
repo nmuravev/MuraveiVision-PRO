@@ -1,6 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { MessageSquare, RefreshCw, Send } from 'lucide-react';
-import { useNetworkStore } from '../../store/useNetworkStore';
+import React, { useEffect, useRef, useState } from 'react';
+import { ImagePlus, MessageSquare, RefreshCw, Send } from 'lucide-react';
+import {
+  networkAttachmentSrc,
+  useNetworkStore,
+} from '../../store/useNetworkStore';
 import { useMuraveiStore } from '../../store/useMuraveiStore';
 
 function formatTs(epoch: number): string {
@@ -21,7 +24,9 @@ export const ChatPanel: React.FC = () => {
   const fetchMessages = useNetworkStore((s) => s.fetchMessages);
   const fetchBases = useNetworkStore((s) => s.fetchBases);
   const sendMessage = useNetworkStore((s) => s.sendMessage);
+  const sendAttachment = useNetworkStore((s) => s.sendAttachment);
   const markChatSeen = useNetworkStore((s) => s.markChatSeen);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const [chat, setChat] = useState('');
   const [busy, setBusy] = useState(false);
@@ -51,6 +56,22 @@ export const ChatPanel: React.FC = () => {
       setLocalErr(e instanceof Error ? e.message : 'Ошибка');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const onPickFile = async (file: File | null) => {
+    if (!file) return;
+    setBusy(true);
+    setLocalErr(null);
+    try {
+      await sendAttachment(file, chat.trim() || undefined);
+      setChat('');
+      markChatSeen();
+    } catch (e) {
+      setLocalErr(e instanceof Error ? e.message : 'Ошибка вложения');
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = '';
     }
   };
 
@@ -127,12 +148,43 @@ export const ChatPanel: React.FC = () => {
                 <span className="ml-auto shrink-0">{formatTs(m.created_at)}</span>
               </div>
               <div className="mt-0.5 leading-snug whitespace-pre-wrap break-words">{m.body}</div>
+              {m.attachment_id && (
+                <a
+                  href={networkAttachmentSrc(m.attachment_id)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 block"
+                  title="Открыть вложение"
+                >
+                  <img
+                    src={networkAttachmentSrc(m.attachment_id)}
+                    alt="вложение"
+                    className="max-h-40 max-w-full rounded-sm border border-[var(--dv-border)] object-contain bg-black/30"
+                  />
+                </a>
+              )}
             </div>
           );
         })}
       </div>
 
       <div className="p-2 border-t border-[var(--dv-border)] flex gap-1 flex-shrink-0">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="hidden"
+          onChange={(e) => void onPickFile(e.target.files?.[0] || null)}
+        />
+        <button
+          type="button"
+          disabled={busy || config.mode === 'off'}
+          className="px-2 rounded-sm bg-[#2e2e2e] disabled:opacity-40"
+          onClick={() => fileRef.current?.click()}
+          title="Прикрепить скриншот / кроп (до 8 МБ)"
+        >
+          <ImagePlus size={12} />
+        </button>
         <input
           className="flex-1 bg-[var(--dv-bg-deep)] border border-[var(--dv-border)] px-2 py-1.5 rounded-sm"
           value={chat}

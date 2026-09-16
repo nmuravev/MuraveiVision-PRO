@@ -7,15 +7,15 @@ Topology: one **hub** (`mode=server`) and one or more **clients** (`mode=client`
 | Object | Direction | Transport | Notes |
 |--------|-----------|-----------|--------|
 | **Targets** (`network_targets`) | client ↔ hub | REST worker tick (~15 s) | class, confidence, GPS, notes, `source_video`, `crop_path` **string only** |
-| **Chat messages** (`network_messages`) | client ↔ hub | REST worker tick (~15 s) **+ WS acceleration** | text body + sender; `synced_at` / `?since=` cursor; local browser `/ws/chat`; client backend **peer WS** to hub |
+| **Chat messages** (`network_messages`) | client ↔ hub | REST worker tick (~15 s) **+ WS acceleration** | text body + sender + optional `attachment_id`; `synced_at` / `?since=` cursor; local browser `/ws/chat`; client backend **peer WS** to hub |
+| **Chat attachments** | client ↔ hub | chunked REST (≤8 MiB, sha256) | `archive/network_attachments/`; WS carries `attachment_id` only |
 | **Heartbeat / bases** | client → hub | REST | advertises **real LAN IPv4** (`MURAVEI_NETWORK_ADVERTISE_IP` override) |
 
-## What does **not** sync (v3.2)
+## What does **not** sync (yet)
 
-- Crop / screenshot **bytes** (`crop_path` is a path; remote file may be missing)
-- Archive videos, recon **jobs**, sparse/mesh/splat packages
-- ~~WebSocket realtime chat~~ — **N1:** local browser WS + hub peer relay (REST tick = fallback)
-- Automatic LAN discovery beacons (deferred to v3.3)
+- Target `crop_path` **bytes** (path string only; chat attachments are separate)
+- Archive videos, recon **jobs**, sparse/mesh/splat packages (N4)
+- Automatic LAN discovery beacons (N5)
 - End-to-end encryption (LAN + JWT only)
 
 ## Operator UI

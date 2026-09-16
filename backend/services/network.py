@@ -416,21 +416,23 @@ def add_message(
     body: str,
     message_id: str | None = None,
     created_at: float | None = None,
+    attachment_id: str | None = None,
 ) -> dict[str, Any]:
     """Insert outgoing (or hub-received) message. Duplicate id is idempotent (no overwrite)."""
     init_db()
     mid = (message_id or "").strip() or str(uuid.uuid4())
     now = float(created_at) if created_at is not None else time.time()
+    aid = (attachment_id or "").strip() or None
     conn = _connect()
     try:
         conn.execute(
             """
             INSERT INTO network_messages (
-                id, created_at, direction, sender, body, expires_at, synced_at
-            ) VALUES (?, ?, ?, ?, ?, ?, NULL)
+                id, created_at, direction, sender, body, expires_at, synced_at, attachment_id
+            ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
             ON CONFLICT(id) DO NOTHING
             """,
-            (mid, now, direction, sender, body.strip(), now + TARGET_TTL_SEC),
+            (mid, now, direction, sender, body.strip(), now + TARGET_TTL_SEC, aid),
         )
         conn.commit()
     finally:
@@ -443,6 +445,7 @@ def add_message(
         "body": body.strip(),
         "expires_at": now + TARGET_TTL_SEC,
         "synced_at": None,
+        "attachment_id": aid,
     }
 
 
@@ -463,28 +466,31 @@ def upsert_message(
     message_id: str | None = None,
     created_at: float | None = None,
     expires_at: float | None = None,
+    attachment_id: str | None = None,
 ) -> dict[str, Any]:
     """Insert incoming replica as direction=in, or update if incoming created_at is newer."""
     init_db()
     mid = (message_id or "").strip() or str(uuid.uuid4())
     ts = float(created_at) if created_at is not None else time.time()
     exp = float(expires_at) if expires_at is not None else ts + TARGET_TTL_SEC
+    aid = (attachment_id or "").strip() or None
     conn = _connect()
     try:
         conn.execute(
             """
             INSERT INTO network_messages (
-                id, created_at, direction, sender, body, expires_at, synced_at
-            ) VALUES (?, ?, 'in', ?, ?, ?, NULL)
+                id, created_at, direction, sender, body, expires_at, synced_at, attachment_id
+            ) VALUES (?, ?, 'in', ?, ?, ?, NULL, ?)
             ON CONFLICT(id) DO UPDATE SET
                 created_at = excluded.created_at,
                 direction = excluded.direction,
                 sender = excluded.sender,
                 body = excluded.body,
-                expires_at = excluded.expires_at
+                expires_at = excluded.expires_at,
+                attachment_id = COALESCE(excluded.attachment_id, network_messages.attachment_id)
             WHERE excluded.created_at > network_messages.created_at
             """,
-            (mid, ts, sender, body.strip(), exp),
+            (mid, ts, sender, body.strip(), exp, aid),
         )
         conn.commit()
     finally:
