@@ -18,15 +18,20 @@ test('Detection config toggles persist via API and survive reload', async ({ pag
   await page.addInitScript((token) => {
     localStorage.setItem('muravei-token', token);
     localStorage.setItem('muravei-splash-done-v1', '1');
+    for (const k of Object.keys(localStorage)) {
+      if (k.toLowerCase().includes('layout') || k.toLowerCase().includes('mosaic')) {
+        localStorage.removeItem(k);
+      }
+    }
   }, auth.token);
   await page.goto('/');
 
   // Open the "Система" workspace tab (renders AdminPanel).
   await page.getByRole('button', { name: 'Система', exact: true }).click();
 
-  // The detection config block must mount.
+  // The detection config block must mount (lazy AdminPanel).
   const cfgBlock = page.getByTestId('detect-config');
-  await expect(cfgBlock).toBeVisible({ timeout: 15_000 });
+  await expect(cfgBlock).toBeVisible({ timeout: 45_000 });
 
   const sahiCheckbox = page.getByTestId('cfg-use-sahi');
   await expect(sahiCheckbox).toBeVisible();

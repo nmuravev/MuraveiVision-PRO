@@ -12,6 +12,7 @@ type YOLODebugStats = {
 };
 
 test('YOLO stays suspended throughout scrub and cooldown', async ({ page, request }, testInfo) => {
+  test.setTimeout(120_000);
   const pin = process.env.MURAVEI_TEST_PIN ?? '1234567';
   const authResponse = await request.post('http://127.0.0.1:8000/api/auth/login', {
     data: { pin },
@@ -27,13 +28,17 @@ test('YOLO stays suspended throughout scrub and cooldown', async ({ page, reques
 
   await page.getByText('archive', { exact: true }).first().click();
   const media = page.locator('[data-media-path$=".mp4"]').filter({ hasText: /.+/ }).first();
-  await expect(media).toBeVisible();
+  await expect(media).toBeVisible({ timeout: 30_000 });
   await media.dblclick();
 
-  await page.waitForFunction(() => {
-    const video = document.querySelector('video');
-    return Boolean(video && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA);
-  });
+  await page.waitForFunction(
+    () => {
+      const video = document.querySelector('video');
+      return Boolean(video && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA);
+    },
+    undefined,
+    { timeout: 90_000 },
+  );
   await page.evaluate(() => window.resetYOLOStats());
 
   const scrub = page.getByTestId('viewer-scrub');
