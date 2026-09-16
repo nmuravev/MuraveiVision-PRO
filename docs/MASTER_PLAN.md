@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-16
 - **Branch:** `main`
-- **Commit:** 40e93c5
+- **Commit:** 9e68aa7
 - **Unit tests:** 364 (discover OK; +5 `test_chat_ws`)
 - **Status:** Phase 0 lock retired @ 805dcb0; N1 WS realtime chat (local browser + hub peer relay, `ws_peer` status)
 - **Last updated by:** feat(network): WS realtime chat N1
