@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-16
 - **Branch:** `main`
-- **Commit:** (N2 tip)
+- **Commit:** 8d4cdd6
 - **Unit tests:** 367 (+3 attachment)
 - **Status:** N1 WS chat on main; N2 chunked chat attachments
 - **Last updated by:** feat(network): chat attachments bytes
