@@ -44,9 +44,17 @@ config/local/
 # IDE and editor files
 .idea/
 .vscode/
+.gigaide/
 *.swp
 *.swo
 *~
+
+# Cache / sidecars / env PROTECT notes (never commit binaries; build may read locally):
+#   portable/cache/**  — wheels, embeddable, cacert (see portable/ above)
+#   wheels/            — offline heal pack beside repo
+#   sidecars/da3/*.safetensors — FullKit seed only (see DA3 block below)
+#   muravei_env/       — host/dev interpreter (see Python environment above)
+# Purge at build = only portable/stage_* and *.locked_*; never the PROTECT list.
 
 # OS files
 .DS_Store
