@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-16
 - **Branch:** `main` (ff from `feature/order-audit-20260916`)
-- **Commit:** 9662d49
+- **Commit:** 11d4cde
 - **Unit tests:** 359 (discover OK)
 - **Status:** Order-audit P-A…P-G complete; DA3 all-variants + AV Mesh; size bands OPERATOR-SANCTIONED; depth median/std distinct across base/large/metric
 - **Last updated by:** docs: Meta tip + portable sha after order-audit
