@@ -1,10 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ImagePlus, MessageSquare, RefreshCw, Send } from 'lucide-react';
+import { Crosshair, ImagePlus, MessageSquare, RefreshCw, Send } from 'lucide-react';
 import {
   networkAttachmentSrc,
   useNetworkStore,
 } from '../../store/useNetworkStore';
-import { useMuraveiStore } from '../../store/useMuraveiStore';
+import { useTimelineStore } from '../../store/timeline-store';
+import {
+  formatDetectionRef,
+  splitChatBody,
+} from '../../lib/chatDetectionRefs';
+import { authHeaders, useMuraveiStore } from '../../store/useMuraveiStore';
 
 function formatTs(epoch: number): string {
   try {
@@ -14,10 +19,28 @@ function formatTs(epoch: number): string {
   }
 }
 
+type RemoteCard = {
+  id: string;
+  class_name?: string;
+  confidence?: number;
+  gps_lat?: number | null;
+  gps_lon?: number | null;
+  source_video?: string | null;
+  source_base?: string | null;
+  notes?: string | null;
+  missing?: boolean;
+};
+
 export const ChatPanel: React.FC = () => {
   const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
+  const detections = useMuraveiStore((s) => s.detections);
+  const activeDetectionId = useMuraveiStore((s) => s.activeDetectionId);
+  const setActiveDetectionId = useMuraveiStore((s) => s.setActiveDetectionId);
+  const seekTo = useTimelineStore((s) => s.seekTo);
+
   const config = useNetworkStore((s) => s.config);
-  const messages = useNetworkStore((s) => s.messages);
+    const messages = useNetworkStore((s) => s.messages);
+  const targets = useNetworkStore((s) => s.targets);
   const bases = useNetworkStore((s) => s.bases);
   const unreadCount = useNetworkStore((s) => s.unreadCount);
   const error = useNetworkStore((s) => s.error);
@@ -31,6 +54,7 @@ export const ChatPanel: React.FC = () => {
   const [chat, setChat] = useState('');
   const [busy, setBusy] = useState(false);
   const [localErr, setLocalErr] = useState<string | null>(null);
+  const [remoteCard, setRemoteCard] = useState<RemoteCard | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -75,7 +99,101 @@ export const ChatPanel: React.FC = () => {
     }
   };
 
+  const insertDetectionRef = () => {
+    if (!activeDetectionId) {
+      setLocalErr('Выберите детекцию в Viewer / Timeline');
+      return;
+    }
+    const token = formatDetectionRef(activeDetectionId);
+    setChat((prev) => (prev.trim() ? `${prev.trim()} ${token}` : token));
+    setLocalErr(null);
+  };
+
+  const onDetectionClick = async (detId: string) => {
+    const row = detections.find((d) => d.id === detId || d.id.toLowerCase() === detId);
+    if (row) {
+      setActiveDetectionId(row.id);
+      if (typeof row.time_sec === 'number') seekTo(row.time_sec);
+      setRemoteCard(null);
+      return;
+    }
+    // Remote / missing locally — try API then show card
+    try {
+      const res = await fetch(`/api/detections/${encodeURIComponent(detId)}`, {
+        headers: authHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRemoteCard({
+          id: detId,
+          class_name: data.class_name,
+          confidence: data.confidence,
+          gps_lat: data.gps_lat,
+          gps_lon: data.gps_lon,
+          source_video: data.source_video,
+          notes: data.user_notes || data.notes,
+          missing: false,
+        });
+        if (typeof data.time_sec === 'number') {
+          setActiveDetectionId(data.id || detId);
+          seekTo(data.time_sec);
+        }
+        return;
+      }
+    } catch {
+      /* fall through */
+    }
+    // Look at shared network targets that reference this detection
+    const netHit = targets.find(
+      (t) =>
+        (t.notes || '').toLowerCase().includes(`detection_id=${detId}`) ||
+        (t.notes || '').toLowerCase().includes(`detection:${detId}`),
+    );
+    if (netHit) {
+      setRemoteCard({
+        id: detId,
+        class_name: netHit.class_name,
+        confidence: netHit.confidence,
+        gps_lat: netHit.gps_lat,
+        gps_lon: netHit.gps_lon,
+        source_video: netHit.source_video,
+        source_base: netHit.source_base,
+        notes: netHit.notes,
+        missing: false,
+      });
+      return;
+    }
+    setRemoteCard({
+      id: detId,
+      missing: true,
+      source_base: 'удалённая база',
+      notes: 'Детекция не найдена на этой машине — открыть на базе-источнике.',
+    });
+  };
+
   const ordered = [...messages].sort((a, b) => a.created_at - b.created_at);
+
+  const renderBody = (body: string) =>
+    splitChatBody(body).map((part, i) => {
+      if (part.kind === 'text') {
+        return (
+          <span key={i} className="whitespace-pre-wrap break-words">
+            {part.text}
+          </span>
+        );
+      }
+      return (
+        <button
+          key={i}
+          type="button"
+          className="inline text-sky-400 underline underline-offset-2 hover:text-sky-300 mx-0.5"
+          title={`Открыть detection:${part.id}`}
+          onClick={() => void onDetectionClick(part.id)}
+        >
+          {part.raw}
+        </button>
+      );
+    });
 
   return (
     <div className="h-full flex flex-col bg-[var(--dv-panel)] text-xs overflow-hidden">
@@ -129,6 +247,46 @@ export const ChatPanel: React.FC = () => {
         </div>
       )}
 
+      {remoteCard && (
+        <div className="mx-3 mt-2 border border-[var(--dv-border)] bg-[var(--dv-bg-deep)] px-2 py-1.5 rounded-sm text-[10px] space-y-0.5">
+          <div className="flex items-center gap-2">
+            <span className="text-sky-400 font-medium">detection:{remoteCard.id}</span>
+            <button
+              type="button"
+              className="ml-auto text-[var(--dv-text-muted)] hover:text-white"
+              onClick={() => setRemoteCard(null)}
+            >
+              закрыть
+            </button>
+          </div>
+          {remoteCard.missing ? (
+            <div className="text-amber-300">{remoteCard.notes}</div>
+          ) : (
+            <>
+              {remoteCard.class_name && (
+                <div>
+                  Класс: {remoteCard.class_name}
+                  {typeof remoteCard.confidence === 'number'
+                    ? ` · ${(remoteCard.confidence * 100).toFixed(0)}%`
+                    : ''}
+                </div>
+              )}
+              {(remoteCard.gps_lat != null || remoteCard.gps_lon != null) && (
+                <div>
+                  GPS: {remoteCard.gps_lat ?? '—'}, {remoteCard.gps_lon ?? '—'}
+                </div>
+              )}
+              {remoteCard.source_video && (
+                <div className="truncate" title={remoteCard.source_video}>
+                  Видео: {remoteCard.source_video}
+                </div>
+              )}
+              {remoteCard.notes && <div className="text-[var(--dv-text-muted)]">{remoteCard.notes}</div>}
+            </>
+          )}
+        </div>
+      )}
+
       <div className="flex-1 overflow-auto p-3 space-y-1.5">
         {ordered.length === 0 && (
           <div className="text-[var(--dv-text-muted)]">Нет сообщений</div>
@@ -147,7 +305,7 @@ export const ChatPanel: React.FC = () => {
                 <span className="font-medium text-[var(--dv-text)] truncate">{m.sender}</span>
                 <span className="ml-auto shrink-0">{formatTs(m.created_at)}</span>
               </div>
-              <div className="mt-0.5 leading-snug whitespace-pre-wrap break-words">{m.body}</div>
+              <div className="mt-0.5 leading-snug">{renderBody(m.body)}</div>
               {m.attachment_id && (
                 <a
                   href={networkAttachmentSrc(m.attachment_id)}
@@ -185,10 +343,19 @@ export const ChatPanel: React.FC = () => {
         >
           <ImagePlus size={12} />
         </button>
+        <button
+          type="button"
+          disabled={busy || config.mode === 'off' || !activeDetectionId}
+          className="px-2 rounded-sm bg-[#2e2e2e] disabled:opacity-40"
+          onClick={insertDetectionRef}
+          title="Вставить detection:<id> активной детекции"
+        >
+          <Crosshair size={12} />
+        </button>
         <input
           className="flex-1 bg-[var(--dv-bg-deep)] border border-[var(--dv-border)] px-2 py-1.5 rounded-sm"
           value={chat}
-          placeholder={config.mode === 'off' ? 'Сеть выключена' : 'Сообщение…'}
+          placeholder={config.mode === 'off' ? 'Сеть выключена' : 'Сообщение… detection:<id>'}
           disabled={config.mode === 'off'}
           onChange={(e) => setChat(e.target.value)}
           onKeyDown={(e) => {

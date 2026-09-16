@@ -368,6 +368,17 @@ async def detections_patch(
     return updated
 
 
+@router.get("/{det_id}")
+async def detections_get(
+    det_id: str,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    row = get_detection(det_id)
+    if not row or row.get("is_deleted"):
+        raise HTTPException(status_code=404, detail="Not found")
+    return row
+
+
 @router.delete("/{det_id}")
 async def detections_delete(
     det_id: str,

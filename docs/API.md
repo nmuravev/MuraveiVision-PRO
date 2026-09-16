@@ -210,7 +210,7 @@ Sidecar: тот же stem, что у видео (`.SRT`/`.srt`, затем `.CSV
 
 ## Detections — `/api/detections`
 
-`GET` требует `source_video` (без него возвращает пустой список; `all_videos=true` только для служебных инструментов). CRUD + `POST /commit` (пакет кадра + crops), `GET /{id}/crop`. Массовый soft-delete: `DELETE ?source_video=...&all=true`.
+`GET` требует `source_video` (без него возвращает пустой список; `all_videos=true` только для служебных инструментов). CRUD + `POST /commit` (пакет кадра + crops), `GET /{id}` (одна детекция), `GET /{id}/crop`. Массовый soft-delete: `DELETE ?source_video=...&all=true`.
 
 `GET /export?source_video=` — CSV всех неудалённых детекций ролика (operator+). Первая строка-комментарий: `# Coordinates normalized [0-1]…`. Колонки: `time_sec,class_name,confidence,x1,y1,x2,y2,gps_lat,gps_lon` (bbox из `bbox_x/y/w/h` → xyxy в [0–1]). Кнопка «Экспорт CSV» в Inspector.
 
@@ -337,6 +337,8 @@ System (engineer+):
 Цели несут GPS и `source_video`. `crop_path` — путь; **байты кропа/скрина в чате** — через `/attachments` (WS несёт только `attachment_id`). Messages: `synced_at` / TTL 24 ч; upsert newer-wins.
 
 ### WebSocket — `/ws/chat`
+
+Сообщения могут содержать токены `detection:<id>` (8–64 hex). Клиент рендерит кликабельно: локально — seek+highlight; иначе карточка (класс/GPS/`source_base`) или «не найдена».
 
 | WS | Query | Роль | Описание |
 |----|-------|------|----------|
