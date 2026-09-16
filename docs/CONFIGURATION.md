@@ -88,3 +88,26 @@ API: `GET/POST /api/network/config`, `GET /api/network/status`. Worker: [ENGINEE
 | `MURAVEI_SMOKE_BASE` | smoke-скрипты | базовый URL для smoke |
 
 `python-dotenv` установлен, но `.env` не используется — все runtime-настройки в SQLite.
+
+## Производительность (ms/VRAM @ 8 ГБ)
+
+[backend/services/perf_budget.py](../backend/services/perf_budget.py) — профилирование на RTX 5060 Laptop (8 ГБ VRAM).
+
+| Операция | Latency | Δ VRAM | Примечание |
+|----------|---------|--------|------------|
+| YOLO detect (single frame) | 12–25 ms | ~2.5 GB | 640→1024, зависит от tier |
+| SAHI (N слайсов, 512×512) | N × 15–30 ms | reuse YOLO | По умолчанию off; для 4K-кадров БПЛА |
+| Batch seg (frame_step) | 80–150 ms/f | +1.5 GB | SAM3 ~3.5 GB взаимно исключает detect |
+| SAM3 propagate (≤30 кадров) | 40–80 ms/f | in-memory | Не персистит; temp clip |
+| Change Detection (ORB) | 200–500 ms/pair | ~500 MB | Зависит от coverage GPS/ORB |
+| COLMAP sparse (3000 кадров) | 5–15 мин | 4–6 GB | Sequential matcher на drone video |
+| gsplat train (30k steps) | 10–30 мин | 5–7 GB | RTX 5060; requires VS Build Tools + CUDA 12.8 |
+| DA3 dense (base) | 30–60 ms/patch | +1 GB | Optional sidecar; soft-fail на CPU |
+| AliceVision Mesh | 10–30 мин | 6–8 GB | Optional; требует CUDA |
+
+**Правила VRAM-менеджмента:**
+
+- SAM3 и YOLO-seg **взаимно исключают** VRAM; Detect не выгружается при load SAM3.
+- На RTX 5060 (8 ГБ) не держать seg и detect одновременно: выгружайте seg перед live-детекцией.
+- gsplat train блокирует «Построить 3D»; один train за раз.
+- HQ preset disabled при total VRAM < 12 ГБ (typical 8 ГБ field laptop → Balanced или Bootstrap).
