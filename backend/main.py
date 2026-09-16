@@ -116,6 +116,10 @@ async def lifespan(app: FastAPI):
     from services.network_sync import start_network_worker, stop_network_worker
 
     start_network_worker()
+    # N5: LAN beacon (opt-in, never on boot)
+    from services import network_beacon as nb
+
+    nb.start_beacon_if_enabled()
     try:
         from services.ollama_proxy import startup_reconnect
 
@@ -132,6 +136,7 @@ async def lifespan(app: FastAPI):
         print(f"[SYSTEM] hardware_detect skip: {exc}")
     yield
     print("[SYSTEM] Backend stopping...")
+    await nb.stop_beacon()
     await stop_network_worker()
 
 

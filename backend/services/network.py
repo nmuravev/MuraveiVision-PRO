@@ -100,6 +100,8 @@ def get_config() -> dict[str, Any]:
             "base_id": base_id,
             "updated_at": float(row["updated_at"]),
             "has_hub_pin": bool(str(row["hub_pin"] or "").strip()) if "hub_pin" in keys else False,
+            "lan_beacon_enabled": bool(int(str(row["lan_beacon_enabled"] or "0"))) if "lan_beacon_enabled" in keys else False,
+            "lan_beacon_port": int(row["lan_beacon_port"] or 8001) if "lan_beacon_port" in keys else 8001,
         }
     finally:
         conn.close()
@@ -112,6 +114,8 @@ def save_config(
     port: int,
     base_name: str,
     hub_pin: str | None = None,
+    lan_beacon_enabled: bool = False,
+    lan_beacon_port: int = 8001,
 ) -> dict[str, Any]:
     init_db()
     mode = mode if mode in ("off", "server", "client") else "off"
@@ -130,6 +134,11 @@ def save_config(
                 updated_at=excluded.updated_at
             """,
             (mode, server_ip.strip() or "127.0.0.1", port, base_name.strip() or "База-1", time.time()),
+        )
+        # C7: persist beacon fields
+        conn.execute(
+            "UPDATE network_config SET lan_beacon_enabled = ?, lan_beacon_port = ? WHERE id = 1",
+            ("1" if lan_beacon_enabled else "0", lan_beacon_port),
         )
         pin = (hub_pin or "").strip()
         if pin:

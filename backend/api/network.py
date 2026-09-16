@@ -23,6 +23,8 @@ class ConfigBody(BaseModel):
     port: int = Field(default=8000, ge=1, le=65535)
     base_name: str = "База-1"
     hub_pin: str | None = None
+    lan_beacon_enabled: bool = False
+    lan_beacon_port: int = Field(default=8001, ge=1, le=65535)
 
 
 class TargetBody(BaseModel):
@@ -87,13 +89,23 @@ async def post_config(
     body: ConfigBody,
     _user: dict[str, Any] = Depends(require_role("engineer")),
 ) -> dict[str, Any]:
-    return net.save_config(
+    from services import network_beacon as nb
+
+    result = net.save_config(
         mode=body.mode,
         server_ip=body.server_ip,
         port=body.port,
         base_name=body.base_name,
         hub_pin=body.hub_pin,
+        lan_beacon_enabled=body.lan_beacon_enabled,
+        lan_beacon_port=body.lan_beacon_port,
     )
+    # C7: live reconfigure beacon (no restart)
+    await nb.reconfigure_beacon(
+        enabled=body.lan_beacon_enabled,
+        port=body.lan_beacon_port,
+    )
+    return result
 
 
 @router.get("/bases")
@@ -107,7 +119,16 @@ async def get_network_status(
 ) -> dict[str, Any]:
     from services import network_sync as nsync
 
-    return nsync.status_dict()
+    status = nsync.status_dict()
+    # C5/C8: add beacon fields to status
+    cfg = net.get_config()
+    status["lan_beacon_enabled"] = bool(cfg.get("lan_beacon_enabled", False))
+    status["lan_beacon_port"] = int(cfg.get("lan_beacon_port", 8001))
+    from services import network_beacon as nb
+
+    beacon = nb.get_beacon()
+    status["lan_beacon_peers"] = beacon.live_peer_count if beacon is not None else 0
+    return status
 
 
 @router.post("/heartbeat")
@@ -288,6 +309,27 @@ async def get_unread(
     _user: dict[str, Any] = Depends(require_role("operator")),
 ) -> dict[str, Any]:
     return {"count": net.count_incoming_messages_since(since)}
+
+
+@router.get("/beacon/peers")
+async def get_beacon_peers(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    from services import network_beacon as nb
+
+    beacon = nb.get_beacon()
+    if beacon is None:
+        return {"peers": []}
+    peers = []
+    for bid, info in beacon.discovered_peers.items():
+        peers.append({
+            "base_id": bid,
+            "base_name": info.get("base_name", ""),
+            "ip": info.get("ip", ""),
+            "port": info.get("port", 0),
+            "ts": info.get("ts", 0),
+        })
+    return {"peers": peers}
 
 
 @router.get("/recon-packages/offerable/{job_id}")

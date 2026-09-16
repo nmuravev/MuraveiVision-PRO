@@ -3,6 +3,7 @@ import { Network, RefreshCw } from 'lucide-react';
 import {
   useNetworkStore,
   type NetworkConfig,
+  type NetworkBeaconPeer,
 } from '../../store/useNetworkStore';
 import { useMuraveiStore, detectionCropSrc } from '../../store/useMuraveiStore';
 
@@ -16,6 +17,7 @@ export const NetworkPanel: React.FC = () => {
   const config = useNetworkStore((s) => s.config);
   const status = useNetworkStore((s) => s.status);
   const bases = useNetworkStore((s) => s.bases);
+  const lanPeers = useNetworkStore((s) => s.lanPeers);
   const targets = useNetworkStore((s) => s.targets);
   const error = useNetworkStore((s) => s.error);
   const loadConfig = useNetworkStore((s) => s.loadConfig);
@@ -23,6 +25,7 @@ export const NetworkPanel: React.FC = () => {
   const fetchStatus = useNetworkStore((s) => s.fetchStatus);
   const fetchBases = useNetworkStore((s) => s.fetchBases);
   const fetchTargets = useNetworkStore((s) => s.fetchTargets);
+  const fetchLanPeers = useNetworkStore((s) => s.fetchLanPeers);
   const sendTarget = useNetworkStore((s) => s.sendTarget);
   const offerReconPackage = useNetworkStore((s) => s.offerReconPackage);
   const acceptReconPackage = useNetworkStore((s) => s.acceptReconPackage);
@@ -31,6 +34,7 @@ export const NetworkPanel: React.FC = () => {
   const [hubPin, setHubPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [localErr, setLocalErr] = useState<string | null>(null);
+  const [lanErr, setLanErr] = useState<string | null>(null);
   const [reconJobId, setReconJobId] = useState('');
   const [reconKinds, setReconKinds] = useState<Record<string, boolean>>({
     sparse: true,
@@ -53,9 +57,11 @@ export const NetworkPanel: React.FC = () => {
     void fetchStatus();
     void fetchBases();
     void fetchTargets();
+    void fetchLanPeers();
     const t = window.setInterval(() => {
       void fetchBases();
       void fetchTargets();
+      void fetchLanPeers();
     }, 8000);
     const st = window.setInterval(() => {
       void fetchStatus();
@@ -64,13 +70,14 @@ export const NetworkPanel: React.FC = () => {
       window.clearInterval(t);
       window.clearInterval(st);
     };
-  }, [isAuthenticated, loadConfig, fetchStatus, fetchBases, fetchTargets]);
+  }, [isAuthenticated, loadConfig, fetchStatus, fetchBases, fetchTargets, fetchLanPeers]);
 
   const refreshAll = () => {
     void loadConfig();
     void fetchStatus();
     void fetchBases();
     void fetchTargets();
+    void fetchLanPeers();
   };
 
   const persist = async () => {
@@ -290,6 +297,39 @@ export const NetworkPanel: React.FC = () => {
             </label>
           )}
           {canEditConfig && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[var(--dv-text-muted)] text-[11px]">
+                LAN-бикон (обнаружение баз)
+              </span>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(draft.lan_beacon_enabled)}
+                  disabled={!canEditConfig}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, lan_beacon_enabled: e.target.checked }))
+                  }
+                  className="accent-[var(--dv-accent)]"
+                />
+                <span className="text-[11px]">Вкл</span>
+              </label>
+            </div>
+          )}
+          {canEditConfig && draft.lan_beacon_enabled && (
+            <label className="block space-y-1">
+              <span className="text-[var(--dv-text-muted)]">Порт бикона</span>
+              <input
+                type="number"
+                className="w-full bg-[var(--dv-bg-deep)] border border-[var(--dv-border)] px-2 py-1 rounded-sm"
+                disabled={!canEditConfig}
+                value={draft.lan_beacon_port ?? 8001}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, lan_beacon_port: Number(e.target.value) || 8001 }))
+                }
+              />
+            </label>
+          )}
+          {canEditConfig && (
             <button
               type="button"
               disabled={busy}
@@ -380,6 +420,43 @@ export const NetworkPanel: React.FC = () => {
               </span>
             </div>
           ))}
+        </section>
+
+        <section className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-wider text-[var(--dv-text-muted)]">
+            Найдено в LAN
+          </div>
+          {lanPeers.length === 0 && (
+            <div className="text-[var(--dv-text-muted)]">Пока нет пиров</div>
+          )}
+          {lanPeers.map((p: NetworkBeaconPeer) => (
+            <div
+              key={p.base_id}
+              className="flex justify-between gap-2 border border-[var(--dv-border)] rounded-sm px-2 py-1 bg-[var(--dv-bg-deep)] items-center"
+            >
+              <span className="truncate flex-1">
+                {p.base_name || p.base_id} · {p.ip}:{p.port}
+              </span>
+              <button
+                type="button"
+                disabled={busy || config.mode === 'off'}
+                className="text-[10px] px-2 py-0.5 rounded-sm bg-[#2e2e2e] disabled:opacity-40 whitespace-nowrap"
+                onClick={() => {
+                  setDraft((d) => ({
+                    ...d,
+                    server_ip: p.ip,
+                    port: p.port || 8000,
+                    base_name: p.base_name || d.base_name,
+                  }));
+                  setLanErr(null);
+                }}
+                title="Предзаполнить настройки"
+              >
+                Предзаполнить
+              </button>
+            </div>
+          ))}
+          {lanErr && <div className="text-amber-300 text-[10px]">{lanErr}</div>}
         </section>
 
         <section className="space-y-1.5">

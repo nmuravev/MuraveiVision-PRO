@@ -260,6 +260,10 @@ def init_db() -> None:
                 conn.execute("ALTER TABLE network_config ADD COLUMN hub_pin TEXT")
             if "base_id" not in network_config_cols:
                 conn.execute("ALTER TABLE network_config ADD COLUMN base_id TEXT")
+            if "lan_beacon_enabled" not in network_config_cols:
+                conn.execute("ALTER TABLE network_config ADD COLUMN lan_beacon_enabled TEXT DEFAULT '0'")
+            if "lan_beacon_port" not in network_config_cols:
+                conn.execute("ALTER TABLE network_config ADD COLUMN lan_beacon_port INTEGER DEFAULT 8001")
             override_cols = {
                 r[1] for r in conn.execute("PRAGMA table_info(class_overrides)").fetchall()
             }

@@ -16,6 +16,8 @@ export interface NetworkConfig {
   base_name: string;
   base_id?: string;
   has_hub_pin?: boolean;
+  lan_beacon_enabled?: boolean;
+  lan_beacon_port?: number;
 }
 
 export interface NetworkStatus {
@@ -29,6 +31,17 @@ export interface NetworkStatus {
   sync_interval_sec?: number;
   ws_peer?: 'connected' | 'down' | string;
   ws_peer_last_error?: string | null;
+  lan_beacon_enabled?: boolean;
+  lan_beacon_port?: number;
+  lan_beacon_peers?: number;
+}
+
+export interface NetworkBeaconPeer {
+  base_id: string;
+  base_name: string;
+  ip: string;
+  port: number;
+  ts: number;
 }
 
 export interface NetworkBase {
@@ -68,6 +81,7 @@ interface NetworkState {
   status: NetworkStatus | null;
   bases: NetworkBase[];
   targets: NetworkTarget[];
+  lanPeers: NetworkBeaconPeer[];
   messages: NetworkMessage[];
   unreadCount: number;
   lastChatSeenAt: number;
@@ -77,6 +91,7 @@ interface NetworkState {
   fetchStatus: () => Promise<void>;
   fetchBases: () => Promise<void>;
   fetchTargets: () => Promise<void>;
+  fetchLanPeers: () => Promise<void>;
   fetchMessages: () => Promise<void>;
   refreshUnread: () => Promise<void>;
   markChatSeen: () => void;
@@ -149,6 +164,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   status: null,
   bases: [],
   targets: [],
+  lanPeers: [],
   messages: [],
   unreadCount: 0,
   lastChatSeenAt: readLastSeen(),
@@ -167,6 +183,8 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
           base_name: data.base_name || 'База-1',
           base_id: data.base_id || '',
           has_hub_pin: Boolean(data.has_hub_pin),
+          lan_beacon_enabled: Boolean(data.lan_beacon_enabled),
+          lan_beacon_port: Number(data.lan_beacon_port) || 8001,
         },
         error: null,
       });
@@ -185,6 +203,8 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       server_ip: next.server_ip,
       port: next.port,
       base_name: next.base_name,
+      lan_beacon_enabled: next.lan_beacon_enabled ?? false,
+      lan_beacon_port: next.lan_beacon_port ?? 8001,
     };
     if (hub_pin && hub_pin.trim()) body.hub_pin = hub_pin.trim();
     const res = await fetch('/api/network/config', {
@@ -202,6 +222,8 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
         base_name: data.base_name,
         base_id: data.base_id || next.base_id,
         has_hub_pin: Boolean(data.has_hub_pin),
+        lan_beacon_enabled: Boolean(data.lan_beacon_enabled),
+        lan_beacon_port: Number(data.lan_beacon_port) || 8001,
       },
     });
     logger.info('network', `Режим сети: ${data.mode}`);
@@ -223,6 +245,9 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
         sync_interval_sec: data.sync_interval_sec,
         ws_peer: data.ws_peer || 'down',
         ws_peer_last_error: data.ws_peer_last_error ?? null,
+        lan_beacon_enabled: Boolean(data.lan_beacon_enabled),
+        lan_beacon_port: Number(data.lan_beacon_port) || 8001,
+        lan_beacon_peers: Number(data.lan_beacon_peers) || 0,
       },
     });
   },
@@ -318,6 +343,13 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     if (!res.ok) return;
     const data = await res.json();
     set({ targets: Array.isArray(data.targets) ? data.targets : [] });
+  },
+
+  fetchLanPeers: async () => {
+    const res = await fetch('/api/network/beacon/peers', { headers: authHeaders() });
+    if (!res.ok) return;
+    const data = await res.json();
+    set({ lanPeers: Array.isArray(data.peers) ? data.peers : [] });
   },
 
   fetchMessages: async () => {

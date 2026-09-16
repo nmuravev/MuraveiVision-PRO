@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-16
 - **Branch:** `main`
-- **Commit:** (N4 tip)
+- **Commit:** ef65c67
 - **Unit tests:** 373 (+3 recon package)
 - **Status:** N1–N3 on main; N4 recon package share
 - **Last updated by:** feat(network): recon package share

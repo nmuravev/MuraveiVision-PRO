@@ -740,6 +740,9 @@ def status_dict() -> dict[str, Any]:
             if worker is not None and cfg.get("mode") == "client"
             else None
         ),
+        # N5: beacon status
+        "lan_beacon_enabled": bool(cfg.get("lan_beacon_enabled", False)),
+        "lan_beacon_port": int(cfg.get("lan_beacon_port", 8001)),
     }
 
 
