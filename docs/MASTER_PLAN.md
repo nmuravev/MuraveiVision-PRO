@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-16
 - **Branch:** `feature/da3-verify-20260916` (ff-merge → `main` pending gates)
-- **Commit:** 125bf39810dae03b8cd03ea0ba0653288d2a1da7
+- **Commit:** 6b7c9364f3c9627f775f7fb3e6e20d7ddd19540e
 - **Unit tests:** 359 (discover OK)
 - **Status:** DA3 all-variants seeded (base/large/metric/giant), NC compliance in place; Dense=DA3 / Mesh=AV opt-in; verify PASS base/large/metric, giant GATE_SKIPPED (VRAM&lt;16)
 - **Last updated by:** feat(recon): DA3 inference API + all-variants verify + AV Mesh demotion
