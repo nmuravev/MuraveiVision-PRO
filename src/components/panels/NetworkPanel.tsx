@@ -24,11 +24,22 @@ export const NetworkPanel: React.FC = () => {
   const fetchBases = useNetworkStore((s) => s.fetchBases);
   const fetchTargets = useNetworkStore((s) => s.fetchTargets);
   const sendTarget = useNetworkStore((s) => s.sendTarget);
+  const offerReconPackage = useNetworkStore((s) => s.offerReconPackage);
+  const acceptReconPackage = useNetworkStore((s) => s.acceptReconPackage);
 
   const [draft, setDraft] = useState(config);
   const [hubPin, setHubPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [localErr, setLocalErr] = useState<string | null>(null);
+  const [reconJobId, setReconJobId] = useState('');
+  const [reconKinds, setReconKinds] = useState<Record<string, boolean>>({
+    sparse: true,
+    dense: true,
+    mesh: false,
+    splat: false,
+  });
+  const [acceptPkgId, setAcceptPkgId] = useState('');
+  const [reconProgress, setReconProgress] = useState<string | null>(null);
 
   const canEditConfig = userRole === 'engineer' || userRole === 'master';
 
@@ -132,6 +143,56 @@ export const NetworkPanel: React.FC = () => {
       await sendTarget(payload);
     } catch (e) {
       setLocalErr(e instanceof Error ? e.message : 'Ошибка');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onOfferRecon = async () => {
+    const jid = reconJobId.trim().replace(/\s+/g, '');
+    if (!jid) {
+      setLocalErr('Укажите job_id (12 hex)');
+      return;
+    }
+    const kinds = Object.entries(reconKinds)
+      .filter(([, on]) => on)
+      .map(([k]) => k);
+    if (!kinds.length) {
+      setLocalErr('Выберите хотя бы один артефакт');
+      return;
+    }
+    setBusy(true);
+    setLocalErr(null);
+    setReconProgress('Создание пакета…');
+    try {
+      await offerReconPackage(jid, kinds);
+      setReconProgress('Пакет предложен (см. Чат)');
+    } catch (e) {
+      setLocalErr(e instanceof Error ? e.message : 'Ошибка');
+      setReconProgress(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onAcceptRecon = async () => {
+    const pid = acceptPkgId.trim().toLowerCase();
+    if (!pid) {
+      setLocalErr('Укажите package id из чата (recon_package:…)');
+      return;
+    }
+    const kinds = Object.entries(reconKinds)
+      .filter(([, on]) => on)
+      .map(([k]) => k);
+    setBusy(true);
+    setLocalErr(null);
+    setReconProgress('Приём пакета…');
+    try {
+      const out = await acceptReconPackage(pid, kinds.length ? kinds : ['sparse', 'dense', 'mesh', 'splat']);
+      setReconProgress(`Готово → archive/recon/${out.job_id} (${out.unpacked.join(', ') || '—'})`);
+    } catch (e) {
+      setLocalErr(e instanceof Error ? e.message : 'Ошибка приёма');
+      setReconProgress(null);
     } finally {
       setBusy(false);
     }
@@ -319,6 +380,62 @@ export const NetworkPanel: React.FC = () => {
               </span>
             </div>
           ))}
+        </section>
+
+        <section className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-wider text-[var(--dv-text-muted)]">
+            Пакет 3D (recon)
+          </div>
+          <div className="border border-[var(--dv-border)] rounded-sm px-2 py-1.5 bg-[var(--dv-bg-deep)] space-y-1.5">
+            <input
+              className="w-full bg-[var(--dv-panel)] border border-[var(--dv-border)] px-2 py-1 rounded-sm"
+              placeholder="job_id (12 hex)"
+              value={reconJobId}
+              disabled={config.mode === 'off'}
+              onChange={(e) => setReconJobId(e.target.value)}
+            />
+            <div className="flex flex-wrap gap-2">
+              {(['sparse', 'dense', 'mesh', 'splat'] as const).map((k) => (
+                <label key={k} className="flex items-center gap-1 text-[10px]">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(reconKinds[k])}
+                    disabled={config.mode === 'off'}
+                    onChange={(e) =>
+                      setReconKinds((prev) => ({ ...prev, [k]: e.target.checked }))
+                    }
+                  />
+                  {k}
+                </label>
+              ))}
+            </div>
+            <button
+              type="button"
+              disabled={busy || config.mode === 'off'}
+              className="w-full py-1 rounded-sm bg-[#2e2e2e] disabled:opacity-40"
+              onClick={() => void onOfferRecon()}
+            >
+              Предложить пакет
+            </button>
+            <input
+              className="w-full bg-[var(--dv-panel)] border border-[var(--dv-border)] px-2 py-1 rounded-sm"
+              placeholder="package id для приёма"
+              value={acceptPkgId}
+              disabled={config.mode === 'off'}
+              onChange={(e) => setAcceptPkgId(e.target.value)}
+            />
+            <button
+              type="button"
+              disabled={busy || config.mode === 'off'}
+              className="w-full py-1 rounded-sm bg-[#2e2e2e] disabled:opacity-40"
+              onClick={() => void onAcceptRecon()}
+            >
+              Принять / докачать
+            </button>
+            {reconProgress && (
+              <div className="text-[10px] text-emerald-400/90 break-words">{reconProgress}</div>
+            )}
+          </div>
         </section>
 
         <section className="space-y-1.5">

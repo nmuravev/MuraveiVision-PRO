@@ -66,7 +66,7 @@
 - **Single-worker uvicorn:** chat browser/peer registries in-memory per process — do not run multi-worker uvicorn for hub WS relay (see [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md)).
 - Hub-and-spoke only; no mesh (LAN beacon = N5 opt-in).
 - Crop **bytes** in chat: **N2** chunked `/api/network/attachments` (≤8 MiB, sha256); WS carries `attachment_id` only. Target `crop_path` string-only remains.
-- Job/recon package share = N4 (was deferred to locked v3.3).
+- Job/recon package share = **N4** chunked sparse/dense/mesh/splat + disk preflight + resume.
 
 ## AliceVision / Dense-Mesh (v3.2 branch)
 

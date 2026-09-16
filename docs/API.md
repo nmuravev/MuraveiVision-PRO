@@ -333,6 +333,12 @@ System (engineer+):
 | GET | `/attachments/{id}` | operator+ | meta |
 | GET | `/attachments/{id}/chunks/{index}` | operator+ | байты чанка (sync) |
 | GET | `/attachments/{id}/bytes` | operator+ | готовый blob (`?token=` для `<img>`) |
+| GET | `/recon-packages/offerable/{job_id}` | operator+ | доступные артефакты job |
+| POST | `/recon-packages` | operator+ | offer: `{job_id, artifacts[]}` → package + chat `recon_package:<id>` |
+| POST | `/recon-packages/accept` | operator+ | init receive + disk preflight (507 если мало места) |
+| GET | `/recon-packages/{id}` | operator+ | manifest |
+| PUT/GET | `/recon-packages/{id}/artifacts/{kind}/chunks/{i}` | operator+ | чанки |
+| POST | `…/finalize` · `…/unpack` · `…/pull` | operator+ | sha verify · unpack · client pull+resume |
 
 Цели несут GPS и `source_video`. `crop_path` — путь; **байты кропа/скрина в чате** — через `/attachments` (WS несёт только `attachment_id`). Messages: `synced_at` / TTL 24 ч; upsert newer-wins.
 

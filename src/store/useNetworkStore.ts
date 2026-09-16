@@ -91,6 +91,11 @@ interface NetworkState {
   }) => Promise<void>;
   sendMessage: (body: string, attachmentId?: string) => Promise<void>;
   sendAttachment: (file: File, caption?: string) => Promise<void>;
+  offerReconPackage: (jobId: string, artifacts: string[]) => Promise<void>;
+  acceptReconPackage: (
+    packageId: string,
+    selected: string[],
+  ) => Promise<{ job_id: string; unpacked: string[] }>;
   connectChatSocket: () => void;
   disconnectChatSocket: () => void;
   mergeChatMessage: (msg: NetworkMessage) => void;
@@ -441,5 +446,41 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     }
     const text = (caption || '').trim() || file.name || 'вложение';
     await get().sendMessage(text, aid);
+  },
+
+  offerReconPackage: async (jobId, artifacts) => {
+    const res = await fetch('/api/network/recon-packages', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ job_id: jobId, artifacts }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(typeof data.detail === 'string' ? data.detail : 'Ошибка пакета 3D');
+    }
+    if (data.message?.id) get().mergeChatMessage(data.message as NetworkMessage);
+    logger.info('network', `Пакет 3D предложен: ${jobId}`);
+  },
+
+  acceptReconPackage: async (packageId, selected) => {
+    const res = await fetch(
+      `/api/network/recon-packages/${encodeURIComponent(packageId)}/pull`,
+      {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ selected }),
+      },
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(
+        typeof data.detail === 'string' ? data.detail : 'Не удалось принять пакет 3D',
+      );
+    }
+    logger.info('network', `Пакет 3D принят: ${data.job_id || packageId}`);
+    return {
+      job_id: String(data.job_id || ''),
+      unpacked: Array.isArray(data.unpacked) ? data.unpacked : selected,
+    };
   },
 }));

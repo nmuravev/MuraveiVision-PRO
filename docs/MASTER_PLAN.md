@@ -4,10 +4,10 @@
 
 - **Snapshot date:** 2026-09-16
 - **Branch:** `main`
-- **Commit:** e85ada8
-- **Unit tests:** 370 (+3 chat_refs)
-- **Status:** N1–N2 on main; N3 detection refs in chat
-- **Last updated by:** feat(network): detection refs in chat
+- **Commit:** (N4 tip)
+- **Unit tests:** 373 (+3 recon package)
+- **Status:** N1–N3 on main; N4 recon package share
+- **Last updated by:** feat(network): recon package share
 - **Portable size bands (OPERATOR-SANCTIONED 2026-09-16):** Mini warn&gt;4.5 / reject&gt;5; FullKit no-DA3 warn&gt;9.5 / reject&gt;10; FullKit+DA3 (base+large+metric+**giant**) warn&gt;18 / reject&gt;22. Giant stays for heterogeneous fleets (grey on VRAM&lt;16 GB).
 - **Portable local (P-C 2026-09-16):** Mini 3.67 GB sha256 `A40E1CD3…EF2F`; FullKit+DA3 win_cpu 13.07 GB sha256 `41B6FEE9…1772` (within 18/22). Mini ZIP DA3 bins=0; Full stage 4× safetensors + NOTICE.
 - **DA3 depth stats (in-memory, job 44aa6e50):** base median=21.65 std=2.88; large median=22.22 std=1.68; metric median=21.74 std=3.16 — models differ

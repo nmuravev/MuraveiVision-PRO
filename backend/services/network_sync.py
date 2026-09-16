@@ -14,6 +14,7 @@ import websockets
 from services import chat_ws
 from services import network as net
 from services import network_attachments as nattach
+from services import network_recon_share as nrecon
 
 SYNC_INTERVAL_SEC = 15.0
 HTTP_TIMEOUT_SEC = 10.0
@@ -256,6 +257,112 @@ class NetworkSyncWorker:
             nattach.finalize_attachment(aid)
         except ValueError as exc:
             print(f"[NETWORK] attachment pull finalize failed id={aid}: {exc}")
+            return False
+        return True
+
+    async def push_recon_package(self, package_id: str) -> bool:
+        man = nrecon.read_manifest(package_id)
+        if man is None or not man.get("complete"):
+            return False
+        # Hub stores offer meta by POSTing accept-shaped init then chunks from sender's blobs
+        init = await self._authed_request(
+            "POST",
+            "/api/network/recon-packages/accept",
+            json={
+                "id": man.get("id"),
+                "job_id": man.get("job_id"),
+                "artifacts": man.get("artifacts"),
+                "selected": list((man.get("artifacts") or {}).keys()),
+                "source_base": man.get("source_base") or self.base_name,
+            },
+            timeout=30.0,
+        )
+        if init is None or init.status_code >= 400:
+            # If hub already has package, GET and skip
+            chk = await self._authed_request("GET", f"/api/network/recon-packages/{package_id}")
+            if chk is None or chk.status_code >= 400:
+                return False
+            remote = (chk.json() or {}).get("package") or {}
+            if remote.get("complete"):
+                return True
+        for kind, art in (man.get("artifacts") or {}).items():
+            if not isinstance(art, dict):
+                continue
+            total = int(art.get("total_chunks") or 0)
+            for i in range(total):
+                raw = nrecon.read_chunk_bytes(package_id, kind, i)
+                put = await self._authed_request(
+                    "PUT",
+                    f"/api/network/recon-packages/{package_id}/artifacts/{kind}/chunks/{i}",
+                    content=raw,
+                    content_type="application/octet-stream",
+                    timeout=120.0,
+                )
+                if put is None or put.status_code >= 400:
+                    return False
+            fin = await self._authed_request(
+                "POST",
+                f"/api/network/recon-packages/{package_id}/artifacts/{kind}/finalize",
+                json={},
+                timeout=60.0,
+            )
+            if fin is None or fin.status_code >= 400:
+                return False
+        return True
+
+    async def pull_recon_package(self, package_id: str, selected: list[str] | None = None) -> bool:
+        pid = (package_id or "").strip()
+        if not pid:
+            return False
+        local = nrecon.read_manifest(pid)
+        if local and local.get("complete"):
+            return True
+        resp = await self._authed_request("GET", f"/api/network/recon-packages/{pid}")
+        if resp is None or resp.status_code >= 400:
+            return False
+        remote = (resp.json() or {}).get("package") or {}
+        arts = remote.get("artifacts") or {}
+        kinds = selected or list(arts.keys())
+        if not local:
+            try:
+                nrecon.init_receive(
+                    package_id=pid,
+                    job_id=str(remote.get("job_id") or ""),
+                    artifacts=arts,
+                    selected=kinds,
+                    source_base=remote.get("source_base"),
+                )
+            except (OSError, ValueError) as exc:
+                print(f"[NETWORK] recon pull init failed: {exc}")
+                return False
+        for kind in kinds:
+            art = arts.get(kind)
+            if not isinstance(art, dict):
+                continue
+            while True:
+                nxt = nrecon.next_missing_chunk(pid, kind)
+                if nxt is None:
+                    break
+                chunk = await self._authed_request(
+                    "GET",
+                    f"/api/network/recon-packages/{pid}/artifacts/{kind}/chunks/{nxt}",
+                    timeout=120.0,
+                )
+                if chunk is None or chunk.status_code >= 400:
+                    return False
+                try:
+                    nrecon.put_chunk(pid, kind, nxt, chunk.content)
+                except ValueError:
+                    return False
+            try:
+                nrecon.finalize_artifact(pid, kind)
+            except ValueError as exc:
+                print(f"[NETWORK] recon finalize {kind}: {exc}")
+                return False
+        try:
+            nrecon.unpack_to_recon(pid)
+        except (ValueError, FileNotFoundError) as exc:
+            print(f"[NETWORK] recon unpack failed: {exc}")
             return False
         return True
 
