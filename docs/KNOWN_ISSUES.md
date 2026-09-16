@@ -59,12 +59,13 @@
 - **wrong_service:** если :11434 отвечает не Ollama (другой AI-стек) — RU подсказка про `MURAVEI_OLLAMA_URL`.
 - Ollama остаётся **опциональной** — отсутствие не блокирует детект/ recon.
 
-## Network / chat (v3.2)
+## Network / chat (v3.2 → v3.3 in progress)
 
-- Chat latency **10–30 s** (REST worker tick ~15 s) — not WebSocket realtime (v3.3).
-- Hub-and-spoke only; no mesh.
-- Crop **bytes** not replicated (`crop_path` string only).
-- Job/recon package share deferred to v3.3.
+- **Lock retired** by operator decision **2026-09-16**: `feature/network-chat-v3.3` deleted (zero unique commits vs main); realtime scope lands in main via N1–N6 (no long-lived locked branch).
+- Chat latency **10–30 s** (REST worker tick ~15 s) until WS realtime (N1) lands — not yet WebSocket.
+- Hub-and-spoke only; no mesh (LAN beacon = N5 opt-in).
+- Crop **bytes** not replicated yet (`crop_path` string only; attachments = N2).
+- Job/recon package share = N4 (was deferred to locked v3.3).
 
 ## AliceVision / Dense-Mesh (v3.2 branch)
 

@@ -11,8 +11,9 @@
 - Quick train + backup finetune CUDA → `yolo26n-ft.pt`  
 - Ollama proxy, HTML-отчёт, portable Lite  
 - Force-load ft, smoke LBS
-- **v3.2 recon (branch only):** COLMAP multi-model best sparse (`points3D` primary), AliceVision Dense/Mesh, Windows CPU+DirectML / `win_cpu` pack — на `feature/alicevision-v3.2`, **не смержено в main**. См. [ALICEVISION.md](ALICEVISION.md), [SPEC_FIELD_MACBOOK.md](SPEC_FIELD_MACBOOK.md).
+- **v3.2 recon (historical branch name):** COLMAP multi-model best sparse + AliceVision Mesh-only opt-in already on **main** via DA3/P8 era (`alicevision_enabled`); Dense = DA3. Branch `feature/alicevision-v3.2` is not a pending merge target. См. [ALICEVISION.md](ALICEVISION.md), [RECON_3D.md](RECON_3D.md).
 - **v3.4 DA3 Dense Backend (DONE on main):** all-variants `da3_dense_base` / `large` / `metric` / `giant` (≥16 GB gate); NC NOTICE; Dense=DA3 default; AliceVision Mesh-only opt-in (`alicevision_enabled`). See [RECON_3D.md](RECON_3D.md), [ALICEVISION.md](ALICEVISION.md).
+- **v3.3 network realtime (UNLOCKED 2026-09-16):** lock on `feature/network-chat-v3.3` **retired** (branch deleted; zero unique commits). Scope lands in main via short phases N1–N6 (WS chat, attachments, refs, package share, LAN beacon). No long-lived locked branches.
 
 ## P0 — операторский конвейер
 

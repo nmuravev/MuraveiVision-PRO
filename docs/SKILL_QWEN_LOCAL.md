@@ -30,7 +30,7 @@ Python 3.12 + FastAPI; Vite/React/TS; YOLO26 + SAM3 + SAHI + ORT; COLMAP/AliceVi
 3. Логи только в `logs/`
 4. Pack hygiene (см. PORTABLE_GUIDE)
 5. GitHub = changelog only
-6. v3.3 Phases 1–8 LOCKED
+6. v3.3 lock RETIRED (2026-09-16) — scope in main via N1–N6; no long-lived locks
 
 ## Карта файлов
 

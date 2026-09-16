@@ -55,7 +55,7 @@ not conversation vocabulary — keep them in code, use neutral terms in prose.
 3. **Logs single home.** All logs under `logs/` (or `MURAVEI_LOG_DIR`).
 4. **Pack hygiene.** Forbidden in ZIP: `ollama/`, `node_modules/`, `.git/`, `runs/detect` >50 MB, `*.part`/`*.tmp`, archive media.
 5. **GitHub = changelog only.** No binary/pack uploads. Packs live under `portable/`.
-6. **v3.3 Phases 1–8 LOCKED.** Do not merge `feature/network-chat-v3.3` until unlock.
+6. **v3.3 lock RETIRED (2026-09-16).** `feature/network-chat-v3.3` deleted; realtime scope lands in main via N1–N6. No long-lived locked branches.
 
 ## File Map
 
@@ -83,4 +83,4 @@ not conversation vocabulary — keep them in code, use neutral terms in prose.
 - ❌ Bundle Ollama in pack
 - ❌ Download COCO s/m/l weights
 - ❌ Touch operator `archive/`, `config/local/`, `wheels/`, `sidecars/` roots
-- ❌ Merge locked v3.3 branch / upload packs to GitHub
+- ❌ Upload packs/binaries to GitHub Releases (changelog only)
