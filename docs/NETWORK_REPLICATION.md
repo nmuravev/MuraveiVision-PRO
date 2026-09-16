@@ -12,11 +12,30 @@ Topology: one **hub** (`mode=server`) and one or more **clients** (`mode=client`
 | **Recon packages** | client ↔ hub | chunked REST (≤1 GiB/artifact) | sparse/dense/mesh/splat; disk preflight; resume by chunk; unpack → `archive/recon/<job>/` |
 | **Heartbeat / bases** | client → hub | REST | advertises **real LAN IPv4** (`MURAVEI_NETWORK_ADVERTISE_IP` override) |
 
+## LAN Beacon (N5 — opt-in discovery)
+
+| Property | Value |
+|----------|-------|
+| Protocol | UDP broadcast |
+| Address | `255.255.255.255` (subnet-directed broadcast) |
+| Port | `8001` (configurable via `lan_beacon_port`) |
+| Interval | 2 s |
+| TTL prune | 6 s (3×interval) |
+| Payload | `{ "base_id", "base_name", "port", "ts" }` — **no secrets** |
+| Toggle | `lan_beacon_enabled` in `network_config` (default `0`) |
+| Never on boot | Beacon starts only if `lan_beacon_enabled=1` |
+| Security | Beacon never grants access; only REST/WS with JWT authorize |
+| Discovery | Received beacons call `net.heartbeat()` to register peer in `network_bases` |
+| Status API | `GET /api/network/status` → `lan_beacon_enabled`, `lan_beacon_port`, `lan_beacon_peers` |
+| Peers API | `GET /api/network/beacon/peers` → list of discovered peers with `base_id`, `base_name`, `ip`, `port`, `ts` |
+
+**UI:** NetworkPanel toggle "LAN Beacon" + section "Найдено в LAN" with one-click prefill `server_ip`/`port`.
+
+**Operator note:** Windows Firewall may block UDP broadcast — ensure inbound/outbound UDP 8001 is allowed on trusted LANs.
+
 ## What does **not** sync (yet)
 
 - Target `crop_path` **bytes** (path string only; chat attachments are separate)
-- Full archive videos / frames (N4 shares selected recon artifacts only)
-- Automatic LAN discovery beacons (N5)
 - End-to-end encryption (LAN + JWT only)
 
 ## Operator UI
