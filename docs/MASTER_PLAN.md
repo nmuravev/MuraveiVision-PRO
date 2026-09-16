@@ -3,12 +3,13 @@
 ## Meta
 
 - **Snapshot date:** 2026-09-16
-- **Branch:** `feature/da3-verify-20260916` (ff-merge → `main` pending gates)
-- **Commit:** 51cea728019cf0419189c5934caf856478027d9f
+- **Branch:** `feature/order-audit-20260916`
+- **Commit:** (tip after mission docs)
 - **Unit tests:** 359 (discover OK)
-- **Status:** DA3 all-variants seeded (base/large/metric/giant), NC compliance in place; Dense=DA3 / Mesh=AV opt-in; verify PASS base/large/metric, giant GATE_SKIPPED (VRAM&lt;16)
-- **Last updated by:** feat(recon): DA3 inference API + all-variants verify + AV Mesh demotion
-- **Portable local:** Mini 3.67 GB / FullKit+DA3 band ~12–18 GB (reject &gt;22); DA3 sidecar optional FullKit-only; Mini NEVER
+- **Status:** Order-audit in progress; DA3 all-variants + AV Mesh demotion on main; size bands OPERATOR-SANCTIONED 2026-09-16
+- **Last updated by:** docs(portable): operator-sanctioned size bands + giant rationale
+- **Portable size bands (OPERATOR-SANCTIONED 2026-09-16):** Mini warn&gt;4.5 / reject&gt;5; FullKit no-DA3 warn&gt;9.5 / reject&gt;10; FullKit+DA3 (base+large+metric+**giant**) warn&gt;18 / reject&gt;22. Giant stays for heterogeneous fleets (grey on VRAM&lt;16 GB).
+- **Portable local:** Mini / FullKit+DA3 shas after P-C rebuild
 - **Env pack:** win_cuda / win_cpu — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
 - **E6 additions:** `timm` + `safetensors`; `ci_full.ps1` (E6 + DA3 A/B); CRLF/LF launcher guards; SAM3 load cap ≤60s; validator `reject_ratio`
 - **DA3:** `sidecars.da3` SSO in portable_manifest (real sha256); HF `config_*.json` + `inference()` path; `DA3_RUNTIME_UNAVAILABLE` fail-closed (no ones*2.0); NOTICE_CC-BY-NC-4.0 for LARGE/GIANT

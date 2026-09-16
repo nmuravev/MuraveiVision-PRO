@@ -16,11 +16,11 @@ Scripts: `bootstrap_portable.ps1` / `.sh`, `portable_manifest.json`, `setup_env.
 
 ## Contents table (detect out-of-box contract)
 
-| | **Mini** (~3.5–4.5 GB, warn &gt;4.5, reject &gt;5) | **FullKit** (~7.5–9 GB without DA3; **~12–18 GB** with all DA3 variants, reject &gt;22) |
+| | **Mini** (OPERATOR-SANCTIONED: warn&gt;4.5 / reject&gt;5) | **FullKit** (no DA3: warn&gt;9.5 / reject&gt;10; **+DA3 all 4 incl. giant:** warn&gt;18 / reject&gt;22) |
 |--|--|--|
 | Offline stack | tactical YOLO26 (ladder **l-ft &gt; m-ft &gt; s-ft &gt; n-ft &gt; n**) + **SAHI default ON** + **sam3.pt** exactly once | same weights policy + larger tactical weights when present in `assets/models` |
 | Runtime | CPU torch + onnxruntime-directml | CUDA torch cu128 (+ CPU fallback) |
-| 3D | — | COLMAP + optional **DA3** Dense (`sidecars/da3` + NOTICE for NC) + optional **AliceVision Mesh** (`-IncludeAliceVision`) |
+| 3D | — | COLMAP + optional **DA3** Dense (`sidecars/da3` + NOTICE for NC; giant grey on VRAM&lt;16) + optional **AliceVision Mesh** (`-IncludeAliceVision`) |
 | Ollama | **НЕ в комплекте** | **НЕ в комплекте** |
 | KIT marker | pack-root `KIT` = `mini` | `KIT` = `full` |
 | Badge | `Сборка: Mini · класс: … (tier N)` | `Сборка: Full · класс: … (tier N)` |

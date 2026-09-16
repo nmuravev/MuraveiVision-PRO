@@ -8,13 +8,22 @@
   - Embeddable Python 3.12.10 + dist/backend
   - tactical YOLO26 *.pt (copy-only) + exactly one sam3.pt
   - torch CPU + onnxruntime-directml
-  - ZIP: portable\MuraveiVision_PRO_Mini.zip (~3.5–4.5 GB with SAM3)
+  - ZIP: portable\MuraveiVision_PRO_Mini.zip
+  - Size band (OPERATOR-SANCTIONED 2026-09-16): warn >4.5 GB, reject >5 GB
+  - DA3 NEVER bundled (Assert-PackInventory). -NoDA3 is explicit intent only;
+    real gate = Mini has zero da3 bins.
   - Ollama NOT bundled (system-optional)
 
   FullKit (-FullKit):
-  - same weights + sam3 + sidecars (COLMAP/gsplat/AliceVision)
+  - same weights + sam3 + sidecars (COLMAP/gsplat/AliceVision Mesh opt-in)
+  - optional DA3 Dense sidecar (all 4 variants when staged under sidecars/da3)
+  - Giant STAYS in FullKit+DA3 (heterogeneous fleet: grey on VRAM<16 GB via
+    RU disabled_reason; works from pack on >=16 GB hosts)
   - torch CUDA cu128 by default (-TorchFlavor cpu → CPU)
-  - ZIP: portable\MuraveiVision_PRO_FullKit.zip
+  - ZIP: portable\MuraveiVision_PRO_FullKit.zip (or _win_cpu)
+  - Size bands (OPERATOR-SANCTIONED 2026-09-16):
+      FullKit without DA3: warn >9.5 GB, reject >10 GB
+      FullKit + DA3 (base+large+metric+giant): warn >18 GB, reject >22 GB
   - Ollama NOT bundled
 
   Lite (no -Mini/-FullKit): legacy Portable.zip with same weight rules.
@@ -22,6 +31,8 @@
 
   Never download detect weights at build time (tactical .pt copy-only).
   Torch profile: Mini/Lite → CPU; FullKit → CUDA unless -TorchFlavor cpu.
+  PROTECT: never purge portable/cache, wheels, sidecars, archive, config/local,
+  muravei_env. Purge only portable/stage_* and *.locked_* at build start.
 #>
 param(
   [switch]$SkipNpmBuild,
@@ -1049,16 +1060,18 @@ if (-not $SkipZip) {
         Where-Object { $_.Extension -match '\.(safetensors|pt)$' }).Count
     }
     if ($da3WeightCount -gt 0) {
-      # DA3 all-variants (base+large+metric+giant) ≈ +8.5 GB compressed poorly → higher band
+      # OPERATOR-SANCTIONED 2026-09-16: FullKit+DA3 (all 4 incl. giant) warn>18 reject>22
       if ($zipGb -gt 22) { throw "FULLKIT+DA3 SIZE ASSERT FAILED: ZIP is $zipGb GB (>22). Reject." }
-      if ($zipGb -gt 18) { Write-Host "WARNING: FullKit+DA3 ZIP is $zipGb GB (band ~12–18 GB with all DA3 variants)" -ForegroundColor Yellow }
+      if ($zipGb -gt 18) { Write-Host "WARNING: FullKit+DA3 ZIP is $zipGb GB (sanctioned band warn>18 / reject>22)" -ForegroundColor Yellow }
     } else {
+      # OPERATOR-SANCTIONED 2026-09-16: FullKit without DA3 warn>9.5 reject>10
       if ($zipGb -gt 10) { throw "FULLKIT SIZE ASSERT FAILED: ZIP is $zipGb GB (>10). Reject." }
-      if ($zipGb -gt 9.5) { Write-Host "WARNING: FullKit ZIP is $zipGb GB (band ~7.5–9 GB)" -ForegroundColor Yellow }
+      if ($zipGb -gt 9.5) { Write-Host "WARNING: FullKit ZIP is $zipGb GB (sanctioned band warn>9.5 / reject>10)" -ForegroundColor Yellow }
     }
   } elseif ($Mini -or $KitMarker -eq "mini") {
+    # OPERATOR-SANCTIONED 2026-09-16: Mini warn>4.5 reject>5
     if ($zipGb -gt 5) { throw "MINI SIZE ASSERT FAILED: ZIP is $zipGb GB (>5). Reject." }
-    if ($zipGb -gt 4.5) { Write-Host "WARNING: Mini ZIP is $zipGb GB (band ~3.5–4.5 GB)" -ForegroundColor Yellow }
+    if ($zipGb -gt 4.5) { Write-Host "WARNING: Mini ZIP is $zipGb GB (sanctioned band warn>4.5 / reject>5)" -ForegroundColor Yellow }
   }
 }
 
