@@ -110,6 +110,17 @@ print(','.join(ort.get_available_providers()))
 import onnx, onnxslim, ultralytics, sahi, timm, safetensors
 print('OK')
 "@
+  if ($Label -eq "Full" -or $Label -eq "FullCpu") {
+    $code = @"
+import importlib.metadata as m, onnxruntime as ort, sys
+print(m.version('onnx'), m.version('onnxslim'), m.version('timm'))
+print(','.join(ort.get_available_providers()))
+import onnx, onnxslim, ultralytics, sahi, timm, safetensors
+import depth_anything_3
+print('OK')
+print('DA3_IMPORT_OK')
+"@
+  }
   $prevEap = $ErrorActionPreference
   $ErrorActionPreference = "Continue"
   $rawInv = & $py -c $code 2>&1
@@ -117,6 +128,9 @@ print('OK')
   $out = ($rawInv | ForEach-Object { if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.ToString() } else { "$_" } }) -join "`n"
   if ($LASTEXITCODE -ne 0 -or ($out -notmatch "OK")) {
     return "inventory imports failed: $out"
+  }
+  if (($Label -eq "Full" -or $Label -eq "FullCpu") -and ($out -notmatch "DA3_IMPORT_OK")) {
+    return "inventory: depth_anything_3 missing in Full kit (would 503 DA3_RUNTIME_UNAVAILABLE)"
   }
   if (($Label -eq "Mini" -or $Label -eq "FullCpu") -and ($out -notmatch "DmlExecutionProvider")) {
     return "inventory: DmlExecutionProvider missing for Mini/CPU kit: $out"

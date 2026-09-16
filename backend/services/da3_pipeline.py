@@ -525,6 +525,8 @@ def run_da3_pipeline(
     frames_dir = job_dir / "frames"
     all_fused_points: list[np.ndarray] = []
     all_fused_colors: list[np.ndarray] = []
+    depth_medians: list[float] = []
+    depth_stds: list[float] = []
 
     _notify("da3_depth", f"DA3 инференс карт глубин (всего {total_frames} ракурсов)...", 0.1, frames_total=total_frames)
 
@@ -555,6 +557,15 @@ def run_da3_pipeline(
         intr = fmeta.get("intrinsics") or {"fx": 1000.0, "fy": 1000.0, "cx": orig_w / 2.0, "cy": orig_h / 2.0}
 
         aligned_depth = _align_depth_scale(raw_depth, sparse_points, R, t, intr)
+
+        # In-memory depth stats (N2: before Q4 cleanup; no .npy kept by default)
+        try:
+            finite = aligned_depth[np.isfinite(aligned_depth)]
+            if finite.size > 0:
+                depth_medians.append(float(np.median(finite)))
+                depth_stds.append(float(np.std(finite)))
+        except Exception:
+            pass
 
         # Save temporary depth array for potential debug / inspect
         depth_file = depths_dir / f"{Path(img_name).stem}.npy"
@@ -638,6 +649,8 @@ def run_da3_pipeline(
         "dense_ply": "dense.ply",
         "points_count": len(final_points),
         "dense_backend": f"da3_{variant}",
+        "depth_median": float(np.median(depth_medians)) if depth_medians else None,
+        "depth_std": float(np.mean(depth_stds)) if depth_stds else None,
         "warning": None,
     }
 

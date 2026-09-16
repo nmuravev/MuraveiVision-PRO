@@ -171,6 +171,10 @@ def verify_variant(variant: str, job_src: Path) -> dict[str, Any]:
             row["verdict"] = "FAIL_EMPTY"
             return row
 
+        # In-memory depth differentiation (from pipeline; no .npy kept)
+        row["depth_median"] = res.get("depth_median")
+        row["depth_std"] = res.get("depth_std")
+
         man = json.loads((job_dir / "manifest.json").read_text(encoding="utf-8"))
         backend = man.get("dense_backend") or ""
         if f"da3_{variant}" not in str(backend):
