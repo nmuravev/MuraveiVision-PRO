@@ -4,7 +4,7 @@
 
 - **Snapshot date:** 2026-09-16
 - **Branch:** `main`
-- **Commit:** (N3 tip)
+- **Commit:** e85ada8
 - **Unit tests:** 370 (+3 chat_refs)
 - **Status:** N1–N2 on main; N3 detection refs in chat
 - **Last updated by:** feat(network): detection refs in chat
