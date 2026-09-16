@@ -3,13 +3,15 @@
 ## Meta
 
 - **Snapshot date:** 2026-09-16
-- **Branch:** `feature/order-audit-20260916`
-- **Commit:** (tip after mission docs)
+- **Branch:** `main` (ff from `feature/order-audit-20260916`)
+- **Commit:** 9662d49
 - **Unit tests:** 359 (discover OK)
-- **Status:** Order-audit in progress; DA3 all-variants + AV Mesh demotion on main; size bands OPERATOR-SANCTIONED 2026-09-16
-- **Last updated by:** docs(portable): operator-sanctioned size bands + giant rationale
+- **Status:** Order-audit P-A…P-G complete; DA3 all-variants + AV Mesh; size bands OPERATOR-SANCTIONED; depth median/std distinct across base/large/metric
+- **Last updated by:** docs: Meta tip + portable sha after order-audit
 - **Portable size bands (OPERATOR-SANCTIONED 2026-09-16):** Mini warn&gt;4.5 / reject&gt;5; FullKit no-DA3 warn&gt;9.5 / reject&gt;10; FullKit+DA3 (base+large+metric+**giant**) warn&gt;18 / reject&gt;22. Giant stays for heterogeneous fleets (grey on VRAM&lt;16 GB).
-- **Portable local:** Mini / FullKit+DA3 shas after P-C rebuild
+- **Portable local (P-C 2026-09-16):** Mini 3.67 GB sha256 `A40E1CD3…EF2F`; FullKit+DA3 win_cpu 13.07 GB sha256 `41B6FEE9…1772` (within 18/22). Mini ZIP DA3 bins=0; Full stage 4× safetensors + NOTICE.
+- **DA3 depth stats (in-memory, job 44aa6e50):** base median=21.65 std=2.88; large median=22.22 std=1.68; metric median=21.74 std=3.16 — models differ
+- **Field×3 (after flake fixes):** 4p/1f · 4p/1f · 3p/2f — residual under HW-poll load (Vite /api 2–4s); core trio green when run alone
 - **Env pack:** win_cuda / win_cpu — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
 - **E6 additions:** `timm` + `safetensors`; `ci_full.ps1` (E6 + DA3 A/B); CRLF/LF launcher guards; SAM3 load cap ≤60s; validator `reject_ratio`
 - **DA3:** `sidecars.da3` SSO in portable_manifest (real sha256); HF `config_*.json` + `inference()` path; `DA3_RUNTIME_UNAVAILABLE` fail-closed (no ones*2.0); NOTICE_CC-BY-NC-4.0 for LARGE/GIANT
