@@ -1671,12 +1671,12 @@ export const Flight3D: React.FC = () => {
             <div className="absolute inset-x-0 bottom-3 z-20 flex justify-center pointer-events-none px-2">
               <div className="pointer-events-auto w-[min(440px,94%)] rounded-sm border border-amber-500/60 bg-black/90 px-3 py-2 text-[11px] text-amber-50 shadow-lg">
                 <div className="font-semibold text-amber-200">
-                  AliceVision готов · Sparse COLMAP
+                  Sparse COLMAP готов
                   {sparsePoints ? ` (${Math.floor(sparsePoints.length / 3)} точек)` : ''}
                 </div>
                 <div className="mt-1 text-[var(--dv-text-muted)] text-[10px] leading-snug">
-                  Это облако точек COLMAP, не AliceVision и не splat. Дальше: Dense / Mesh
-                  (AliceVision) или Splat (gsplat ≈ 5–10 мин → model.ply).
+                  Это облако точек COLMAP. Дальше: Dense (DA3) / Mesh (AliceVision, opt-in) или Splat
+                  (gsplat ≈ 5–10 мин → model.ply).
                 </div>
                 <div className="mt-2 flex flex-col gap-1.5">
                   <div className="flex items-center justify-between gap-1 text-[11px] bg-black/40 px-1.5 py-1 rounded border border-[var(--dv-border)]">
