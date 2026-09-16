@@ -7,14 +7,14 @@ Topology: one **hub** (`mode=server`) and one or more **clients** (`mode=client`
 | Object | Direction | Transport | Notes |
 |--------|-----------|-----------|--------|
 | **Targets** (`network_targets`) | client ↔ hub | REST worker tick (~15 s) | class, confidence, GPS, notes, `source_video`, `crop_path` **string only** |
-| **Chat messages** (`network_messages`) | client ↔ hub | same worker tick after targets | text body + sender; `synced_at` / `?since=` cursor |
+| **Chat messages** (`network_messages`) | client ↔ hub | REST worker tick (~15 s) **+ WS acceleration** | text body + sender; `synced_at` / `?since=` cursor; local browser `/ws/chat`; client backend **peer WS** to hub |
 | **Heartbeat / bases** | client → hub | REST | advertises **real LAN IPv4** (`MURAVEI_NETWORK_ADVERTISE_IP` override) |
 
 ## What does **not** sync (v3.2)
 
 - Crop / screenshot **bytes** (`crop_path` is a path; remote file may be missing)
 - Archive videos, recon **jobs**, sparse/mesh/splat packages
-- WebSocket realtime chat (deferred to v3.3)
+- ~~WebSocket realtime chat~~ — **N1:** local browser WS + hub peer relay (REST tick = fallback)
 - Automatic LAN discovery beacons (deferred to v3.3)
 - End-to-end encryption (LAN + JWT only)
 
@@ -30,4 +30,4 @@ See [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md#сеть-баз). Expect message round
 
 ## Latency
 
-Hub-and-spoke REST reconciler: typically **10–30 s**, not realtime. Offline compose leaves `synced_at=NULL` until the next successful push.
+**Realtime path:** browser WS always to **local** backend; client-mode backend opens outbound peer WS to hub. **Fallback:** hub-and-spoke REST reconciler **10–30 s** when `ws_peer=down`. Offline compose leaves `synced_at=NULL` until the next successful push.

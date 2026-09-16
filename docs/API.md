@@ -319,7 +319,7 @@ System (engineer+):
 |-------|------|------|----------|
 | GET | `/config` | operator+ | `mode`, `server_ip`, `port`, `base_name`, `base_id`, `has_hub_pin`. Значение PIN **не** возвращается |
 | POST | `/config` | engineer+ | Тело: `mode`, `server_ip`, `port`, `base_name`; опционально `hub_pin` (write-only) |
-| GET | `/status` | operator+ | + `advertise_ip`, `sync_interval_sec`, `hub_reachable`, `worker_alive` |
+| GET | `/status` | operator+ | + `advertise_ip`, `sync_interval_sec`, `hub_reachable`, `worker_alive`, `ws_peer` (`connected` \| `down`, client mode), `ws_peer_last_error` |
 | GET | `/bases` | operator+ | реестр heartbeat (ожидается LAN IP клиента) |
 | POST | `/heartbeat` | operator+ | `{base_id, base_name, ip}` |
 | GET | `/targets` | operator+ | TTL 24 ч; `?since=<epoch>` |
@@ -329,6 +329,15 @@ System (engineer+):
 | GET | `/messages/unread` | operator+ | `{count}` входящих с `created_at > since` |
 
 Цели несут GPS и `source_video`. `crop_path` — путь, байты кропа не гоняются. Messages: `synced_at` / TTL 24 ч; upsert newer-wins.
+
+### WebSocket — `/ws/chat`
+
+| WS | Query | Роль | Описание |
+|----|-------|------|----------|
+| `/ws/chat` | `token=<JWT>` | operator+ | **Браузер → только локальный backend.** Push `{type:"chat.message", message:{id,created_at,direction,sender,body}}` после локального SQLite insert и после ingest worker pull. Ping `{type:"ping"}` → `{type:"pong"}`. |
+| `/ws/chat` | `token=<JWT>&peer=1` | operator+ | **Backend peer → hub** (`mode=server` only). После `peer.hello` hub ретранслирует `chat.message` в browser registry + другим peer. JWT обязателен; без operator+ — close 4401. |
+
+REST worker (~15 s) остаётся источником истины и offline-compose fallback; WS — ускорение, dedup по UUID сообщения.
 
 ## Events — `/api/events`
 

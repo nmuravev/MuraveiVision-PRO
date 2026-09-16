@@ -1,6 +1,11 @@
 import { create } from 'zustand';
-import { authHeaders } from './useMuraveiStore';
+import { authHeaders, authToken } from './useMuraveiStore';
 import { logger } from '../services/logger';
+
+const CHAT_WS_BACKOFF_MAX_MS = 60_000;
+let chatWsSocket: WebSocket | null = null;
+let chatWsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let chatWsBackoffMs = 1000;
 
 const CHAT_SEEN_KEY = 'muravei_chat_last_seen_at';
 
@@ -22,6 +27,8 @@ export interface NetworkStatus {
   worker_alive: boolean;
   advertise_ip?: string;
   sync_interval_sec?: number;
+  ws_peer?: 'connected' | 'down' | string;
+  ws_peer_last_error?: string | null;
 }
 
 export interface NetworkBase {
@@ -82,6 +89,23 @@ interface NetworkState {
     gps_lon?: number | null;
   }) => Promise<void>;
   sendMessage: (body: string) => Promise<void>;
+  connectChatSocket: () => void;
+  disconnectChatSocket: () => void;
+  mergeChatMessage: (msg: NetworkMessage) => void;
+}
+
+function chatWsLocalUrl(): string {
+  const token = authToken();
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${window.location.host}/ws/chat?token=${encodeURIComponent(token)}`;
+}
+
+function mergeMessagesList(
+  existing: NetworkMessage[],
+  msg: NetworkMessage,
+): NetworkMessage[] {
+  if (existing.some((m) => m.id === msg.id)) return existing;
+  return [...existing, msg];
 }
 
 function readLastSeen(): number {
@@ -178,8 +202,89 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
         worker_alive: Boolean(data.worker_alive),
         advertise_ip: data.advertise_ip || '',
         sync_interval_sec: data.sync_interval_sec,
+        ws_peer: data.ws_peer || 'down',
+        ws_peer_last_error: data.ws_peer_last_error ?? null,
       },
     });
+  },
+
+  mergeChatMessage: (msg) => {
+    const since = get().lastChatSeenAt;
+    set((state) => ({
+      messages: mergeMessagesList(state.messages, msg),
+      unreadCount:
+        msg.direction === 'in' && Number(msg.created_at) > since
+          ? state.unreadCount + 1
+          : state.unreadCount,
+    }));
+  },
+
+  disconnectChatSocket: () => {
+    if (chatWsReconnectTimer != null) {
+      clearTimeout(chatWsReconnectTimer);
+      chatWsReconnectTimer = null;
+    }
+    chatWsBackoffMs = 1000;
+    if (chatWsSocket) {
+      chatWsSocket.onclose = null;
+      chatWsSocket.close();
+      chatWsSocket = null;
+    }
+  },
+
+  connectChatSocket: () => {
+    const { config } = get();
+    if (config.mode === 'off' || !authToken()) {
+      get().disconnectChatSocket();
+      return;
+    }
+    if (
+      chatWsSocket &&
+      (chatWsSocket.readyState === WebSocket.OPEN ||
+        chatWsSocket.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
+    get().disconnectChatSocket();
+    const url = chatWsLocalUrl();
+    try {
+      const ws = new WebSocket(url);
+      chatWsSocket = ws;
+      ws.onopen = () => {
+        chatWsBackoffMs = 1000;
+        logger.debug('network', 'Chat WS connected (local)');
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(String(ev.data)) as {
+            type?: string;
+            message?: NetworkMessage;
+          };
+          if (data.type === 'chat.message' && data.message?.id) {
+            get().mergeChatMessage(data.message);
+          }
+        } catch {
+          /* ignore malformed */
+        }
+      };
+      ws.onclose = () => {
+        chatWsSocket = null;
+        const mode = get().config.mode;
+        if (mode === 'off' || !authToken()) return;
+        const jitter = Math.floor(Math.random() * 500);
+        const delay = Math.min(CHAT_WS_BACKOFF_MAX_MS, chatWsBackoffMs) + jitter;
+        chatWsBackoffMs = Math.min(CHAT_WS_BACKOFF_MAX_MS, chatWsBackoffMs * 2);
+        chatWsReconnectTimer = setTimeout(() => {
+          chatWsReconnectTimer = null;
+          get().connectChatSocket();
+        }, delay);
+      };
+      ws.onerror = () => {
+        /* onclose handles reconnect */
+      };
+    } catch (e) {
+      logger.warn('network', e instanceof Error ? e.message : 'Chat WS failed');
+    }
   },
 
   fetchBases: async () => {
@@ -252,6 +357,10 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Ошибка сообщения');
-    await get().fetchMessages();
+    if (data.message?.id) {
+      get().mergeChatMessage(data.message as NetworkMessage);
+    } else {
+      await get().fetchMessages();
+    }
   },
 }));

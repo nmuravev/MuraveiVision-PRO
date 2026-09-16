@@ -95,8 +95,30 @@ function App() {
 
   const activeTab = MODE_TO_TAB[workspaceMode] ?? 'Монтаж';
   const chatUnread = useNetworkStore((s) => s.unreadCount);
+  const networkMode = useNetworkStore((s) => s.config.mode);
   const isAuthenticated = useMuraveiStore((s) => s.isAuthenticated);
+  const loadNetworkConfig = useNetworkStore((s) => s.loadConfig);
   const refreshUnread = useNetworkStore((s) => s.refreshUnread);
+  const connectChatSocket = useNetworkStore((s) => s.connectChatSocket);
+  const disconnectChatSocket = useNetworkStore((s) => s.disconnectChatSocket);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void loadNetworkConfig();
+  }, [isAuthenticated, loadNetworkConfig]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      disconnectChatSocket();
+      return;
+    }
+    if (networkMode === 'off') {
+      disconnectChatSocket();
+    } else {
+      connectChatSocket();
+    }
+    return () => disconnectChatSocket();
+  }, [isAuthenticated, networkMode, connectChatSocket, disconnectChatSocket]);
 
   useEffect(() => {
     if (!isAuthenticated) return;

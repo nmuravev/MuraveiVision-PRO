@@ -73,7 +73,9 @@ SYSTEM → Сеть (`mode` off / server / client):
 - **client** — фоновый worker каждые ~**15 с**: login JWT по `hub_pin`, heartbeat (LAN IPv4), push/pull targets, push/pull **messages**.
 - PIN хаба в UI write-only (пустое поле при сохранении не стирает уже записанный).
 - Цели несут `source_video` и GPS. TTL 24 ч. Чат — отдельное окно ViewId `chat`. См. [NETWORK_REPLICATION.md](NETWORK_REPLICATION.md).
-- Статус: `GET /api/network/status` — `hub_reachable`, `advertise_ip`, `last_sync_ts`, `last_error`, `worker_alive`.
+- Статус: `GET /api/network/status` — `hub_reachable`, `advertise_ip`, `last_sync_ts`, `last_error`, `worker_alive`, **`ws_peer`** / `ws_peer_last_error` (client: backend peer WS к хабу).
+- **Чат realtime:** браузер подключает WS только к **локальному** origin (`/ws/chat?token=`); cross-base — outbound **peer WS** client-mode backend → hub (`peer=1`). REST tick — fallback.
+- **Uvicorn:** для hub WS relay держите **один worker** (`uvicorn …` без `--workers N` >1): registries in-memory per process.
 
 Один backend не доказывает репликацию. Ручной тест — **две копии папки** (у каждой свой `muravei.db`):
 

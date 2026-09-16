@@ -62,7 +62,8 @@
 ## Network / chat (v3.2 → v3.3 in progress)
 
 - **Lock retired** by operator decision **2026-09-16**: `feature/network-chat-v3.3` deleted (zero unique commits vs main); realtime scope lands in main via N1–N6 (no long-lived locked branch).
-- Chat latency **10–30 s** (REST worker tick ~15 s) until WS realtime (N1) lands — not yet WebSocket.
+- Chat **realtime via local `/ws/chat`** when network `mode≠off`; cross-base acceleration uses **backend peer WS** to hub (`ws_peer` in `/api/network/status`). REST tick (~15 s) remains fallback if WS down.
+- **Single-worker uvicorn:** chat browser/peer registries in-memory per process — do not run multi-worker uvicorn for hub WS relay (see [ENGINEER_GUIDE.md](ENGINEER_GUIDE.md)).
 - Hub-and-spoke only; no mesh (LAN beacon = N5 opt-in).
 - Crop **bytes** not replicated yet (`crop_path` string only; attachments = N2).
 - Job/recon package share = N4 (was deferred to locked v3.3).

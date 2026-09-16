@@ -262,6 +262,21 @@ export const NetworkPanel: React.FC = () => {
                 {status?.worker_alive ? 'alive' : '—'}
               </span>
             </div>
+            {config.mode === 'client' && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[var(--dv-text-muted)]" title="Ускорение чата до хаба (REST — запасной путь)">
+                  WS peer
+                </span>
+                <span
+                  className={
+                    status?.ws_peer === 'connected' ? 'text-emerald-400' : 'text-amber-500/90'
+                  }
+                  title={status?.ws_peer_last_error || undefined}
+                >
+                  {status?.ws_peer === 'connected' ? 'connected' : 'down'}
+                </span>
+              </div>
+            )}
             <div className="text-[10px] text-[var(--dv-text-muted)]">
               Последняя синхронизация:{' '}
               {status?.last_sync_ts

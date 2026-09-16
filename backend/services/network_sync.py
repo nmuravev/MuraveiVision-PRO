@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import random
 import time
 from typing import Any
 
 import httpx
 import jwt
+import websockets
 
+from services import chat_ws
 from services import network as net
 
 SYNC_INTERVAL_SEC = 15.0
@@ -47,6 +51,10 @@ class NetworkSyncWorker:
         self.running: bool = False
         self.lock: asyncio.Lock = asyncio.Lock()
         self.task: asyncio.Task[None] | None = None
+        self.ws_peer: str = "down"
+        self.ws_peer_last_error: str | None = None
+        self._peer_ws: Any = None
+        self._peer_backoff: float = 1.0
 
     def _hub_base(self) -> str:
         ip = (self.server_ip or "127.0.0.1").strip()
@@ -321,9 +329,116 @@ class NetworkSyncWorker:
                 expires_at=item.get("expires_at"),
             )
             upserted += 1
+            row = net.get_message(mid)
+            if row is not None:
+                await chat_ws.emit_chat_message(row)
         if newest is not None:
             self.message_cursor = newest
         return upserted
+
+    async def relay_message_to_hub(self, row: dict[str, Any]) -> None:
+        ws = self._peer_ws
+        if ws is None or self.ws_peer != "connected":
+            return
+        payload = json.dumps(
+            {"type": "chat.message", "message": chat_ws.public_message(row)},
+        )
+        try:
+            await ws.send(payload)
+        except Exception as exc:  # noqa: BLE001
+            self.ws_peer = "down"
+            self.ws_peer_last_error = str(exc)
+
+    async def _handle_hub_chat_frame(self, text: str) -> None:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(data, dict) or data.get("type") != "chat.message":
+            return
+        raw = data.get("message")
+        if not isinstance(raw, dict):
+            return
+        sender = str(raw.get("sender") or "").strip()
+        if self._is_self_source(sender):
+            return
+        mid = str(raw.get("id") or "").strip()
+        body = str(raw.get("body") or "").strip()
+        if not mid or not body:
+            return
+        created = raw.get("created_at")
+        net.upsert_message(
+            message_id=mid,
+            sender=sender or "База",
+            body=body,
+            created_at=float(created) if created is not None else None,
+        )
+        got = net.get_message(mid)
+        if got is not None:
+            await chat_ws.emit_chat_message(got)
+
+    async def _peer_backoff_sleep(self) -> None:
+        delay = min(60.0, self._peer_backoff) + random.uniform(0, 0.5)
+        await asyncio.sleep(delay)
+        self._peer_backoff = min(60.0, self._peer_backoff * 2)
+
+    async def run_chat_peer(self) -> None:
+        self._peer_backoff = 1.0
+        print("[NETWORK] chat peer loop started")
+        try:
+            while self.running:
+                cfg = self._reload_identity()
+                if cfg.get("mode") != "client":
+                    self.ws_peer = "down"
+                    self.ws_peer_last_error = None
+                    self._peer_ws = None
+                    await asyncio.sleep(2.0)
+                    continue
+                if not await self.login_to_hub():
+                    self.ws_peer = "down"
+                    self.ws_peer_last_error = self.last_error
+                    await self._peer_backoff_sleep()
+                    continue
+                ip = (self.server_ip or "127.0.0.1").strip()
+                port = int(self.port)
+                token = self.hub_token or ""
+                url = f"ws://{ip}:{port}/ws/chat?token={token}&peer=1"
+                try:
+                    async with websockets.connect(
+                        url,
+                        open_timeout=HTTP_TIMEOUT_SEC,
+                        close_timeout=5,
+                    ) as ws:
+                        self._peer_ws = ws
+                        self.ws_peer = "connected"
+                        self.ws_peer_last_error = None
+                        self._peer_backoff = 1.0
+                        await ws.send(
+                            json.dumps(
+                                {
+                                    "type": "peer.hello",
+                                    "base_id": self.base_id,
+                                    "base_name": self.base_name,
+                                }
+                            )
+                        )
+                        async for raw in ws:
+                            await self._handle_hub_chat_frame(str(raw))
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    self.ws_peer = "down"
+                    self.ws_peer_last_error = str(exc)
+                    print(f"[NETWORK] chat peer WS down: {exc}")
+                    await self._peer_backoff_sleep()
+                finally:
+                    self._peer_ws = None
+        except asyncio.CancelledError:
+            print("[NETWORK] chat peer loop cancelled")
+            raise
+        finally:
+            self._peer_ws = None
+            self.ws_peer = "down"
 
     async def sync_tick(self) -> None:
         try:
@@ -371,6 +486,7 @@ class NetworkSyncWorker:
 
 _worker: NetworkSyncWorker | None = None
 _task: asyncio.Task[None] | None = None
+_peer_task: asyncio.Task[None] | None = None
 
 
 def get_worker() -> NetworkSyncWorker | None:
@@ -393,21 +509,40 @@ def status_dict() -> dict[str, Any]:
         "worker_alive": worker_alive(),
         "advertise_ip": (worker.advertise_ip if worker else "") or net.resolve_lan_ipv4(),
         "sync_interval_sec": SYNC_INTERVAL_SEC,
+        "ws_peer": (
+            worker.ws_peer
+            if worker is not None and cfg.get("mode") == "client"
+            else "down"
+        ),
+        "ws_peer_last_error": (
+            worker.ws_peer_last_error
+            if worker is not None and cfg.get("mode") == "client"
+            else None
+        ),
     }
 
 
 def start_network_worker() -> NetworkSyncWorker:
-    global _worker, _task
+    global _worker, _task, _peer_task
     _worker = NetworkSyncWorker()
+    _worker.running = True
     _task = asyncio.create_task(_worker.run(), name="network-sync")
     _worker.task = _task
+    _peer_task = asyncio.create_task(_worker.run_chat_peer(), name="network-chat-peer")
     return _worker
 
 
 async def stop_network_worker() -> None:
-    global _worker, _task
+    global _worker, _task, _peer_task
     if _worker is not None:
         _worker.stop()
+    if _peer_task is not None:
+        _peer_task.cancel()
+        try:
+            await _peer_task
+        except asyncio.CancelledError:
+            pass
+        _peer_task = None
     if _task is not None:
         _task.cancel()
         try:

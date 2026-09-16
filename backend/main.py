@@ -239,6 +239,7 @@ def _register_routers() -> None:
     from api.models import router as models_router
     from api.system import router as system_router
     from api.network import router as network_router
+    from api.ws_chat import router as ws_chat_router
     from api.queue import router as queue_router
     from api.live import router as live_router
     from api.classes_api import router as classes_router
@@ -266,6 +267,7 @@ def _register_routers() -> None:
     app.include_router(models_router)
     app.include_router(system_router)
     app.include_router(network_router)
+    app.include_router(ws_chat_router)
     app.include_router(queue_router)
     app.include_router(live_router)
     app.include_router(classes_router)

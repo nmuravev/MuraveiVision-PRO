@@ -1,12 +1,15 @@
 """Network API: config, bases, targets, chat."""
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from services import chat_ws
 from services import network as net
+from services.network_sync import get_worker
 from services.security import require_role
 
 router = APIRouter(prefix="/api/network", tags=["network"])
@@ -142,6 +145,12 @@ async def post_message(
         message_id=body.id,
         created_at=body.created_at,
     )
+    relay_peers = cfg.get("mode") == "server"
+    await chat_ws.emit_chat_message(msg, relay_peers=relay_peers)
+    worker = get_worker()
+    if worker is not None and cfg.get("mode") == "client":
+        asyncio.create_task(worker.push_local_messages())
+        asyncio.create_task(worker.relay_message_to_hub(msg))
     return {"ok": True, "message": msg}
 
 
