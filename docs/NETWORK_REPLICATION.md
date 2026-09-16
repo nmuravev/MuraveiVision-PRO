@@ -12,6 +12,8 @@ Topology: one **hub** (`mode=server`) and one or more **clients** (`mode=client`
 | **Recon packages** | client ↔ hub | chunked REST (≤1 GiB/artifact) | sparse/dense/mesh/splat; disk preflight; resume by chunk; unpack → `archive/recon/<job>/` |
 | **Heartbeat / bases** | client → hub | REST | advertises **real LAN IPv4** (`MURAVEI_NETWORK_ADVERTISE_IP` override) |
 
+> **N1–N5 all DONE** — verified by `dual_network_smoke.py` (12 cases, 7 REST + 5 N2–N5). Full dual smoke run deferred to V1 per operator policy.
+
 ## LAN Beacon (N5 — opt-in discovery)
 
 | Property | Value |

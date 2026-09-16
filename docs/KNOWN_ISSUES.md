@@ -17,6 +17,7 @@
 
 ## Flaky / окружение
 
+- **dual-instance beacon on one host relies on Windows SO_REUSEADDR wildcard-bind** — same port (8001) on both instances works only because Windows allows wildcard-bind with SO_REUSEADDR; different ports would break discovery (broadcast goes to own port). Acceptable for smoke/development; for production multi-instance on same host use different NICs or subnets.
 - **`ECONNRESET` на `POST /api/active-learning/collect`** при конкурентных воркерах Playwright. Mitigation: `workers: 1` в [playwright.config.ts](../playwright.config.ts) (уже выставлено). При ручном запуске нескольких тест-наборов против одного backend — возможен reset; перезапустите backend.
 - **SAHI `pip check` warning**: `sahi 0.12.6` декларирует `opencv-python>=4.12.0.88` (имя non-headless пакета), но установлен `opencv-python-headless`. `cv2` предоставляется headless-сборкой, runtime работает. Benign — можно игнорировать.
 
