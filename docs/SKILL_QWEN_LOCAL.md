@@ -52,4 +52,4 @@ Python 3.12 + FastAPI; Vite/React/TS; YOLO26 + SAM3 + SAHI + ORT; COLMAP/AliceVi
 
 ## Антипаттерны
 
-- ❌ pip в backend · абсолютные пути · Ollama в паке · COCO downloads · merge locked v3.3 · бинари на GitHub · `@codebase` без нужды
+- ❌ pip в backend · абсолютные пути · Ollama в паке · COCO downloads · бинари на GitHub · `@codebase` без нужды

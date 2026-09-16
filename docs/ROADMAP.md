@@ -82,7 +82,7 @@
 |---|-----|--------|-----------|---------|
 | 1 | Perf | Profiling batch seg / propagate / dual-viewer на edge GPU | P2 | Полевой smoke + метрики ms/VRAM |
 | 2 | Export | GeoTIFF/KML масок batch/propagate | по запросу | Не блокирует Phase 3 |
-| 3 | Merge | Merge `feature/alicevision-v3.2` → main после явного OK | P2 | Dense + CPU/AMD track |
+| 3 | AV | AliceVision Mesh-only already on main (`alicevision_enabled`); no separate v3.2 branch merge | done | Dense = DA3 |
 | 4 | — | Новые фичи | по запросу пользователя | Placeholder |
 
 Чеклисты: [TODO.md](TODO.md).
