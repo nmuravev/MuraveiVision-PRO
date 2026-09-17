@@ -1,3 +1,0 @@
-chore: cleanup temp files and sync docs
-
-Remove .tmp_* files from tree, sync AGENTS.md, ROADMAP.md, plan.md.
