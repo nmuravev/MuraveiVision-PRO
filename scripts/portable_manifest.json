@@ -163,14 +163,14 @@
       "note": "DA3 inference API; install --no-deps + antlr4/omegaconf/einops/evo/moviepy (see DEPLOYMENT.md)"
     },
     "rasterio": {
-      "file": "rasterio-1.5.1-cp312-cp312-win_amd64.whl",
-      "sha256": "6fbafe970d44ec06179c7884cdb160a90311e3d19da25bff970fab06123f0201",
+      "file": "rasterio-1.4.3-cp312-cp312-win_amd64.whl",
+      "sha256": "a962ad4c29feaf38b1d7a94389313127de3646a5b9b734fbf9a04e16051a27ff",
       "dest_relative": "portable/cache/wheels",
       "profiles": [
         "full",
         "mini"
       ],
-      "note": "GeoTIFF export support (GDAL bundled). numpy<2.0 compatible. Seeded 2026-09-17."
+      "note": "GeoTIFF export (GDAL bundled). numpy<2 compatible. 1.5.1 rejected (numpy>=2); 1.4.3 seeded 2026-09-17 (verdict A). 1.5.1 stays as ORPHAN (add-only)."
     }
   },
   "notes": "URLs + sha256 live ONLY here (Z1). Never hardcode download URLs in .py/.ps1 logic."
