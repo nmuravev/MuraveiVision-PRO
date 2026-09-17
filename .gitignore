@@ -134,3 +134,11 @@ MuraveiVision-Pro-*/
 archive/.test_cache/
 backend/tests/.cache/
 
+# AI agent directories and temp scripts
+.agents/
+.claude/
+.gigacode_vsc/
+.tmp_*.ps1
+.tmp_*.sh
+skills-lock.json
+

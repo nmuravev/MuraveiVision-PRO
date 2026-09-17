@@ -74,6 +74,12 @@
 
 Инфраструктура сессии: Playwright E2E (`4aa75af`), error catalog (`7a30f1d`).
 
+## B1–B3 (v3.5 backlog — DONE)
+
+- **B1. Perf table** — **DONE** (`848ae44`): ms/VRAM budget table @ 8GB in CONFIGURATION.md + KNOWN_ISSUES.md
+- **B2. Mask export** — **DONE** (`c908d01`): GeoTIFF (rasterio) + KML masks with GPS gate; 14 unit tests
+- **B3. Full-video SAM3 propagate** — **DONE** (`<COMMIT_HASH>`): chunked windows ≤30, stride=25, overlap=5, dedup, VRAM guard, abort per-frame/chunk, OOM handling, persist to SQLite
+
 Ретроспектива: [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md). Sprint notes: [PHASE4_RETRO.md](PHASE4_RETRO.md).
 
 ## Future / Backlog
