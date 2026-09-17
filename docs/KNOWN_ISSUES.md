@@ -2,6 +2,20 @@
 
 Актуальный список. Запланированные работы — [TODO.md](TODO.md).
 
+## U1 (2026-09-17) — Controlled dependency upgrade
+
+- **ultralytics:** 8.4.118 → 8.4.154 ✅ upgraded
+- **sahi:** 0.12.6 → 0.11.36 ⚠️ downgraded (opencv-python 4.11 compatibility)
+- **opencv-python:** 4.11.0.86 → 4.11.0 (installed, no-deps from cache)
+- **opencv-python-headless:** 4.11.0.86 → 4.11.0 (installed, no-deps from cache)
+- **numpy:** 1.26.4 pinned (protected, ultralytics/sahi/DA3 require <2)
+- **rasterio:** 1.5.1 installed (no-deps) — conflicts with numpy<2 per pip check, but import works
+- **depth_anything_3:** 0.1.1 unchanged (open3d/pillow-heif/pre-commit/xformers installed as transitive)
+- **torch/torchvision:** 2.11.0+cu128 / 0.26.0+cu128 GUARD OK (not touched)
+- **Transitive deps accepted:** open3d, pillow-heif, pre-commit, xformers, dash, flask, ipywidgets, plotly, pydantic 2.13.5, httpx 0.28.1, pillow 12.3.0, psutil 7.2.2
+- **pip check:** only warning `rasterio 1.5.1 has requirement numpy>=2, but you have numpy 1.26.4` (non-blocking)
+- **requirements.txt:** updated to match tested set (ultralytics>=8.4.154, sahi>=0.11.0,<0.12.0, opencv-python>=4.11.0)
+
 ## Session Trace (observability)
 
 - **RESOLVED (2026-09-04): duplicate React keys on remount** — page-lifetime singleton; `sessionStorage` UUID (`muravei_session_trace_uuid`); event ids `${sessionUuid}-${seq}`; Strict Mode remount does not reset `seq`. KEEP until user says «удали session trace».

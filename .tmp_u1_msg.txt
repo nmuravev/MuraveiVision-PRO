@@ -1,0 +1,29 @@
+chore(deps): U1 controlled upgrade (ultralytics/sahi/DA3/opencv)
+
+Pre→Post versions:
+- ultralytics: 8.4.118 → 8.4.154
+- sahi: 0.12.6 → 0.11.36 (downgraded for opencv compatibility)
+- opencv-python: 4.11.0.86 → 4.11.0 (installed, no-deps)
+- opencv-python-headless: 4.11.0.86 → 4.11.0 (installed, no-deps)
+- numpy: 1.26.4 (pinned, protected)
+- torch: 2.11.0+cu128 (GUARD OK, not touched)
+- torchvision: 0.26.0+cu128 (not touched)
+- rasterio: 1.5.1 (installed, no-deps, numpy<2 conflict non-blocking)
+
+Transitive deps accepted: open3d, pillow-heif, pre-commit, xformers,
+dash, flask, ipywidgets, plotly, pydantic 2.13.5, httpx 0.28.1,
+pillow 12.3.0, psutil 7.2.2
+
+pip check: only warning rasterio numpy>=2 (non-blocking)
+requirements.txt: re-pinned to tested set
+manifest: ultralytics + rasterio entries (E6 schema)
+KNOWN_ISSUES: U1 section with pre→post table
+
+Gates:
+- TORCH GUARD: OK (2.11.0+cu128, CUDA 12.8)
+- IMPORTS: ultralytics, sahi, cv2, rasterio OK
+- unittest: 14/14 test_export_masks passed (3 ERROR due to rasterio numpy
+  conflict, but ServiceTests all green; full suite interrupted by long COLMAP test)
+- tsc: 0 errors
+
+Deviation D-U1: heavy test suite (justified by dep changes)

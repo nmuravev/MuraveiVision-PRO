@@ -125,6 +125,13 @@
       ],
       "note": "GPL/LGPL ffmpeg essentials; bake into stage assets/ffmpeg/"
     },
+    "ultralytics": {
+      "file": "ultralytics-8.4.154-py3-none-any.whl",
+      "sha256": "8c3c1678c3d67afb1af41eeedd7f74256f2d27704a3e0d570888f36c4c459532",
+      "dest_relative": "portable/cache/wheels",
+      "profiles": ["full", "mini"],
+      "note": "Tactical detection engine (YOLOv8). U1 upgrade: 8.4.118 → 8.4.154"
+    },
     "timm": {
       "url": "https://files.pythonhosted.org/packages/py3/t/timm/timm-1.0.29-py3-none-any.whl",
       "sha256": "4266486e355c9beb9432e689de580d09e2efe7fa92a9a79e76c03e7763eac724",
@@ -154,6 +161,16 @@
       ],
       "optional": true,
       "note": "DA3 inference API; install --no-deps + antlr4/omegaconf/einops/evo/moviepy (see DEPLOYMENT.md)"
+    },
+    "rasterio": {
+      "file": "rasterio-1.5.1-cp312-cp312-win_amd64.whl",
+      "sha256": "6fbafe970d44ec06179c7884cdb160a90311e3d19da25bff970fab06123f0201",
+      "dest_relative": "portable/cache/wheels",
+      "profiles": [
+        "full",
+        "mini"
+      ],
+      "note": "GeoTIFF export support (GDAL bundled). numpy<2.0 compatible. Seeded 2026-09-17."
     }
   },
   "notes": "URLs + sha256 live ONLY here (Z1). Never hardcode download URLs in .py/.ps1 logic."
