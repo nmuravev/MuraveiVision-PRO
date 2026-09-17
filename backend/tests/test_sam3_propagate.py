@@ -61,6 +61,26 @@ class Sam3PropagateTests(unittest.TestCase):
             frame[:] = (i % 50, 40, 80)
             writer.write(frame)
         writer.release()
+        # Verify moov atom: reopen and count frames; fallback to avc1 if mp4v corrupt
+        cap = cv2.VideoCapture(str(path))
+        count = 0
+        while True:
+            ok, _ = cap.read()
+            if not ok:
+                break
+            count += 1
+        cap.release()
+        if count < frames:
+            # mp4v read failed (moov atom not found / corrupt) — use avc1
+            import os
+            os.unlink(path)
+            fourcc2 = cv2.VideoWriter_fourcc(*"avc1")
+            writer2 = cv2.VideoWriter(str(path), fourcc2, fps, (w, h))
+            for i in range(frames):
+                frame = np.zeros((h, w, 3), dtype=np.uint8)
+                frame[:] = (i % 50, 40, 80)
+                writer2.write(frame)
+            writer2.release()
 
     def _wait(self, task_id: str, timeout: float = 15.0) -> dict:
         """Wait for terminal status with deadline. Never infinite-loop."""

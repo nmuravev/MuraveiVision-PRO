@@ -1,5 +1,0 @@
-docs(B3): mark P3.13.3d DONE in MASTER_PLAN + TODO
-
-MASTER_PLAN: update Meta commit to 7b046db, mark B3 as DONE.
-TODO: replace <COMMIT_HASH> with 7b046db for B3 checklist.
-References B3 commit 7b046db feat(seg): full-video SAM3 propagate.
