@@ -300,7 +300,11 @@ class Sam3PropagateTests(unittest.TestCase):
         mock_cap = mock.MagicMock()
         mock_cap.isOpened.return_value = True
         mock_cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
-        mock_cap.read.return_value = (True, np.zeros((32, 32, 3), dtype=np.uint8))
+        # side_effect: one frame then EOF — prevents infinite read loops in _seed_bboxes_norm
+        mock_cap.read.side_effect = [
+            (True, np.zeros((32, 32, 3), dtype=np.uint8)),
+            (False, None),
+        ]
         mock_cap.release.return_value = None
         with (
             mock.patch.object(prop, "get_sam3_engine", return_value=engine),
@@ -340,7 +344,11 @@ class Sam3PropagateTests(unittest.TestCase):
         mock_cap = mock.MagicMock()
         mock_cap.isOpened.return_value = True
         mock_cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
-        mock_cap.read.return_value = (True, np.zeros((32, 32, 3), dtype=np.uint8))
+        # side_effect: one frame then EOF — prevents infinite read loops in _seed_bboxes_norm
+        mock_cap.read.side_effect = [
+            (True, np.zeros((32, 32, 3), dtype=np.uint8)),
+            (False, None),
+        ]
         mock_cap.release.return_value = None
         call_count = [0]
 
@@ -386,7 +394,11 @@ class Sam3PropagateTests(unittest.TestCase):
         mock_cap = mock.MagicMock()
         mock_cap.isOpened.return_value = True
         mock_cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
-        mock_cap.read.return_value = (True, np.zeros((32, 32, 3), dtype=np.uint8))
+        # side_effect: one frame then EOF — prevents infinite read loops in _seed_bboxes_norm
+        mock_cap.read.side_effect = [
+            (True, np.zeros((32, 32, 3), dtype=np.uint8)),
+            (False, None),
+        ]
         mock_cap.release.return_value = None
         with (
             mock.patch.object(prop, "get_sam3_engine", return_value=engine),
@@ -464,7 +476,11 @@ class Sam3PropagateTests(unittest.TestCase):
         mock_cap = mock.MagicMock()
         mock_cap.isOpened.return_value = True
         mock_cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
-        mock_cap.read.return_value = (True, np.zeros((32, 32, 3), dtype=np.uint8))
+        # side_effect: one frame then EOF — prevents infinite read loops in _seed_bboxes_norm
+        mock_cap.read.side_effect = [
+            (True, np.zeros((32, 32, 3), dtype=np.uint8)),
+            (False, None),
+        ]
         mock_cap.release.return_value = None
         with (
             mock.patch.object(prop, "get_sam3_engine", return_value=engine),
@@ -504,7 +520,11 @@ class Sam3PropagateTests(unittest.TestCase):
         mock_cap = mock.MagicMock()
         mock_cap.isOpened.return_value = True
         mock_cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
-        mock_cap.read.return_value = (True, np.zeros((32, 32, 3), dtype=np.uint8))
+        # side_effect: one frame then EOF — prevents infinite read loops in _seed_bboxes_norm
+        mock_cap.read.side_effect = [
+            (True, np.zeros((32, 32, 3), dtype=np.uint8)),
+            (False, None),
+        ]
         mock_cap.release.return_value = None
         with (
             mock.patch.object(prop, "get_sam3_engine", return_value=engine),

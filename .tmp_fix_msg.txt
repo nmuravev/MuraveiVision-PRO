@@ -1,0 +1,8 @@
+fix(tests): mock cv2.VideoCapture.read with side_effect to prevent infinite loops
+
+All 5 full_video tests used mock_cap.read.return_value which returned
+a frame forever — _seed_bboxes_norm called read() in a loop and never
+hit EOF, causing the test to hang.
+
+Switched to side_effect = [frame, (False, None)] so read returns one
+valid frame then EOF, matching real video behavior.
