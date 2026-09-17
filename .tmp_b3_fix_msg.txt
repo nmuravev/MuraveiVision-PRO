@@ -1,5 +1,0 @@
-fix(seg): B3 gate fixes — mp4v fallback, temp cleanup
-
-R2: mp4v moov atom fallback to avc1 in _write_video() (test_sam3_propagate.py)
-R4: remove .tmp_b3_commit_msg.txt and .tmp_b4_docs_msg.txt from tree
-Compensates for D2 (stash fixes missing from 7b046db).
