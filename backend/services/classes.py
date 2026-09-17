@@ -4,6 +4,7 @@ Sprint 2: SQLite class_overrides merge into catalog, aliases, YOLOE prompts.
 """
 from __future__ import annotations
 
+import functools
 import json
 import re
 from typing import Any
@@ -17,6 +18,7 @@ _catalog: list[dict[str, Any]] | None = None
 _by_id: dict[int, dict[str, Any]] | None = None
 _alias_map: dict[str, str] | None = None  # alias lower → name_raw
 _disabled_ids: set[int] | None = None
+_excluded_cache: set[str] | None = None  # dynamic excluded classes cache
 
 
 def to_snake_case(name: str) -> str:
@@ -28,11 +30,13 @@ def to_snake_case(name: str) -> str:
 
 def invalidate_class_cache() -> None:
     """Drop in-memory catalog after SYSTEM dictionary edits."""
-    global _catalog, _by_id, _alias_map, _disabled_ids
+    global _catalog, _by_id, _alias_map, _disabled_ids, _excluded_cache
     _catalog = None
     _by_id = None
     _alias_map = None
     _disabled_ids = None
+    _excluded_cache = None
+    canonical_label.cache_clear()
 
 
 def _load_yaml() -> dict[int, str]:
@@ -344,6 +348,7 @@ _LABEL_ALIASES = {
 }
 
 
+@functools.lru_cache(maxsize=512)
 def canonical_label(name: str) -> str:
     """Map CLIP/COCO synonyms onto YAML raw names (overrides → static aliases)."""
     get_class_catalog()
@@ -351,6 +356,34 @@ def canonical_label(name: str) -> str:
     if _alias_map and raw in _alias_map:
         return _alias_map[raw]
     return _LABEL_ALIASES.get(raw, (name or "").strip())
+
+
+def get_excluded_classes() -> set[str]:
+    """Return set of excluded class names (lowercase, underscored).
+    
+    Cached for performance; call invalidate_excluded_cache() after
+    INSERT/DELETE on excluded_classes table.
+    """
+    global _excluded_cache
+    if _excluded_cache is not None:
+        return _excluded_cache
+    
+    excluded: set[str] = set()
+    try:
+        from services.db import list_excluded_classes
+        for row in list_excluded_classes():
+            excluded.add(row["class_name"].lower().replace(" ", "_"))
+    except Exception:
+        pass
+    
+    _excluded_cache = excluded
+    return excluded
+
+
+def invalidate_excluded_cache() -> None:
+    """Call after INSERT/DELETE on excluded_classes table."""
+    global _excluded_cache
+    _excluded_cache = None
 
 
 def is_catalog_label(name: str) -> bool:

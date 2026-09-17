@@ -180,7 +180,15 @@ class SegmentationEngine:
             path = resolve_seg_weights()
             if path is None:
                 raise FileNotFoundError("seg weights missing")
-        # Mutual VRAM exclusion with SAM3
+        
+        # Acquire mutex for VRAM exclusion
+        try:
+            from services.model_mutex import acquire_model
+            acquire_model("yolo_seg")
+        except Exception as e:
+            print(f"[SEG] Warning: mutex acquire failed: {e}")
+        
+        # Mutual VRAM exclusion with SAM3 (legacy, mutex handles this now)
         try:
             from services.sam3_engine import get_sam3_engine
 

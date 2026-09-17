@@ -175,6 +175,10 @@ def init_db() -> None:
                     confidence_threshold REAL,
                     updated_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS excluded_classes (
+                    class_name TEXT PRIMARY KEY,
+                    added_at REAL NOT NULL DEFAULT strftime('%s', 'now')
+                );
                 CREATE TABLE IF NOT EXISTS flight_tracks (
                     id TEXT PRIMARY KEY,
                     video_path TEXT NOT NULL UNIQUE,
@@ -1040,6 +1044,147 @@ def list_class_overrides() -> list[dict[str, Any]]:
         conn.close()
 
 
+# COCO DROP classes — seed for excluded_classes table
+_COCO_DROP_CLASSES: tuple[str, ...] = (
+    "frisbee",
+    "sports_ball",
+    "sports ball",
+    "dog",
+    "cat",
+    "horse",
+    "sheep",
+    "cow",
+    "umbrella",
+    "handbag",
+    "suitcase",
+    "skis",
+    "snowboard",
+    "skateboard",
+    "surfboard",
+    "tennis",
+    "bottle",
+    "cup",
+    "chair",
+    "bench",
+    "tv",
+    "laptop",
+    "cell phone",
+    "cell_phone",
+    "keyboard",
+    "mouse",
+    "remote",
+    "book",
+    "clock",
+    "vase",
+    "scissors",
+    "teddy bear",
+    "hair drier",
+    "toothbrush",
+    "stop sign",
+    "parking meter",
+    "traffic light",
+    "fire hydrant",
+    "potted plant",
+    "dining table",
+    "toilet",
+    "sink",
+    "refrigerator",
+    "microwave",
+    "oven",
+    "toaster",
+    "couch",
+    "bed",
+    "wine glass",
+    "fork",
+    "knife",
+    "spoon",
+    "bowl",
+    "banana",
+    "apple",
+    "sandwich",
+    "orange",
+    "broccoli",
+    "carrot",
+    "hot dog",
+    "pizza",
+    "donut",
+    "cake",
+    "tie",
+    "backpack",
+)
+
+
+def _seed_excluded_classes() -> None:
+    """Seed COCO DROP classes using INSERT OR IGNORE (idempotent)."""
+    conn = _connect()
+    try:
+        for class_name in _COCO_DROP_CLASSES:
+            conn.execute(
+                "INSERT OR IGNORE INTO excluded_classes (class_name, added_at) VALUES (?, strftime('%s', 'now'))",
+                (class_name,),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_excluded_classes() -> list[dict[str, Any]]:
+    """All excluded classes (COCO DROP + operator additions)."""
+    init_db()
+    _seed_excluded_classes()
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT class_name, added_at
+            FROM excluded_classes
+            ORDER BY class_name ASC
+            """
+        ).fetchall()
+        return [
+            {
+                "class_name": str(row["class_name"]),
+                "added_at": float(row["added_at"]),
+            }
+            for row in rows
+        ]
+    finally:
+        conn.close()
+
+
+def upsert_excluded_class(class_name: str) -> dict[str, Any]:
+    """Add or update an excluded class (idempotent)."""
+    init_db()
+    _seed_excluded_classes()
+    class_name = class_name.strip().lower()
+    conn = _connect()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO excluded_classes (class_name, added_at) VALUES (?, strftime('%s', 'now'))",
+            (class_name,),
+        )
+        conn.commit()
+        return {"class_name": class_name, "added_at": time.time()}
+    finally:
+        conn.close()
+
+
+def delete_excluded_class(class_name: str) -> bool:
+    """Remove a class from exclusion list. Returns True if deleted."""
+    init_db()
+    class_name = class_name.strip().lower()
+    conn = _connect()
+    try:
+        cursor = conn.execute(
+            "DELETE FROM excluded_classes WHERE class_name = ?",
+            (class_name,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
 def get_class_override(class_id: int) -> dict[str, Any] | None:
     init_db()
     conn = _connect()
@@ -1324,5 +1469,135 @@ def delete_embedding(detection_id: str) -> bool:
         )
         conn.commit()
         return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+# ─── Schema versioning & migrations ─────────────────────────────────
+
+
+def get_schema_version() -> int:
+    """Get current database schema version."""
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key = 'schema_version'"
+        ).fetchone()
+        return int(row["value"]) if row else 0
+    finally:
+        conn.close()
+
+
+def migrate_db() -> None:
+    """Run database migrations to ensure latest schema."""
+    version = get_schema_version()
+    conn = _connect()
+    try:
+        if version < 1:
+            # Add excluded_classes table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS excluded_classes (
+                    class_name TEXT PRIMARY KEY,
+                    added_at REAL NOT NULL DEFAULT strftime('%s', 'now')
+                )
+            """)
+            # Seed COCO DROP classes
+            for class_name in _COCO_DROP_CLASSES:
+                conn.execute(
+                    "INSERT OR IGNORE INTO excluded_classes (class_name, added_at) VALUES (?, strftime('%s', 'now'))",
+                    (class_name,),
+                )
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', '1')"
+            )
+            conn.commit()
+            print("[DB] Migrated to schema v1 (excluded_classes table)")
+        
+        if version < 2:
+            # Add batch_seg_jobs table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS batch_seg_jobs (
+                    task_id TEXT PRIMARY KEY,
+                    video_path TEXT NOT NULL,
+                    frame_step INTEGER NOT NULL DEFAULT 30,
+                    confidence REAL NOT NULL DEFAULT 0.25,
+                    status TEXT NOT NULL DEFAULT 'running',
+                    last_frame_idx INTEGER NOT NULL DEFAULT 0,
+                    total_frames INTEGER NOT NULL DEFAULT 0,
+                    results_json TEXT NOT NULL DEFAULT '[]',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+            """)
+            conn.execute(
+                "UPDATE settings SET value = '2' WHERE key = 'schema_version'"
+            )
+            conn.commit()
+            print("[DB] Migrated to schema v2 (batch_seg_jobs table)")
+        
+        # Update version if we've made progress
+        current_version = get_schema_version()
+        if current_version < 2:
+            conn.execute(
+                "UPDATE settings SET value = ? WHERE key = 'schema_version'",
+                (max(current_version, 2),),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+
+# ─── Batch segmentation checkpoint ─────────────────────────────────
+
+
+def save_batch_seg_checkpoint(task_id: str, state: dict) -> None:
+    """Save checkpoint for batch segmentation job."""
+    init_db()
+    conn = _connect()
+    try:
+        conn.execute("""
+            INSERT OR REPLACE INTO batch_seg_jobs (
+                task_id, video_path, frame_step, confidence,
+                status, last_frame_idx, total_frames,
+                results_json, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
+        """, (
+            task_id,
+            state["video_path"],
+            state["frame_step"],
+            state["confidence"],
+            state["status"],
+            state["last_frame_idx"],
+            state["total_frames"],
+            json.dumps(state.get("results", [])),
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def load_batch_seg_checkpoint(task_id: str) -> dict | None:
+    """Load checkpoint for batch segmentation job."""
+    init_db()
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM batch_seg_jobs WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "task_id": row["task_id"],
+            "video_path": row["video_path"],
+            "frame_step": row["frame_step"],
+            "confidence": row["confidence"],
+            "status": row["status"],
+            "last_frame_idx": row["last_frame_idx"],
+            "total_frames": row["total_frames"],
+            "results": json.loads(row["results_json"]),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
     finally:
         conn.close()
