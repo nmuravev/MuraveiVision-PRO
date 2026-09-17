@@ -60,8 +60,11 @@ $Stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 
 # Air-gap contract: a CUDA FullKit is allowed only when both matching cu128
 # wheels have already been seeded locally. Never probe or download CUDA wheels.
+# EXCEPTION: MURAVEI_PORTABLE_MIRROR=1 copies from muravei_env (robocopy), so
+# pre-seeded wheels are not required — CUDA will be mirrored at bake time.
 $CudaFlavorPending = $false
-if ($FullKit -and $TorchFlavor -eq "cuda") {
+$usingMirror = ($env:MURAVEI_PORTABLE_MIRROR -eq "1")
+if ($FullKit -and $TorchFlavor -eq "cuda" -and -not $usingMirror) {
   $wheelRoot = Join-Path $CacheDir "wheels"
   $cuTorch = @(Get-ChildItem -LiteralPath $wheelRoot -File -Filter "torch*+cu128*.whl" -ErrorAction SilentlyContinue)
   $cuVision = @(Get-ChildItem -LiteralPath $wheelRoot -File -Filter "torchvision*+cu128*.whl" -ErrorAction SilentlyContinue)
@@ -201,9 +204,9 @@ assert sys.version.startswith('3.12')
       if ($out -notmatch "META onnx") { $missing.Add("onnx metadata") }
       if ($out -notmatch "META onnxslim") { $missing.Add("onnxslim metadata") }
       if ($out -notmatch "META timm") { $missing.Add("timm metadata") }
-      if ($Kit -eq "mini" -or $TorchFlavor -eq "cpu") {
+      if ($TorchFlavor -eq "cpu") {
         if ($out -notmatch "DmlExecutionProvider") {
-          $fail.Add("DmlExecutionProvider missing for Mini/CPU kit")
+          $fail.Add("DmlExecutionProvider missing for CPU kit")
         }
       }
     }
@@ -343,10 +346,11 @@ function Remove-StalePortableStages([string]$Root) {
   }
 }
 
-# Profile → torch CUDA yes/no (Mini/Lite always CPU). See scripts/portable_torch_policy.py
+# Profile → torch CUDA yes/no (Mini/Lite always CPU unless -TorchFlavor cuda override).
+# See scripts/portable_torch_policy.py
 $TorchPolicyScript = Join-Path $PSScriptRoot "portable_torch_policy.py"
 $WantCudaTorch = $false
-if ($FullKit -and $TorchFlavor -eq "cuda") { $WantCudaTorch = $true }
+if ($TorchFlavor -eq "cuda") { $WantCudaTorch = $true }
 $TorchKitName = if ($FullKit) { "fullkit" } elseif ($Mini -or $NoDetectWeights) { "mini" } else { "lite" }
 
 function Get-TorchPolicyJson {
@@ -794,7 +798,11 @@ if ($FetchEmbeddablePython) {
     $null -ne (Get-ChildItem -LiteralPath $wheelDir -File -ErrorAction SilentlyContinue | Select-Object -First 1)
   )
   if (($Mini -or $NoDetectWeights) -and ($env:MURAVEI_PORTABLE_MIRROR -eq "1")) {
-    Write-Host "WARNING: MURAVEI_PORTABLE_MIRROR=1 with Mini — host CUDA may be mirrored; profile torch force will reinstall CPU" -ForegroundColor Yellow
+    if ($WantCudaTorch) {
+      Write-Host "MURAVEI_PORTABLE_MIRROR=1 with Mini + -TorchFlavor cuda — host CUDA will be mirrored and preserved" -ForegroundColor Cyan
+    } else {
+      Write-Host "MURAVEI_PORTABLE_MIRROR=1 with Mini — host CUDA may be mirrored; profile torch force will reinstall CPU" -ForegroundColor Yellow
+    }
   }
   $bakeFindLinks = $wheelDir
   if ($hasWheels) {
@@ -847,7 +855,7 @@ if ($FetchEmbeddablePython) {
       "fastjsonschema", "referencing", "rpds_py")
     $xdArgs = @()
     foreach ($d in $mirrorExcludeDirs) { $xdArgs += "/XD"; $xdArgs += $d }
-    & robocopy $hostSp $stageSp /E $xdArgs /NFL /NDL /NJH /NJS /R:5 /W:2 | Out-Null
+    & robocopy $hostSp $stageSp /E /IS /IT $xdArgs /NFL /NDL /NJH /NJS /R:5 /W:2 | Out-Null
     $rc = $LASTEXITCODE
     # robocopy: bits 0-7 success-ish; 8+ = some copy failures (often locked DLLs if host uvicorn running)
     if ($rc -ge 16) { throw "robocopy host site-packages fatal (exit $rc)" }
@@ -1080,9 +1088,15 @@ if (-not $SkipZip) {
       if ($zipGb -gt 9.5) { Write-Host "WARNING: FullKit ZIP is $zipGb GB (sanctioned band warn>9.5 / reject>10)" -ForegroundColor Yellow }
     }
   } elseif ($Mini -or $KitMarker -eq "mini") {
-    # OPERATOR-SANCTIONED 2026-09-16: Mini warn>4.5 reject>5
-    if ($zipGb -gt 5) { throw "MINI SIZE ASSERT FAILED: ZIP is $zipGb GB (>5). Reject." }
-    if ($zipGb -gt 4.5) { Write-Host "WARNING: Mini ZIP is $zipGb GB (sanctioned band warn>4.5 / reject>5)" -ForegroundColor Yellow }
+    # OPERATOR-SANCTIONED 2026-09-16: Mini CPU warn>4.5 reject>5
+    # Mini CUDA (cu128 torch ~2.8 GB + sam3 ~3.3 GB): warn>6.5 reject>7
+    if ($WantCudaTorch -and $TorchFlavor -eq "cuda") {
+      if ($zipGb -gt 7) { throw "MINI+CUDA SIZE ASSERT FAILED: ZIP is $zipGb GB (>7). Reject." }
+      if ($zipGb -gt 6.5) { Write-Host "WARNING: Mini+CUDA ZIP is $zipGb GB (sanctioned band warn>6.5 / reject>7)" -ForegroundColor Yellow }
+    } else {
+      if ($zipGb -gt 5) { throw "MINI SIZE ASSERT FAILED: ZIP is $zipGb GB (>5). Reject." }
+      if ($zipGb -gt 4.5) { Write-Host "WARNING: Mini ZIP is $zipGb GB (sanctioned band warn>4.5 / reject>5)" -ForegroundColor Yellow }
+    }
   }
 }
 
