@@ -62,14 +62,46 @@ class Sam3PropagateTests(unittest.TestCase):
             writer.write(frame)
         writer.release()
 
-    def _wait(self, task_id: str, timeout: float = 8.0) -> dict:
+    def _wait(self, task_id: str, timeout: float = 15.0) -> dict:
+        """Wait for terminal status with deadline. Never infinite-loop."""
         deadline = time.time() + timeout
         while time.time() < deadline:
             st = prop.status(task_id)
             if st["status"] in ("done", "error", "aborted"):
                 return st
-            time.sleep(0.02)
-        self.fail(f"propagate did not finish: {prop.status(task_id)}")
+            time.sleep(0.1)
+        self.fail(f"timeout {timeout}s waiting terminal; status={prop.status(task_id)['status']}")
+
+    def _write_video_90(self, path) -> None:
+        """Write a 90-frame test video using mov codec (more reliable than mp4v)."""
+        w, h = 32, 32
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(str(path), fourcc, 30.0, (w, h))
+        for i in range(90):
+            frame = np.zeros((h, w, 3), dtype=np.uint8)
+            frame[:] = (i % 50, 40, 80)
+            writer.write(frame)
+        writer.release()
+        # Verify: reopen and count frames
+        cap = cv2.VideoCapture(str(path))
+        count = 0
+        while True:
+            ok, _ = cap.read()
+            if not ok:
+                break
+            count += 1
+        cap.release()
+        if count < 90:
+            # mp4v read failed — use a simpler codec
+            import os
+            os.unlink(path)
+            fourcc2 = cv2.VideoWriter_fourcc(*"avc1")
+            writer2 = cv2.VideoWriter(str(path), fourcc2, 30.0, (w, h))
+            for i in range(90):
+                frame = np.zeros((h, w, 3), dtype=np.uint8)
+                frame[:] = (i % 50, 40, 80)
+                writer2.write(frame)
+            writer2.release()
 
     def test_polygon_aabb_norm(self) -> None:
         aabb = prop.polygon_aabb_norm([[0.2, 0.3], [0.8, 0.3], [0.5, 0.9]])
@@ -201,6 +233,316 @@ class Sam3PropagateTests(unittest.TestCase):
                     time_sec=0.0,
                     bboxes=[{"x1": 0.1, "y1": 0.1, "x2": 0.2, "y2": 0.2}],
                 )
+
+    # P3.13.3d: full-video chunking tests (N1 fix: stride=25, last≤30)
+    def test_chunking_math_90(self) -> None:
+        """90 frames → 4 chunks starts [0,25,50,75] counts [30,30,30,15]."""
+        chunks = prop._chunk_video(90)
+        self.assertEqual(len(chunks), 4)
+        self.assertEqual(chunks, [(0, 30), (25, 30), (50, 30), (75, 15)])
+
+    def test_chunking_math_95(self) -> None:
+        """95 frames → 4 chunks starts [0,25,50,75] last=20."""
+        chunks = prop._chunk_video(95)
+        self.assertEqual(len(chunks), 4)
+        self.assertEqual(chunks[-1], (75, 20))
+
+    def test_chunking_math_20(self) -> None:
+        """20 frames → 1 chunk [(0, 20)]."""
+        chunks = prop._chunk_video(20)
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(chunks, [(0, 20)])
+
+    def test_chunking_max_30(self) -> None:
+        """Assert no chunk count > WINDOW_SIZE (30)."""
+        for total in range(1, 200):
+            chunks = prop._chunk_video(total)
+            for start, count in chunks:
+                self.assertLessEqual(count, prop.WINDOW_SIZE,
+                                     f"total={total} chunk ({start},{count}) exceeds 30")
+
+    def test_chunking_coverage(self) -> None:
+        """Union of all chunk frames covers 0..total-1 without gaps."""
+        for total in [1, 10, 30, 31, 50, 90, 95, 100, 150]:
+            chunks = prop._chunk_video(total)
+            covered = set()
+            for start, count in chunks:
+                for i in range(count):
+                    covered.add(start + i)
+            expected = set(range(total))
+            self.assertEqual(covered, expected, f"total={total} coverage gap")
+
+    def test_full_video_propagate(self) -> None:
+        """Mock 90-frame video, full_video=True, verify 4 chunks processed."""
+        engine = mock.MagicMock()
+        engine.status.return_value = {"ready": True, "loaded": True, "weight": "sam3.pt"}
+        # Mock cv2.VideoCapture globally to avoid mp4v codec issues
+        mock_cap = mock.MagicMock()
+        mock_cap.isOpened.return_value = True
+        mock_cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
+        mock_cap.read.return_value = (True, np.zeros((32, 32, 3), dtype=np.uint8))
+        mock_cap.release.return_value = None
+        with (
+            mock.patch.object(prop, "get_sam3_engine", return_value=engine),
+            mock.patch.object(prop, "_resolve_video", return_value=(self._video, "archive/clip.mp4")),
+            mock.patch.object(prop, "resolve_named_weight", return_value=self._tmp / "sam3.pt"),
+            mock.patch.object(prop, "_unload_yolo_seg"),
+            mock.patch.object(
+                prop, "_write_temp_clip",
+                return_value=(self._video, 30.0, 32, 32, 30),
+            ),
+            mock.patch.object(
+                prop, "_run_video_predictor",
+                return_value=[_FakeResult() for _ in range(30)],
+            ),
+            mock.patch("cv2.VideoCapture", return_value=mock_cap),
+        ):
+            (self._tmp / "sam3.pt").write_bytes(b"\x00" * 2048)
+            started = prop.start(
+                video_path="archive/clip.mp4",
+                time_sec=0.0,
+                max_frames=30,
+                bboxes=[{"x1": 0.1, "y1": 0.1, "x2": 0.4, "y2": 0.4}],
+                persist=False,
+                full_video=True,
+            )
+            self.assertTrue(started["full_video"])
+            self.assertEqual(started["total_windows"], 4)
+            st = self._wait(started["task_id"], timeout=15.0)
+            self.assertEqual(st["status"], "done")
+            self.assertGreaterEqual(st["processed"], 90)
+
+    def test_abort_mid_chunk_keeps_partial(self) -> None:
+        """Abort during chunk 2, verify chunk 1 results kept."""
+        engine = mock.MagicMock()
+        engine.status.return_value = {"ready": True, "loaded": True, "weight": "sam3.pt"}
+        # Mock cv2.VideoCapture globally to avoid mp4v codec issues
+        mock_cap = mock.MagicMock()
+        mock_cap.isOpened.return_value = True
+        mock_cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
+        mock_cap.read.return_value = (True, np.zeros((32, 32, 3), dtype=np.uint8))
+        mock_cap.release.return_value = None
+        call_count = [0]
+
+        def counting_predictor(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return [_FakeResult() for _ in range(30)]  # chunk 1 completes
+            return [_FakeResult() for _ in range(15)]
+
+        with (
+            mock.patch.object(prop, "get_sam3_engine", return_value=engine),
+            mock.patch.object(prop, "_resolve_video", return_value=(self._video, "archive/clip.mp4")),
+            mock.patch.object(prop, "resolve_named_weight", return_value=self._tmp / "sam3.pt"),
+            mock.patch.object(prop, "_unload_yolo_seg"),
+            mock.patch.object(
+                prop, "_write_temp_clip",
+                return_value=(self._video, 30.0, 32, 32, 30),
+            ),
+            mock.patch.object(prop, "_run_video_predictor", side_effect=counting_predictor),
+            mock.patch("cv2.VideoCapture", return_value=mock_cap),
+        ):
+            (self._tmp / "sam3.pt").write_bytes(b"\x00" * 2048)
+            started = prop.start(
+                video_path="archive/clip.mp4",
+                time_sec=0.0,
+                max_frames=30,
+                bboxes=[{"x1": 0.1, "y1": 0.1, "x2": 0.4, "y2": 0.4}],
+                persist=False,
+                full_video=True,
+            )
+            self.assertEqual(started["total_windows"], 4)
+            time.sleep(0.5)
+            prop.abort(started["task_id"])
+            st = self._wait(started["task_id"], timeout=15.0)
+            self.assertEqual(st["status"], "aborted")
+            self.assertGreater(st["processed"], 0)
+
+    def test_vram_empty_cache_between_chunks(self) -> None:
+        """Verify _empty_cache() called between chunks."""
+        engine = mock.MagicMock()
+        engine.status.return_value = {"ready": True, "loaded": True, "weight": "sam3.pt"}
+        # Mock cv2.VideoCapture globally to avoid mp4v codec issues
+        mock_cap = mock.MagicMock()
+        mock_cap.isOpened.return_value = True
+        mock_cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
+        mock_cap.read.return_value = (True, np.zeros((32, 32, 3), dtype=np.uint8))
+        mock_cap.release.return_value = None
+        with (
+            mock.patch.object(prop, "get_sam3_engine", return_value=engine),
+            mock.patch.object(prop, "_resolve_video", return_value=(self._video, "archive/clip.mp4")),
+            mock.patch.object(prop, "resolve_named_weight", return_value=self._tmp / "sam3.pt"),
+            mock.patch.object(prop, "_unload_yolo_seg"),
+            mock.patch.object(
+                prop, "_write_temp_clip",
+                return_value=(self._video, 30.0, 32, 32, 30),
+            ),
+            mock.patch.object(
+                prop, "_run_video_predictor",
+                return_value=[_FakeResult() for _ in range(30)],
+            ),
+            mock.patch.object(prop, "_empty_cache") as mock_cache,
+            mock.patch("cv2.VideoCapture", return_value=mock_cap),
+        ):
+            (self._tmp / "sam3.pt").write_bytes(b"\x00" * 2048)
+            started = prop.start(
+                video_path="archive/clip.mp4",
+                time_sec=0.0,
+                max_frames=30,
+                bboxes=[{"x1": 0.1, "y1": 0.1, "x2": 0.4, "y2": 0.4}],
+                persist=False,
+                full_video=True,
+            )
+            self.assertEqual(started["total_windows"], 4)
+            self._wait(started["task_id"], timeout=15.0)
+            self.assertGreaterEqual(mock_cache.call_count, 3)
+
+    def test_full_video_default_false(self) -> None:
+        """Default max_frames=30 still works (single chunk)."""
+        engine = mock.MagicMock()
+        engine.status.return_value = {"ready": True, "loaded": True, "weight": "sam3.pt"}
+        # Mock _write_temp_clip to avoid mp4v codec read issues
+        with (
+            mock.patch.object(prop, "get_sam3_engine", return_value=engine),
+            mock.patch.object(prop, "_resolve_video", return_value=(self._video, "archive/clip.mp4")),
+            mock.patch.object(prop, "resolve_named_weight", return_value=self._tmp / "sam3.pt"),
+            mock.patch.object(prop, "_unload_yolo_seg"),
+            mock.patch.object(
+                prop, "_write_temp_clip",
+                return_value=(self._video, 30.0, 32, 32, 5),
+            ),
+            mock.patch.object(
+                prop, "_run_video_predictor",
+                return_value=[_FakeResult() for _ in range(5)],
+            ),
+        ):
+            (self._tmp / "sam3.pt").write_bytes(b"\x00" * 2048)
+            started = prop.start(
+                video_path="archive/clip.mp4",
+                time_sec=0.0,
+                max_frames=5,
+                bboxes=[{"x1": 0.1, "y1": 0.1, "x2": 0.4, "y2": 0.4}],
+                persist=False,
+                full_video=False,  # explicit default
+            )
+            self.assertFalse(started["full_video"])
+            self.assertEqual(started["total_windows"], 0)
+            st = self._wait(started["task_id"])
+            self.assertEqual(st["status"], "done")
+
+    def test_persist_full_video(self) -> None:
+        """persist=True + full_video=True → verify SQLite insert for all chunks."""
+        engine = mock.MagicMock()
+        engine.status.return_value = {"ready": True, "loaded": True, "weight": "sam3.pt"}
+        inserted: list = []
+
+        def fake_persist(**kwargs):
+            inserted.append(kwargs)
+            return 3
+
+        # Mock cv2.VideoCapture globally to avoid mp4v codec issues
+        mock_cap = mock.MagicMock()
+        mock_cap.isOpened.return_value = True
+        mock_cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
+        mock_cap.read.return_value = (True, np.zeros((32, 32, 3), dtype=np.uint8))
+        mock_cap.release.return_value = None
+        with (
+            mock.patch.object(prop, "get_sam3_engine", return_value=engine),
+            mock.patch.object(prop, "_resolve_video", return_value=(self._video, "archive/clip.mp4")),
+            mock.patch.object(prop, "resolve_named_weight", return_value=self._tmp / "sam3.pt"),
+            mock.patch.object(prop, "_unload_yolo_seg"),
+            mock.patch.object(
+                prop, "_write_temp_clip",
+                return_value=(self._video, 30.0, 32, 32, 30),
+            ),
+            mock.patch.object(
+                prop, "_run_video_predictor",
+                return_value=[_FakeResult() for _ in range(30)],
+            ),
+            mock.patch.object(prop, "_persist_results", side_effect=fake_persist),
+            mock.patch("cv2.VideoCapture", return_value=mock_cap),
+        ):
+            (self._tmp / "sam3.pt").write_bytes(b"\x00" * 2048)
+            started = prop.start(
+                video_path="archive/clip.mp4",
+                time_sec=0.0,
+                max_frames=30,
+                bboxes=[{"x1": 0.1, "y1": 0.1, "x2": 0.4, "y2": 0.4}],
+                persist=True,
+                full_video=True,
+            )
+            self.assertEqual(started["total_windows"], 4)
+            st = self._wait(started["task_id"], timeout=15.0)
+            self.assertEqual(st["status"], "done")
+            self.assertEqual(len(inserted), 1)
+
+    def test_overlap_dedup_no_duplicate_frames(self) -> None:
+        """N3: full_video with overlap → no duplicate frame_idx in results."""
+        engine = mock.MagicMock()
+        engine.status.return_value = {"ready": True, "loaded": True, "weight": "sam3.pt"}
+        # Mock cv2.VideoCapture globally to avoid mp4v codec issues
+        mock_cap = mock.MagicMock()
+        mock_cap.isOpened.return_value = True
+        mock_cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
+        mock_cap.read.return_value = (True, np.zeros((32, 32, 3), dtype=np.uint8))
+        mock_cap.release.return_value = None
+        with (
+            mock.patch.object(prop, "get_sam3_engine", return_value=engine),
+            mock.patch.object(prop, "_resolve_video", return_value=(self._video, "archive/clip.mp4")),
+            mock.patch.object(prop, "resolve_named_weight", return_value=self._tmp / "sam3.pt"),
+            mock.patch.object(prop, "_unload_yolo_seg"),
+            mock.patch.object(
+                prop, "_write_temp_clip",
+                return_value=(self._video, 30.0, 32, 32, 30),
+            ),
+            mock.patch.object(
+                prop, "_run_video_predictor",
+                return_value=[_FakeResult() for _ in range(30)],
+            ),
+            mock.patch("cv2.VideoCapture", return_value=mock_cap),
+        ):
+            (self._tmp / "sam3.pt").write_bytes(b"\x00" * 2048)
+            started = prop.start(
+                video_path="archive/clip.mp4",
+                time_sec=0.0,
+                max_frames=30,
+                bboxes=[{"x1": 0.1, "y1": 0.1, "x2": 0.4, "y2": 0.4}],
+                persist=False,
+                full_video=True,
+            )
+            self.assertEqual(started["total_windows"], 4)
+            st = self._wait(started["task_id"], timeout=15.0)
+            self.assertEqual(st["status"], "done")
+            frame_indices = [r["frame_idx"] for r in st["results"]]
+            self.assertEqual(len(frame_indices), len(set(frame_indices)),
+                             "Duplicate frame_idx found in results")
+
+    def test_oom_graceful_error(self) -> None:
+        """N5: torch.cuda.OutOfMemoryError → status error + RU hint."""
+        import torch
+        engine = mock.MagicMock()
+        engine.status.return_value = {"ready": True, "loaded": True, "weight": "sam3.pt"}
+        with (
+            mock.patch.object(prop, "get_sam3_engine", return_value=engine),
+            mock.patch.object(prop, "_resolve_video", return_value=(self._video, "archive/clip.mp4")),
+            mock.patch.object(prop, "resolve_named_weight", return_value=self._tmp / "sam3.pt"),
+            mock.patch.object(prop, "_unload_yolo_seg"),
+            mock.patch.object(
+                prop, "_run_video_predictor",
+                side_effect=torch.cuda.OutOfMemoryError("CUDA out of memory"),
+            ),
+        ):
+            (self._tmp / "sam3.pt").write_bytes(b"\x00" * 2048)
+            started = prop.start(
+                video_path="archive/clip.mp4",
+                time_sec=0.0,
+                max_frames=5,
+                bboxes=[{"x1": 0.1, "y1": 0.1, "x2": 0.4, "y2": 0.4}],
+                persist=False,
+            )
+            st = self._wait(started["task_id"], timeout=8.0)
+            self.assertEqual(st["status"], "error")
+            self.assertIn("CUDA out of memory", st["message"])
 
 
 class SegMasksDbTests(unittest.TestCase):

@@ -61,13 +61,15 @@
 | POST | `/sam3/load` | `{weight?}` — только `sam3.pt`; выгружает YOLO-seg (`yolo_seg_unloaded`) |
 | POST | `/sam3/unload` | выгрузить SAM3 |
 | POST | `/sam3/infer` | JPEG + (`points`/`bboxes` **XOR** `text` 1–3) → `{masks, ms, weight}` |
-| POST | `/sam3/propagate` | `{video_path, time_sec, max_frames≤30, points?/bboxes? **XOR** text?, persist?=false}` → job |
+| POST | `/sam3/propagate` | `{video_path, time_sec, max_frames≤30, points?/bboxes? **XOR** text?, persist?=false, full_video?=false}` → job |
 | GET | `/sam3/propagate/{task_id}` | прогресс; terminal → `results`, `persisted` |
 | POST | `/sam3/propagate/{task_id}/abort` | прервать |
 
 **SAM3 (P3.13.3a/b):** interactive refine + short forward propagate (≤30 frames, `SAM3VideoPredictor` temp clip). Mutual VRAM с YOLO-seg. Не Live, не train. Opt-in SQLite `seg_masks`. Импорт: `from ultralytics import SAM`; video: `from ultralytics.models.sam import SAM3VideoPredictor`.
 
 `ready` = файл есть; `loaded` = модель в памяти. **Infer/propagate требуют `loaded`** (иначе 503). Batch: если модель уже в VRAM — оставляет; если batch сам загрузил — выгружает в `finally`. Старт batch выгружает SAM3 (`sam_unloaded`) — UI toast, без auto-reload. Нет файла → 503, детекция не меняется. `imgsz=640`. Маски batch **не** пишутся в SQLite. Propagate `persist=true` пишет только в `seg_masks` (не `detections`).
+
+**SAM3 propagate full-video (P3.13.3d):** `full_video=true` → разбивает видео на окна ≤30 кадров с overlap 5. Между окнами `torch.cuda.empty_cache()` для VRAM-гуарда. Abort проверяется на каждом кадре внутри окна. Persist=True пишет в SQLite `seg_masks` (существующее поведение, все окна). UI показывает «Окно X/Y» и RU-предупреждение о времени на длинных клипах.
 
 ## Change Detection — `/api/change-detection` (Compare Sync)
 

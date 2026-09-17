@@ -42,6 +42,10 @@ type PropApiState = {
   message: string;
   error: string | null;
   results: Sam3PropFrame[] | null;
+  // P3.13.3d: full-video chunking state
+  full_video?: boolean;
+  total_windows?: number;
+  current_window?: number;
 };
 
 interface Sam3State {
@@ -57,6 +61,7 @@ interface Sam3State {
   lastPrompt: Sam3Prompt | null;
   textPrompt: string;
   persistEnabled: boolean;
+  fullVideoEnabled: boolean;  // P3.13.3d: P1 own checkbox state
   propTaskId: string | null;
   propStatus: Sam3PropStatus;
   propProgress: number;
@@ -67,6 +72,8 @@ interface Sam3State {
   propMessage: string;
   propError: string | null;
   propFrames: Sam3PropFrame[];
+  propTotalWindows: number;  // P3.13.3d
+  propCurrentWindow: number;  // P3.13.3d
   refreshStatus: () => Promise<void>;
   load: () => Promise<{ yoloSegUnloaded: boolean }>;
   unload: () => Promise<void>;
@@ -77,6 +84,7 @@ interface Sam3State {
   markUnloadedForBatch: () => void;
   markUnloadedByYolo: () => void;
   setPersistEnabled: (v: boolean) => void;
+  setFullVideoEnabled: (v: boolean) => void;  // P3.13.3d: P1
   setTextPrompt: (v: string) => void;
   setLastPrompt: (p: Sam3Prompt | null) => void;
   clearPropagate: () => void;
@@ -85,6 +93,7 @@ interface Sam3State {
     timeSec: number;
     maxFrames?: number;
     persist?: boolean;
+    fullVideo?: boolean;  // P3.13.3d
   }) => Promise<void>;
   abortPropagate: () => Promise<void>;
   infer: (params: {
@@ -117,6 +126,9 @@ function applyProp(set: (partial: Partial<Sam3State>) => void, data: PropApiStat
     propMessage: data.message || '',
     propError: data.error,
     propFrames: Array.isArray(data.results) ? data.results : [],
+    // P3.13.3d: window state
+    propTotalWindows: data.total_windows ?? 0,
+    propCurrentWindow: data.current_window ?? 0,
   });
   if (status === 'done' || status === 'error' || status === 'aborted') {
     stopPropPoll();
@@ -136,6 +148,7 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
   lastPrompt: null,
   textPrompt: '',
   persistEnabled: false,
+  fullVideoEnabled: false,  // P3.13.3d: P1
   propTaskId: null,
   propStatus: 'idle',
   propProgress: 0,
@@ -146,6 +159,8 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
   propMessage: '',
   propError: null,
   propFrames: [],
+  propTotalWindows: 0,  // P3.13.3d
+  propCurrentWindow: 0,  // P3.13.3d
 
   clearNotice: () => set({ lastUnloadNotice: null }),
   dismissCpuEta: async () => {
@@ -160,6 +175,7 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
     set({ cpuEtaShow: false, cpuEtaRu: '' });
   },
   setPersistEnabled: (persistEnabled) => set({ persistEnabled }),
+  setFullVideoEnabled: (fullVideoEnabled) => set({ fullVideoEnabled }),  // P3.13.3d: P1
   setTextPrompt: (textPrompt) => set({ textPrompt }),
   setLastPrompt: (lastPrompt) => set({ lastPrompt }),
   setTool: (tool) => set({ tool }),
@@ -178,6 +194,8 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
       propMessage: '',
       propError: null,
       propFrames: [],
+      propTotalWindows: 0,
+      propCurrentWindow: 0,
     });
   },
 
@@ -313,7 +331,7 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
     }
   },
 
-  startPropagate: async ({ videoPath, timeSec, maxFrames = 30, persist }) => {
+  startPropagate: async ({ videoPath, timeSec, maxFrames = 30, persist, fullVideo }) => {
     const prompt = get().lastPrompt;
     const hasVisual = Boolean(prompt?.points?.length || prompt?.bboxes?.length);
     const hasText = Boolean(prompt?.text?.length);
@@ -326,6 +344,7 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
     }
     stopPropPoll();
     const usePersist = persist ?? get().persistEnabled;
+    const useFullVideo = fullVideo ?? get().fullVideoEnabled;  // P3.13.3d: P1
     set({
       propStatus: 'running',
       propProgress: 0,
@@ -336,6 +355,8 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
       propMessage: 'Запуск…',
       propError: null,
       propFrames: [],
+      propTotalWindows: 0,
+      propCurrentWindow: 0,
       busy: true,
     });
     try {
@@ -350,6 +371,7 @@ export const useSam3Store = create<Sam3State>((set, get) => ({
           bboxes: hasVisual ? prompt?.bboxes || [] : [],
           text: hasText ? prompt?.text || [] : [],
           persist: usePersist,
+          full_video: useFullVideo ?? false,  // P3.13.3d
         }),
       });
       const data = (await res.json().catch(() => ({}))) as PropApiState & {

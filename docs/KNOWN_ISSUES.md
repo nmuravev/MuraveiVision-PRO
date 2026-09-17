@@ -111,6 +111,7 @@
 
 ## Экспорт масок
 
+- **Full-video propagate на 9-мин клипе ≈ 6–12 мин на CPU (RTX 5060 Laptop ~2–4 мин);** VRAM 8 ГБ достаточно благодаря `empty_cache` между окнами. Abort проверяется на каждом кадре, но может занять до 1 кадра после нажатия.
 - **GeoTIFF требует rasterio** — не установлен в muravei_env по умолчанию. `GET /api/export/masks-geotiff` возвращает 503 `geo_libs_missing`. Seed wheel в `portable/cache/wheels` + `portable_manifest.json` для включения.
 - **GPS georef приблизительный** — центр = GPS детекции + нормализованный офсет ~10 м. Не орторектификация.
 - **First-mask-only** — GeoTIFF растеризует только первую валидную маску. KML экспортирует все маски с валидным GPS.

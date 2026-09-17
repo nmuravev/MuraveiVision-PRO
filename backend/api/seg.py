@@ -74,6 +74,7 @@ class Sam3PropagateRequest(BaseModel):
     bboxes: list[Sam3BBox] | None = None
     text: list[str] | None = None
     persist: bool = False
+    full_video: bool = False  # P3.13.3d: chunked full-video propagate
 
 
 def _decode_image(raw: str | None) -> bytes:
@@ -311,6 +312,7 @@ async def sam3_propagate_start(
                 bboxes=bboxes if has_visual else [],
                 texts=texts if has_text else None,
                 persist=body.persist,
+                full_video=body.full_video,
             )
         )
     except RuntimeError as exc:

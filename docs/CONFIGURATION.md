@@ -99,6 +99,7 @@ API: `GET/POST /api/network/config`, `GET /api/network/status`. Worker: [ENGINEE
 | SAHI (N слайсов, 512×512) | N × 15–30 ms | reuse YOLO | По умолчанию off; для 4K-кадров БПЛА |
 | Batch seg (frame_step) | 80–150 ms/f | +1.5 GB | SAM3 ~3.5 GB взаимно исключает detect |
 | SAM3 propagate (≤30 кадров) | 40–80 ms/f | in-memory | Не персистит; temp clip |
+| SAM3 propagate full-video (chunked) | 40–80 ms/f × N окон | in-memory per window | VRAM guard: empty_cache между окнами; 9-мин клип ≈ 2–4 мин GPU / 6–12 мин CPU |
 | Change Detection (ORB) | 200–500 ms/pair | ~500 MB | Зависит от coverage GPS/ORB |
 | COLMAP sparse (3000 кадров) | 5–15 мин | 4–6 GB | Sequential matcher на drone video |
 | gsplat train (30k steps) | 10–30 мин | 5–7 GB | RTX 5060; requires VS Build Tools + CUDA 12.8 |

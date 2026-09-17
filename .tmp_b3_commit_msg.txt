@@ -1,0 +1,17 @@
+feat(seg): full-video SAM3 propagate chunked with VRAM guard
+
+P3.13.3d: chunked windows <=30 frames, overlap 5, stride=25.
+Opt-in full_video=true splits video into overlapping windows.
+VRAM guard: torch.cuda.empty_cache() between chunks.
+Abort per chunk keeps partial results; persist writes all to SQLite.
+Overlap dedup: keep-last window's mask per frame_idx.
+OOM graceful: status error with RU hint, partial results preserved.
+
+12 new unit tests (chunking math, propagate, abort, empty_cache,
+default, persist, dedup, OOM). UI: own checkbox, window progress.
+
+N1: stride = WINDOW - OVERLAP = 25; last <= 30; coverage assert
+N2: total_windows in _snapshot() + UI binds X/Y
+N3: overlap dedup by frame_idx (keep last window's mask)
+N4: persist file:line sam3_propagate.py:296-323; abort L557-571
+N5: OOM graceful path with RU hint in CONFIGURATION.md row

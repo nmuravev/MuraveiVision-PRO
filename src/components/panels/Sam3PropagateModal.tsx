@@ -23,6 +23,8 @@ export const Sam3PropagateModal: React.FC<Sam3PropagateModalProps> = ({
 }) => {
   const persistEnabled = useSam3Store((s) => s.persistEnabled);
   const setPersistEnabled = useSam3Store((s) => s.setPersistEnabled);
+  const fullVideoEnabled = useSam3Store((s) => s.fullVideoEnabled);  // P3.13.3d: P1
+  const setFullVideoEnabled = useSam3Store((s) => s.setFullVideoEnabled);  // P3.13.3d: P1
   const lastPrompt = useSam3Store((s) => s.lastPrompt);
   const status = useSam3Store((s) => s.propStatus);
   const progress = useSam3Store((s) => s.propProgress);
@@ -33,6 +35,8 @@ export const Sam3PropagateModal: React.FC<Sam3PropagateModalProps> = ({
   const message = useSam3Store((s) => s.propMessage);
   const error = useSam3Store((s) => s.propError);
   const frames = useSam3Store((s) => s.propFrames);
+  const totalWindows = useSam3Store((s) => s.propTotalWindows);  // P3.13.3d
+  const currentWindow = useSam3Store((s) => s.propCurrentWindow);  // P3.13.3d
   const startPropagate = useSam3Store((s) => s.startPropagate);
   const abortPropagate = useSam3Store((s) => s.abortPropagate);
   const clearPropagate = useSam3Store((s) => s.clearPropagate);
@@ -59,6 +63,7 @@ export const Sam3PropagateModal: React.FC<Sam3PropagateModalProps> = ({
       timeSec,
       maxFrames: 30,
       persist: persistEnabled,
+      fullVideo: fullVideoEnabled,  // P3.13.3d: P1
     });
   };
 
@@ -124,6 +129,23 @@ export const Sam3PropagateModal: React.FC<Sam3PropagateModalProps> = ({
           <span>В SQLite (seg_masks, не detections)</span>
         </label>
 
+        <label className="flex items-center gap-2 text-[10px]">
+          <input
+            type="checkbox"
+            checked={fullVideoEnabled}
+            disabled={running}
+            onChange={(e) => setFullVideoEnabled(e.target.checked)}
+            data-testid="sam3-prop-full-video"
+          />
+          <span>Полное видео (чанки ≤30 кадров)</span>
+        </label>
+
+        {fullVideoEnabled && (
+          <p className="text-[10px] text-dv-muted">
+            Полное видео для 9-мин клипа ≈ 6–12 мин на CPU
+          </p>
+        )}
+
         {(running || status === 'done' || status === 'aborted') && (
           <div className="space-y-1">
             <div className="h-2 bg-dv-deep border border-dv-border rounded-sm overflow-hidden">
@@ -136,6 +158,9 @@ export const Sam3PropagateModal: React.FC<Sam3PropagateModalProps> = ({
             <div className="text-[10px] text-dv-muted font-mono">
               {pct}% · {processed}/{sampleTotal || '—'} · масок {maskTotal}
               {persisted > 0 ? ` · SQLite ${persisted}` : ''}
+              {totalWindows > 0 && (
+                <span className="ml-2">Окно {currentWindow}/{totalWindows}</span>
+              )}
             </div>
           </div>
         )}

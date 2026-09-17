@@ -26,6 +26,8 @@ from services.sam3_engine import (
 )
 
 MAX_PROPAGATE_FRAMES = 30
+WINDOW_SIZE = 30  # P3.13.3d: max frames per window
+WINDOW_OVERLAP = 5  # P3.13.3d: overlap between consecutive windows
 
 _lock = threading.Lock()
 _abort = threading.Event()
@@ -47,6 +49,10 @@ _state: dict[str, Any] = {
     "results": [],
     "frame_w": 0,
     "frame_h": 0,
+    # P3.13.3d: full-video chunking state
+    "full_video": False,
+    "total_windows": 0,
+    "current_window": 0,
 }
 
 
@@ -67,6 +73,10 @@ def _snapshot(*, include_results: bool = False) -> dict[str, Any]:
             "frame_w": int(_state.get("frame_w") or 0),
             "frame_h": int(_state.get("frame_h") or 0),
             "persist": bool(_state["persist"]),
+            # P3.13.3d: full-video chunking state
+            "full_video": bool(_state.get("full_video", False)),
+            "total_windows": int(_state.get("total_windows", 0)),
+            "current_window": int(_state.get("current_window", 0)),
         }
         if include_results or _state["status"] in ("done", "aborted", "error"):
             out["results"] = list(_state["results"])
@@ -97,6 +107,26 @@ def _resolve_video(video_path: str) -> tuple[Path, str]:
     from services.batch_scanner import _resolve_video as resolve
 
     return resolve(video_path)
+
+
+def _chunk_video(total_frames: int) -> list[tuple[int, int]]:
+    """P3.13.3d: Split video into windows of ≤WINDOW_SIZE frames.
+    
+    N1 fix: stride = WINDOW_SIZE - WINDOW_OVERLAP = 25.
+    Last window capped at WINDOW_SIZE. Coverage: all frames covered without gaps.
+    
+    Returns: list of (start_frame_offset, count) tuples.
+    """
+    if total_frames <= WINDOW_SIZE:
+        return [(0, total_frames)]
+    stride = WINDOW_SIZE - WINDOW_OVERLAP  # = 25
+    chunks: list[tuple[int, int]] = []
+    start = 0
+    while start < total_frames:
+        count = min(WINDOW_SIZE, total_frames - start)
+        chunks.append((start, count))
+        start += stride
+    return chunks
 
 
 def polygon_aabb_norm(polygon: list[list[float]]) -> dict[str, float] | None:
@@ -332,6 +362,7 @@ def _run(
     bboxes_norm: list[dict[str, Any]],
     texts: list[str] | None,
     persist: bool,
+    full_video: bool = False,
 ) -> None:
     clip_path: Path | None = None
     clip_dir: Path | None = None
@@ -368,93 +399,235 @@ def _run(
         use_text = bool(texts)
         concepts = normalize_text_prompts(texts) if use_text else []
 
-        clip_path, clip_fps, w, h, written = _write_temp_clip(
-            video_abs, start_frame, max_frames
-        )
-        clip_dir = clip_path.parent
-        _set(
-            sample_total=written,
-            message=f"Propagate {written} кадров с t={time_sec:.2f}с",
-            progress=0.05,
-        )
-
-        if _abort.is_set():
+        # P3.13.3d: full-video chunking path
+        if full_video and total > WINDOW_SIZE:
+            chunks = _chunk_video(total - start_frame)
+            total_windows = len(chunks)
+            _set(total_windows=total_windows, full_video=True, current_window=0)
             _set(
-                status="aborted",
-                message="Propagate прерван",
-                results=[],
-                processed=0,
-                mask_total=0,
+                sample_total=total_windows,
+                message=f"Полное видео: {total_windows} окон, t={time_sec:.2f}с",
                 progress=0.0,
             )
-            return
 
-        if use_text:
-            stream_results = _run_video_semantic_predictor(clip_path, weight_path, concepts)
-            default_label = concepts[0] if concepts else "object"
-        else:
-            seed_boxes = _seed_bboxes_norm(
-                video_abs=video_abs,
-                start_frame=start_frame,
-                points_norm=points_norm,
-                bboxes_norm=bboxes_norm,
+            for chunk_idx, (offset, count) in enumerate(chunks):
+                if _abort.is_set():
+                    _set(
+                        status="aborted",
+                        message="Propagate прерван",
+                        results=list(results),
+                        processed=len(results),
+                        mask_total=mask_total,
+                        progress=len(results) / total if total else 0.0,
+                    )
+                    return
+
+                chunk_start = start_frame + offset
+                _set(current_window=chunk_idx + 1)
+                _set(
+                    message=f"Окно {chunk_idx + 1}/{total_windows}: {count} кадров",
+                    progress=(chunk_idx / total_windows) if total_windows else 0.0,
+                )
+
+                # P4: per-chunk temp clip
+                chunk_clip_path: Path | None = None
+                chunk_clip_dir: Path | None = None
+                try:
+                    chunk_clip_path, chunk_fps, w, h, written = _write_temp_clip(
+                        video_abs, chunk_start, count
+                    )
+                    chunk_clip_dir = chunk_clip_path.parent
+
+                    if use_text:
+                        stream_results = _run_video_semantic_predictor(
+                            chunk_clip_path, weight_path, concepts
+                        )
+                        default_label = concepts[0] if concepts else "object"
+                    else:
+                        seed_boxes = _seed_bboxes_norm(
+                            video_abs=video_abs,
+                            start_frame=chunk_start,
+                            points_norm=points_norm,
+                            bboxes_norm=bboxes_norm,
+                        )
+                        bboxes_px = _norm_bboxes_to_px(seed_boxes, w, h)
+                        stream_results = _run_video_predictor(
+                            chunk_clip_path, weight_path, bboxes_px
+                        )
+                        default_label = "object"
+
+                    for i, result in enumerate(stream_results):
+                        # P2: per-frame abort check inside window loop
+                        if _abort.is_set():
+                            _set(
+                                status="aborted",
+                                message="Propagate прерван",
+                                results=list(results),
+                                processed=len(results),
+                                mask_total=mask_total,
+                                progress=(chunk_idx + i / written) / total_windows
+                                if written and total_windows
+                                else 0.0,
+                            )
+                            return
+                        frame_idx = chunk_start + i
+                        t = float(frame_idx) / chunk_fps
+                        masks = _results_to_frame_masks(result, h, w)
+                        if use_text:
+                            for m in masks:
+                                if m.get("class") in (None, "", "object"):
+                                    m["class"] = default_label
+                        # N3: dedup by frame_idx (keep last window's mask)
+                        existing_idx = None
+                        for idx, r in enumerate(results):
+                            if r.get("frame_idx") == frame_idx:
+                                existing_idx = idx
+                                break
+                        frame_record = {
+                            "time_sec": round(t, 3),
+                            "frame_idx": frame_idx,
+                            "masks": masks,
+                        }
+                        if existing_idx is not None:
+                            results[existing_idx] = frame_record
+                        else:
+                            results.append(frame_record)
+                        mask_total += len(masks)
+                        # P3: per-frame progress update
+                        _set(
+                            processed=len(results),
+                            mask_total=mask_total,
+                            progress=(chunk_idx + i / written) / total_windows
+                            if written and total_windows
+                            else 0.0,
+                            results=list(results),
+                            message=f"Кадр {len(results)}/{total} · масок {mask_total}",
+                        )
+                finally:
+                    # P4: per-chunk temp cleanup
+                    if chunk_clip_path is not None:
+                        try:
+                            chunk_clip_path.unlink(missing_ok=True)
+                        except Exception:  # noqa: BLE001
+                            pass
+                    if chunk_clip_dir is not None:
+                        try:
+                            chunk_clip_dir.rmdir()
+                        except Exception:  # noqa: BLE001
+                            pass
+                # VRAM guard between chunks
+                _empty_cache()
+
+            # Persist all results at end
+            if persist and results:
+                persisted = _persist_results(
+                    source_video=source_key, track_id=task_id, results=results
+                )
+
+            _set(
+                status="done",
+                progress=1.0,
+                processed=len(results),
+                mask_total=mask_total,
+                persisted=persisted,
+                results=list(results),
+                message=(
+                    f"Готово: {len(results)} кадров, {mask_total} масок"
+                    + (f", SQLite {persisted}" if persist else "")
+                ),
+                error=None,
             )
-            bboxes_px = _norm_bboxes_to_px(seed_boxes, w, h)
-            stream_results = _run_video_predictor(clip_path, weight_path, bboxes_px)
-            default_label = "object"
+        else:
+            # Original single-chunk path (backward compat)
+            clip_path, clip_fps, w, h, written = _write_temp_clip(
+                video_abs, start_frame, max_frames
+            )
+            clip_dir = clip_path.parent
+            _set(
+                sample_total=written,
+                message=f"Propagate {written} кадров с t={time_sec:.2f}с",
+                progress=0.05,
+            )
 
-        for i, result in enumerate(stream_results):
             if _abort.is_set():
                 _set(
                     status="aborted",
                     message="Propagate прерван",
-                    results=list(results),
-                    processed=len(results),
-                    mask_total=mask_total,
-                    progress=len(results) / written if written else 0.0,
+                    results=[],
+                    processed=0,
+                    mask_total=0,
+                    progress=0.0,
                 )
                 return
-            frame_idx = start_frame + i
-            t = float(frame_idx) / clip_fps
-            masks = _results_to_frame_masks(result, h, w)
+
             if use_text:
-                for m in masks:
-                    if m.get("class") in (None, "", "object"):
-                        m["class"] = default_label
-            results.append(
-                {
-                    "time_sec": round(t, 3),
-                    "frame_idx": frame_idx,
-                    "masks": masks,
-                }
-            )
-            mask_total += len(masks)
+                stream_results = _run_video_semantic_predictor(
+                    clip_path, weight_path, concepts
+                )
+                default_label = concepts[0] if concepts else "object"
+            else:
+                seed_boxes = _seed_bboxes_norm(
+                    video_abs=video_abs,
+                    start_frame=start_frame,
+                    points_norm=points_norm,
+                    bboxes_norm=bboxes_norm,
+                )
+                bboxes_px = _norm_bboxes_to_px(seed_boxes, w, h)
+                stream_results = _run_video_predictor(clip_path, weight_path, bboxes_px)
+                default_label = "object"
+
+            for i, result in enumerate(stream_results):
+                if _abort.is_set():
+                    _set(
+                        status="aborted",
+                        message="Propagate прерван",
+                        results=list(results),
+                        processed=len(results),
+                        mask_total=mask_total,
+                        progress=len(results) / written if written else 0.0,
+                    )
+                    return
+                frame_idx = start_frame + i
+                t = float(frame_idx) / clip_fps
+                masks = _results_to_frame_masks(result, h, w)
+                if use_text:
+                    for m in masks:
+                        if m.get("class") in (None, "", "object"):
+                            m["class"] = default_label
+                results.append(
+                    {
+                        "time_sec": round(t, 3),
+                        "frame_idx": frame_idx,
+                        "masks": masks,
+                    }
+                )
+                mask_total += len(masks)
+                _set(
+                    processed=len(results),
+                    mask_total=mask_total,
+                    progress=min(1.0, len(results) / written if written else 1.0),
+                    results=list(results),
+                    message=f"Кадр {len(results)}/{written} · масок {mask_total}",
+                )
+
+            if persist and results:
+                persisted = _persist_results(
+                    source_video=source_key, track_id=task_id, results=results
+                )
+
             _set(
+                status="done",
+                progress=1.0,
                 processed=len(results),
                 mask_total=mask_total,
-                progress=min(1.0, len(results) / written if written else 1.0),
+                persisted=persisted,
                 results=list(results),
-                message=f"Кадр {len(results)}/{written} · масок {mask_total}",
+                message=(
+                    f"Готово: {len(results)} кадров, {mask_total} масок"
+                    + (f", SQLite {persisted}" if persist else "")
+                ),
+                error=None,
             )
-
-        if persist and results:
-            persisted = _persist_results(
-                source_video=source_key, track_id=task_id, results=results
-            )
-
-        _set(
-            status="done",
-            progress=1.0,
-            processed=len(results),
-            mask_total=mask_total,
-            persisted=persisted,
-            results=list(results),
-            message=(
-                f"Готово: {len(results)} кадров, {mask_total} масок"
-                + (f", SQLite {persisted}" if persist else "")
-            ),
-            error=None,
-        )
     except Exception as exc:  # noqa: BLE001
         _set(
             status="error",
@@ -488,6 +661,7 @@ def start(
     bboxes: list[dict[str, Any]] | None = None,
     texts: list[str] | None = None,
     persist: bool = False,
+    full_video: bool = False,
 ) -> dict[str, Any]:
     global _thread
     points = points or []
@@ -507,6 +681,22 @@ def start(
         raise RuntimeError("SAM3 model not loaded")
 
     video_abs, source_key = _resolve_video(video_path)
+
+    # P3.13.3d: compute total_frames for full_video window count (before thread)
+    cap = cv2.VideoCapture(str(video_abs))
+    try:
+        if not cap.isOpened():
+            raise RuntimeError(f"Не удалось открыть видео: {video_abs.name}")
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    finally:
+        cap.release()
+
+    # P3.13.3d: compute total_windows for full_video dispatch (before thread)
+    if full_video and total > WINDOW_SIZE:
+        total_windows = len(_chunk_video(total))
+    else:
+        total_windows = 0
+
     frames = max(1, min(MAX_PROPAGATE_FRAMES, int(max_frames)))
     t = float(max(0.0, time_sec))
 
@@ -530,6 +720,10 @@ def start(
                 "max_frames": frames,
                 "persist": bool(persist),
                 "results": [],
+                # P3.13.3d: full-video state
+                "full_video": full_video,
+                "total_windows": total_windows,
+                "current_window": 0,
             }
         )
         thr = threading.Thread(
@@ -544,6 +738,7 @@ def start(
                 bboxes if has_visual else [],
                 concepts,
                 bool(persist),
+                full_video,
             ),
             name=f"sam3-prop-{task_id}",
             daemon=True,
