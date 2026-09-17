@@ -6,15 +6,27 @@
 
 - **ultralytics:** 8.4.118 → 8.4.154 ✅ upgraded
 - **sahi:** 0.12.6 → 0.11.36 ⚠️ downgraded (opencv-python 4.11 compatibility)
-- **opencv-python:** 4.11.0.86 → 4.11.0 (installed, no-deps from cache)
-- **opencv-python-headless:** 4.11.0.86 → 4.11.0 (installed, no-deps from cache)
+- **opencv-python:** 4.11.0.86 (installed, with headless)
+- **opencv-python-headless:** 4.11.0.86 (installed, no-deps from cache)
 - **numpy:** 1.26.4 pinned (protected, ultralytics/sahi/DA3 require <2)
-- **rasterio:** 1.5.1 installed (no-deps) — conflicts with numpy<2 per pip check, but import works
+- **rasterio:** 1.4.3 ✅ (verdict A: 1.5.1 rejected numpy>=2 conflict; 1.4.3 numpy<2 compatible)
 - **depth_anything_3:** 0.1.1 unchanged (open3d/pillow-heif/pre-commit/xformers installed as transitive)
 - **torch/torchvision:** 2.11.0+cu128 / 0.26.0+cu128 GUARD OK (not touched)
 - **Transitive deps accepted:** open3d, pillow-heif, pre-commit, xformers, dash, flask, ipywidgets, plotly, pydantic 2.13.5, httpx 0.28.1, pillow 12.3.0, psutil 7.2.2
-- **pip check:** only warning `rasterio 1.5.1 has requirement numpy>=2, but you have numpy 1.26.4` (non-blocking)
+- **pip check:** clean (rasterio 1.4.3 numpy<2 compatible)
 - **requirements.txt:** updated to match tested set (ultralytics>=8.4.154, sahi>=0.11.0,<0.12.0, opencv-python>=4.11.0)
+
+## B4 rev3 (2026-09-17) — Single seed + mirror packs
+
+- **CUDA torch:** torch 2.11.0+cu128 / torchvision 0.26.0+cu128 — from muravei_env via `MURAVEI_PORTABLE_MIRROR=1` (robocopy)
+- **rasterio:** 1.4.3 seeded ✅, GeoTIFF enabled ✅ in BOTH packs
+- **Mini pack:** CUDA torch + rasterio + assets/models (NO DA3/AV)
+- **Full pack:** CUDA torch + rasterio + assets/models + AV + DA3 (4 variants)
+- **Bands advisory only** (operator rev2): no auto-reject
+- **Cache add-only** (PROTECT): never purge/overwrite
+- **assets/models:** mandatory in both packs (assert file list)
+- **Orphans documented:** numpy 2.5.2/2.5.3, CPU torch/vision 2.14.0/0.29.0, onnxruntime_gpu 1.29.0, rasterio 1.5.1 — kept per add-only block
+- **Mirror exclude list** (build_portable.ps1): dash, flask, ipywidgets, jupyterlab_widgets, widgetsnbextension, plotly, pre_commit, cfgv, identify, nodeenv, virtualenv, distlib, python_discovery, pillow_heif, open3d, xformers, nbformat, jsonschema, jsonschema_specifications, jupyter_core, importlib_metadata, traitlets, comm, ipython, ipython_pygments_lexers, matplotlib_inline, prompt_toolkit, jedi, parso, stack_data, asttokens, executing, pure_eval, nest_asyncio, janus, zipp, retrying, configargparse, platformdirs, fastjsonschema, referencing, rpds_py — dev-only packages excluded from robocopy mirror
 
 ## Session Trace (observability)
 

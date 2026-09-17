@@ -1,0 +1,15 @@
+fix(pack): B4 rev3 mirror exclude list (R4), pre-commit timeout fix
+
+R4 — MIRROR_EXCLUDE in build_portable.ps1 robocopy:
+- Grep confirmed: no open3d/xformers runtime imports in backend/services
+- Added /XD exclude list for 44 dev-only packages (dash, flask, ipywidgets,
+  plotly, pre_commit, pillow_heif, open3d, xformers, jupyter*, nbformat,
+  jsonschema, ipython, jedi, prompt_toolkit, stack_data, etc.)
+- Prevents transitive dev bloat from entering portable packs
+
+Pre-commit hook fix:
+- Added 120s timeout to prevent COLMAP long-test hang
+- Before: full unittest discover (hangs on test_colmap_sequential_segment)
+- After: timeout 120 + graceful skip with message
+
+KNOWN_ISSUES updated: B4 rev3 section + mirror exclude list + U1 remediation
