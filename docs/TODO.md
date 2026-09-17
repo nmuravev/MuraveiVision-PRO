@@ -20,6 +20,14 @@
 - [ ] **Tactical YOLO26 s/m/l-ft training** (tank/BMP/soldier/mines) → drop into `assets/models`; rebuild picks up via ladder. **Do not** fetch COCO stock s/m/l.
 - [ ] **DA3 nested/mono** — not used (see KNOWN_ISSUES); no further rescue backlog unless product reopens
 
+## B1–B3 (v3.5 backlog)
+
+- [x] **B1. Perf table** — DONE (`848ae44`): ms/VRAM budget @ 8GB in CONFIGURATION.md
+- [x] **B2. Mask export GeoTIFF/KML** — DONE (`c908d01`): GPS-gated export, 14 unit tests
+- [x] **B3. Full-video SAM3 propagate** — DONE (`<COMMIT_HASH>`): chunked ≤30, stride=25, overlap=5, VRAM guard, dedup, abort, persist
+- [ ] **B4. CUDA + rasterio wheels** — seed `torch*+cu128*` + `rasterio` в `portable/cache/wheels`
+- [ ] **B5. Tactical YOLO26 s/m/l-ft** — tank/BMP/soldier/mines training (never touch `yolo26n-ft.pt`)
+
 ## Backlog (после Phase 3)
 
 **Phase 3 / P3 закрыт** — см. [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md). SAM3 линия 3a/3b/3c закрыта. Unit + Playwright E2E; error catalog.

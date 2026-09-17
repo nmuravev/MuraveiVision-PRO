@@ -2,12 +2,20 @@
 
 ## Meta
 
-- **Snapshot date:** 2026-09-16
+- **Snapshot date:** 2026-09-17
 - **Branch:** `main`
-- **Commit:** ef65c67
-- **Unit tests:** 373 (+3 recon package)
-- **Status:** N1–N6 on main; N6 smoke extension complete
-- **Last updated by:** test(network): extend dual_network_smoke for N1–N5
+- **Commit:** 7b046db (B3 full-video SAM3 propagate tip)
+- **Unit tests:** 407+ (backend suite, pre-commit gate)
+- **Status:** N1–N6 + B1+B2+B3 on main; B4 CUDA+rasterio seed verdicts next
+- **Last updated by:** feat(seg): full-video SAM3 propagate chunked (B3 fixture fix)
+- **Portable size bands (OPERATOR-SANCTIONED 2026-09-16):** Mini warn&gt;4.5 / reject&gt;5; FullKit no-DA3 warn&gt;9.5 / reject&gt;10; FullKit+DA3 (base+large+metric+**giant**) warn&gt;18 / reject&gt;22. Giant stays for heterogeneous fleets (grey on VRAM&lt;16 GB).
+- **Portable local (P-C 2026-09-16):** Mini 3.67 GB sha256 `A40E1CD3…EF2F`; FullKit+DA3 win_cpu 13.07 GB sha256 `41B6FEE9…1772` (within 18/22). Mini ZIP DA3 bins=0; Full stage 4× safetensors + NOTICE.
+- **DA3 depth stats (in-memory, job 44aa6e50):** base median=21.65 std=2.88; large median=22.22 std=1.68; metric median=21.74 std=3.16 — models differ
+- **Field×3 (after flake fixes):** 4p/1f · 4p/1f · 3p/2f — residual under HW-poll load (Vite /api 2–4s); core trio green when run alone
+- **Env pack:** win_cuda / win_cpu — [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)
+- **E6 additions:** `timm` + `safetensors`; `ci_full.ps1` (E6 + DA3 A/B); CRLF/LF launcher guards; SAM3 load cap ≤60s; validator `reject_ratio`
+- **DA3:** `sidecars.da3` SSO in portable_manifest (real sha256); HF `config_*.json` + `inference()` path; `DA3_RUNTIME_UNAVAILABLE` fail-closed (no ones*2.0); NOTICE_CC-BY-NC-4.0 for LARGE/GIANT
+- **Non-commercial project declaration:** CC BY-NC DA3 weights allowed only under non-commercial distribution — see README + [ATTRIBUTION.md](ATTRIBUTION.md)
 - **Portable size bands (OPERATOR-SANCTIONED 2026-09-16):** Mini warn&gt;4.5 / reject&gt;5; FullKit no-DA3 warn&gt;9.5 / reject&gt;10; FullKit+DA3 (base+large+metric+**giant**) warn&gt;18 / reject&gt;22. Giant stays for heterogeneous fleets (grey on VRAM&lt;16 GB).
 - **Portable local (P-C 2026-09-16):** Mini 3.67 GB sha256 `A40E1CD3…EF2F`; FullKit+DA3 win_cpu 13.07 GB sha256 `41B6FEE9…1772` (within 18/22). Mini ZIP DA3 bins=0; Full stage 4× safetensors + NOTICE.
 - **DA3 depth stats (in-memory, job 44aa6e50):** base median=21.65 std=2.88; large median=22.22 std=1.68; metric median=21.74 std=3.16 — models differ
@@ -19,6 +27,9 @@
 
 ## Major Changes in This Release
 
+- **B3. Full-video SAM3 propagate (P3.13.3d):** ✅ DONE (7b046db) — chunked windows ≤30, stride=25, overlap=5, dedup by frame_idx, VRAM guard (`empty_cache` between chunks), abort per-frame/chunk with partial results preserved, OOM handling with RU hint, opt-in SQLite persist. 12 new unit tests (20 total).
+- **B2. Mask export GeoTIFF/KML:** GPS-gated export for batch seg / SAM3 propagate masks. GeoTIFF requires rasterio (503 if missing). KML exports empty doc without GPS. 14 unit tests.
+- **B1. Perf budget table:** ms/VRAM @ 8GB in CONFIGURATION.md + KNOWN_ISSUES.md
 - **Depth Anything 3 (DA3) Dense Backend (all-variants):** `da3_dense_base` / `large` / `metric` / `giant` (≥16 GB), sidecar-only, soft-fail preserves COLMAP
 - AliceVision demoted to **Mesh-only** opt-in (`alicevision_enabled`); AV MVS Dense legacy behind `MURAVEI_LEGACY_AV_DENSE=1`
 - Preset hierarchy Sparse → Dense (DA3) → Mesh (AV) → Splat
@@ -121,17 +132,15 @@ flowchart TB
 
 ## 5. Открытый backlog
 
+### B4–B5 (v3.5 pending)
+
+- **B4. CUDA + rasterio wheels:** seed `torch*+cu128*` + `rasterio` в `portable/cache/wheels` или задокументировать skip
+- **B5. Tactical YOLO26 s/m/l-ft:** training на tank/BMP/soldier/mines → `assets/models`; ladder s-ft>m-ft>l-ft>n-ft>n. **Не трогать** `yolo26n-ft.pt`
+
 ### P2 — Performance / поле
 
 - Profiling batch seg / SAM propagate / dual-viewer на **8 ГБ**
 - Полевой smoke: archive SAM3 text + Live «Кадр SAM» + Compare + Batch CD на реальных роликах
-
-### По запросу
-
-- GeoTIFF / KML **масок** batch/propagate
-- Full-video SAM propagate (сейчас ≤30 кадров)
-- Opt-in персистентность Batch CD / CSV batch
-- Uniform dual-stream frame_step CD (сознательно **не** в MVP Batch CD)
 
 ### Техдолг / UX (если всплывёт)
 
@@ -171,7 +180,7 @@ flowchart TB
 
 ## 8. Одной фразой
 
-**Сейчас продукт = полевой detect + geo + seg/SAM3 + полный Change Detection v3 + сеть/portable; следующий мастер-фокус — не новые фичи ядра, а полевой smoke и perf на 8 ГБ, остальное — backlog по запросу.**
+**Сейчас продукт = полевой detect + geo + seg/SAM3 (вкл. full-video propagate B3) + Change Detection v3 + сеть/portable; B1–B3 на main, B4–B5 pending; следующий шаг — релизный поезд P→V1→V2 (packs 3.5 → heavy check → tag v3.5.0-rc1 → STOP → GA v3.5.0).**
 
 ---
 
@@ -206,11 +215,13 @@ Agent rules: [`.cursorrules`](../.cursorrules) (repo root).
 
 ---
 
-## 10. Next Steps (from backlog)
+## 10. Next Steps (release train)
 
 | Priority | Sprint | Why |
 |----------|--------|-----|
-| 1 | Field smoke pack | Validate 8GB + real videos end-to-end |
-| 2 | Perf budget | ms/VRAM limits for batch ops |
-| 3 | Mask export (on request) | GeoTIFF/KML for masks |
-| 4 | Persist/opt-in (on request) | SQLite for batch CD |
+| 1 | **B3 merge** | full-video SAM3 propagate (fixture fix applied, tests pending green) |
+| 2 | **B4** | seed torch+cu128* + rasterio wheels |
+| 3 | **B5** | tactical YOLO26 s/m/l-ft training |
+| 4 | **P** | cache-first pack rebuild Mini + FullKit |
+| 5 | **V1** | ONE heavy check (unittest full + ci_full + field×3 + dual + da3 + lbs) |
+| 6 | **V2** | tag v3.5.0-rc1, STOP → GA v3.5.0 |
