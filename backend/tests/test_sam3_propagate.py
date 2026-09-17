@@ -296,16 +296,20 @@ class Sam3PropagateTests(unittest.TestCase):
         """Mock 90-frame video, full_video=True, verify 4 chunks processed."""
         engine = mock.MagicMock()
         engine.status.return_value = {"ready": True, "loaded": True, "weight": "sam3.pt"}
-        # Mock cv2.VideoCapture globally to avoid mp4v codec issues
-        mock_cap = mock.MagicMock()
-        mock_cap.isOpened.return_value = True
-        mock_cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
-        # side_effect: one frame then EOF — prevents infinite read loops in _seed_bboxes_norm
-        mock_cap.read.side_effect = [
-            (True, np.zeros((32, 32, 3), dtype=np.uint8)),
-            (False, None),
-        ]
-        mock_cap.release.return_value = None
+        # P3.13.3d fix: Use side_effect factory to create independent mocks per VideoCapture call.
+        # This prevents shared state between _seed_bboxes_norm, _write_temp_clip, and _run().
+        def make_mock_cap():
+            cap = mock.MagicMock()
+            cap.isOpened.return_value = True
+            cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
+            # Return one valid frame then EOF repeatedly (simulates short video read pattern)
+            from itertools import cycle
+            cap.read.side_effect = cycle([
+                (True, np.zeros((32, 32, 3), dtype=np.uint8)),
+                (False, None),
+            ])
+            cap.release.return_value = None
+            return cap
         with (
             mock.patch.object(prop, "get_sam3_engine", return_value=engine),
             mock.patch.object(prop, "_resolve_video", return_value=(self._video, "archive/clip.mp4")),
@@ -319,7 +323,7 @@ class Sam3PropagateTests(unittest.TestCase):
                 prop, "_run_video_predictor",
                 return_value=[_FakeResult() for _ in range(30)],
             ),
-            mock.patch("cv2.VideoCapture", return_value=mock_cap),
+            mock.patch("cv2.VideoCapture", side_effect=lambda *a, **kw: make_mock_cap()),
         ):
             (self._tmp / "sam3.pt").write_bytes(b"\x00" * 2048)
             started = prop.start(
@@ -340,16 +344,21 @@ class Sam3PropagateTests(unittest.TestCase):
         """Abort during chunk 2, verify chunk 1 results kept."""
         engine = mock.MagicMock()
         engine.status.return_value = {"ready": True, "loaded": True, "weight": "sam3.pt"}
-        # Mock cv2.VideoCapture globally to avoid mp4v codec issues
-        mock_cap = mock.MagicMock()
-        mock_cap.isOpened.return_value = True
-        mock_cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
-        # side_effect: one frame then EOF — prevents infinite read loops in _seed_bboxes_norm
-        mock_cap.read.side_effect = [
-            (True, np.zeros((32, 32, 3), dtype=np.uint8)),
-            (False, None),
-        ]
-        mock_cap.release.return_value = None
+        # P3.13.3d fix: Use side_effect factory to create independent mocks per VideoCapture call.
+        # This prevents shared state between _seed_bboxes_norm, _write_temp_clip, and _run().
+        def make_mock_cap():
+            cap = mock.MagicMock()
+            cap.isOpened.return_value = True
+            cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
+            # Return one valid frame then EOF repeatedly (simulates short video read pattern)
+            from itertools import cycle
+            cap.read.side_effect = cycle([
+                (True, np.zeros((32, 32, 3), dtype=np.uint8)),
+                (False, None),
+            ])
+            cap.release.return_value = None
+            return cap
+
         call_count = [0]
 
         def counting_predictor(*args, **kwargs):
@@ -368,7 +377,7 @@ class Sam3PropagateTests(unittest.TestCase):
                 return_value=(self._video, 30.0, 32, 32, 30),
             ),
             mock.patch.object(prop, "_run_video_predictor", side_effect=counting_predictor),
-            mock.patch("cv2.VideoCapture", return_value=mock_cap),
+            mock.patch("cv2.VideoCapture", side_effect=lambda *a, **kw: make_mock_cap()),
         ):
             (self._tmp / "sam3.pt").write_bytes(b"\x00" * 2048)
             started = prop.start(
@@ -390,16 +399,20 @@ class Sam3PropagateTests(unittest.TestCase):
         """Verify _empty_cache() called between chunks."""
         engine = mock.MagicMock()
         engine.status.return_value = {"ready": True, "loaded": True, "weight": "sam3.pt"}
-        # Mock cv2.VideoCapture globally to avoid mp4v codec issues
-        mock_cap = mock.MagicMock()
-        mock_cap.isOpened.return_value = True
-        mock_cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
-        # side_effect: one frame then EOF — prevents infinite read loops in _seed_bboxes_norm
-        mock_cap.read.side_effect = [
-            (True, np.zeros((32, 32, 3), dtype=np.uint8)),
-            (False, None),
-        ]
-        mock_cap.release.return_value = None
+        # P3.13.3d fix: Use side_effect factory to create independent mocks per VideoCapture call.
+        # This prevents shared state between _seed_bboxes_norm, _write_temp_clip, and _run().
+        def make_mock_cap():
+            cap = mock.MagicMock()
+            cap.isOpened.return_value = True
+            cap.get.side_effect = lambda prop: 90.0 if prop == cv2.CAP_PROP_FRAME_COUNT else 30.0
+            # Return one valid frame then EOF repeatedly (simulates short video read pattern)
+            from itertools import cycle
+            cap.read.side_effect = cycle([
+                (True, np.zeros((32, 32, 3), dtype=np.uint8)),
+                (False, None),
+            ])
+            cap.release.return_value = None
+            return cap
         with (
             mock.patch.object(prop, "get_sam3_engine", return_value=engine),
             mock.patch.object(prop, "_resolve_video", return_value=(self._video, "archive/clip.mp4")),
@@ -414,7 +427,7 @@ class Sam3PropagateTests(unittest.TestCase):
                 return_value=[_FakeResult() for _ in range(30)],
             ),
             mock.patch.object(prop, "_empty_cache") as mock_cache,
-            mock.patch("cv2.VideoCapture", return_value=mock_cap),
+            mock.patch("cv2.VideoCapture", side_effect=lambda *a, **kw: make_mock_cap()),
         ):
             (self._tmp / "sam3.pt").write_bytes(b"\x00" * 2048)
             started = prop.start(
