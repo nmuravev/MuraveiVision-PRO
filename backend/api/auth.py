@@ -23,6 +23,7 @@ from services.db import (
 from services.security import (
     JWT_ALG,
     TOKEN_TTL_SEC,
+    client_key,
     get_current_user,
     require_role,
 )
@@ -104,7 +105,8 @@ def _validate_session_token(
 @router.post("/login", response_model=LoginResponse)
 async def login(body: LoginRequest, request: Request) -> LoginResponse:
     init_db()
-    key = request.client.host if request.client else "local"
+    # P2-3: Use client_key() for NAT/Proxy support (X-Forwarded-For)
+    key = client_key(request)
     state = get_lockout(key)
     now = time.time()
     if state["locked_until"] > now:
