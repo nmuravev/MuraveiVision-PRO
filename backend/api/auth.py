@@ -15,7 +15,6 @@ from services.db import (
     get_lockout,
     get_pin_row,
     init_db,
-    pin_from_b64,
     record_failed_login,
     update_pin,
 )
@@ -30,10 +29,6 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 MAX_FAILS = 5
 LOCK_SEC = 120
-PEEK_ROLES = {
-    "engineer": ("operator",),
-    "master": ("operator", "engineer", "master"),
-}
 
 
 class LoginRequest(BaseModel):
@@ -89,23 +84,8 @@ async def me(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]
     return {"username": user["sub"], "role": user["role"]}
 
 
-@router.get("/peek-pin/{role}")
-async def peek_pin(
-    role: str,
-    user: dict[str, Any] = Depends(require_role("engineer")),
-) -> dict[str, Any]:
-    """Return plaintext PIN (from base64). UI must hide it after 4 seconds."""
-    allowed = PEEK_ROLES.get(str(user["role"]), ())
-    if role not in allowed:
-        raise HTTPException(status_code=403, detail="Cannot view this PIN")
-    row = get_pin_row(role)
-    if not row:
-        raise HTTPException(status_code=404, detail="Unknown role")
-    return {
-        "role": role,
-        "pin": pin_from_b64(str(row["pin_b64"])),
-        "display_ms": 4000,
-    }
+# P1-1: /peek-pin REMOVED — plaintext PIN exposure risk
+# Use CLI script scripts/reset_pin.py for admin PIN management
 
 
 @router.post("/change-pin")
