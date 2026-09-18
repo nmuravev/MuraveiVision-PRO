@@ -764,35 +764,49 @@ def list_recent_detections(since: float, limit: int = 100) -> list[dict[str, Any
         conn.close()
 
 
+# P1-3: Explicit column whitelist with type metadata — prevents SQL injection
+# via identifier interpolation. Maps column -> (type_coercer, default).
+_DETECTION_COLUMNS: dict[str, tuple[Any, Any]] = {
+    "class_id": (int, 0),
+    "class_name": (str, ""),
+    "confidence": (float, 1.0),
+    "bbox_x": (float, 0.0),
+    "bbox_y": (float, 0.0),
+    "bbox_w": (float, 0.0),
+    "bbox_h": (float, 0.0),
+    "crop_path": (lambda v: v if v is not None else None, None),
+    "is_edited": (lambda v: 1 if v else 0, 0),
+    "edited_by": (lambda v: v if v is not None else None, None),
+    "edited_at": (lambda v: v if v is not None else None, None),
+    "user_notes": (lambda v: (v or "").strip(), ""),
+    "is_deleted": (lambda v: 1 if v else 0, 0),
+    "origin": (lambda v: (v or "auto").strip(), "auto"),
+    "gps_lat": (lambda v: float(v) if v is not None else None, None),
+    "gps_lon": (lambda v: float(v) if v is not None else None, None),
+    "gps_alt": (lambda v: float(v) if v is not None else None, None),
+    "ai_class_name": (str, ""),
+}
+
 def update_detection(det_id: str, fields: dict[str, Any]) -> dict[str, Any] | None:
     init_db()
-    allowed = {
-        "class_id",
-        "class_name",
-        "confidence",
-        "bbox_x",
-        "bbox_y",
-        "bbox_w",
-        "bbox_h",
-        "crop_path",
-        "is_edited",
-        "edited_by",
-        "edited_at",
-        "user_notes",
-        "is_deleted",
-        "origin",
-        "gps_lat",
-        "gps_lon",
-        "gps_alt",
-        "ai_class_name",
-    }
+    # P1-3: Strict whitelist — only known-safe column names allowed
     sets: list[str] = []
     args: list[Any] = []
     for key, value in fields.items():
-        if key not in allowed:
+        if key not in _DETECTION_COLUMNS:
+            logger.warning(
+                f"[update_detection] Skipped unknown field: {key!r} "
+                f"(not in whitelist of {len(_DETECTION_COLUMNS)} columns)"
+            )
             continue
-        if key in {"is_edited", "is_deleted"}:
-            value = 1 if value else 0
+        coercer, _ = _DETECTION_COLUMNS[key]
+        try:
+            value = coercer(value)
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                f"[update_detection] Type coercion failed for {key!r}: {exc}, skipping"
+            )
+            continue
         sets.append(f"{key} = ?")
         args.append(value)
     if not sets:
