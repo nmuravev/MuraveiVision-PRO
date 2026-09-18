@@ -1,6 +1,7 @@
 """SQLite: pins, settings, lockouts, and operator detections."""
 from __future__ import annotations
 
+import logging
 import base64
 import hashlib
 import io
@@ -12,6 +13,8 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Project root (MuraveiVision-PRO/) — backend/services/<file>.py → parents[2]
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -425,32 +428,72 @@ def get_lockout(client_key: str) -> dict[str, Any]:
         conn.close()
 
 
+MAX_LOCKOUT_RETRIES = 3
+LOCKOUT_RETRY_BACKOFF = 0.05  # 50ms
+
+
 def record_failed_login(client_key: str, max_fails: int = 5, lock_sec: int = 120) -> dict[str, Any]:
+    """Atomically increment fail_count and lock if threshold reached.
+
+    Uses atomic SQL UPDATE (fail_count = fail_count + 1) to prevent
+    race conditions under concurrent brute-force attacks.
+
+    Includes retry logic for sqlite3.OperationalError: database is locked.
+
+    Args:
+        client_key: Client identifier (IP or key)
+        max_fails: Number of failures before lockout
+        lock_sec: Lockout duration in seconds
+
+    Returns:
+        Dict with fail_count and locked_until timestamp
+    """
     init_db()
     now = time.time()
-    conn = _connect()
-    try:
-        row = conn.execute(
-            "SELECT fail_count, locked_until FROM lockouts WHERE client_key = ?",
-            (client_key,),
-        ).fetchone()
-        fail_count = (int(row["fail_count"]) if row else 0) + 1
-        locked_until = now + lock_sec if fail_count >= max_fails else 0.0
-        stored_fails = 0 if fail_count >= max_fails else fail_count
-        conn.execute(
-            """
-            INSERT INTO lockouts (client_key, fail_count, locked_until)
-            VALUES (?, ?, ?)
-            ON CONFLICT(client_key) DO UPDATE SET
-                fail_count = excluded.fail_count,
-                locked_until = excluded.locked_until
-            """,
-            (client_key, stored_fails, locked_until),
-        )
-        conn.commit()
-        return {"fail_count": stored_fails, "locked_until": locked_until}
-    finally:
-        conn.close()
+
+    for attempt in range(MAX_LOCKOUT_RETRIES):
+        conn = _connect()
+        try:
+            # Atomic SQL: increment fail_count directly in DB
+            # No read-modify-write race condition
+            conn.execute(
+                """
+                INSERT INTO lockouts (client_key, fail_count, locked_until)
+                VALUES (?, 1, 0)
+                ON CONFLICT(client_key) DO UPDATE SET
+                    fail_count = fail_count + 1,
+                    locked_until = CASE
+                        WHEN fail_count + 1 >= ? THEN ?
+                        ELSE locked_until
+                    END
+                """,
+                (client_key, max_fails, now + lock_sec),
+            )
+            conn.commit()
+
+            # Read updated fail_count
+            row = conn.execute(
+                "SELECT fail_count, locked_until FROM lockouts WHERE client_key = ?",
+                (client_key,),
+            ).fetchone()
+
+            fail_count = int(row["fail_count"]) if row else 1
+            locked_until = float(row["locked_until"]) if row else 0.0
+
+            return {"fail_count": fail_count, "locked_until": locked_until}
+
+        except sqlite3.OperationalError as exc:
+            if "database is locked" in str(exc) and attempt < MAX_LOCKOUT_RETRIES - 1:
+                conn.close()
+                time.sleep(LOCKOUT_RETRY_BACKOFF * (2 ** attempt))
+                logger.warning(
+                    f"[LOCKOUT] Database locked (attempt {attempt + 1}/{MAX_LOCKOUT_RETRIES}), "
+                    f"retrying for client {client_key}"
+                )
+                continue
+            raise
+        finally:
+            conn.close()
 
 
 def clear_lockout(client_key: str) -> None:

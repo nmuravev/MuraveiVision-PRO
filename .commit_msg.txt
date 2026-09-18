@@ -1,0 +1,5 @@
+fix(auth): atomic fail_count in record_failed_login
+
+Replace read-modify-write pattern with atomic SQL UPDATE.
+Includes retry for sqlite3.OperationalError with exponential backoff.
+Added 6 unit tests with 10 concurrent threads verifying no lost updates.
