@@ -619,54 +619,58 @@ class YoloEngine:
             return []
         result_names = getattr(result, "names", None)
         objects: list[dict[str, Any]] = []
-        for box in boxes:
-            cls_id = int(box.cls[0].item()) if box.cls is not None else 0
-            conf = float(box.conf[0].item()) if box.conf is not None else 0.0
-            xyxy = box.xyxy[0].tolist()
-            x1, y1, x2, y2 = [float(v) for v in xyxy]
-            raw_name = self._label(cls_id, result_names)
-            name = to_snake_case(canonical_label(raw_name.replace("_", " ")))
-            raw_lower = raw_name.lower().replace("_", " ")
-            if is_scene_class(name) or is_scene_class(raw_name):
-                continue
-            if conf < self._min_conf_for(name, floor):
-                continue
-            bbox = {
-                "x1": max(0.0, min(1.0, x1 / orig_w if orig_w else 0.0)),
-                "y1": max(0.0, min(1.0, y1 / orig_h if orig_h else 0.0)),
-                "x2": max(0.0, min(1.0, x2 / orig_w if orig_w else 0.0)),
-                "y2": max(0.0, min(1.0, y2 / orig_h if orig_h else 0.0)),
-            }
-            area = _box_area(bbox)
-            if area >= MAX_SCENE_AREA or area <= 0:
-                continue
-            # COCO person on large boxes (tank hull, vehicle) → false soldier
-            if name == "soldier" and raw_lower in ("person", "human", "pedestrian") and area > 0.05:
-                continue
-            track_id = None
-            box_id = getattr(box, "id", None)
-            if box_id is not None:
-                try:
-                    track_id = int(box_id[0].item() if hasattr(box_id[0], "item") else box_id[0])
-                except Exception:  # noqa: BLE001
-                    track_id = None
-            yaml_id = class_id_for_name(name)
-            if yaml_id < 0:
-                # Unmapped COCO / unknown — never show to operator
-                continue
-            objects.append(
-                {
-                    "id": f"trk-{track_id}" if track_id is not None else str(uuid.uuid4()),
-                    "class_id": yaml_id,
-                    "class_en": name,
-                    "class_ru": name,
-                    "confidence": conf,
-                    "bbox": bbox,
-                    "color": _BOX_COLORS[max(cls_id, 0) % len(_BOX_COLORS)],
-                    "origin": "auto",
-                    "track_id": track_id,
+        for i, box in enumerate(boxes):
+            try:
+                cls_id = int(box.cls[0].item()) if box.cls is not None else 0
+                conf = float(box.conf[0].item()) if box.conf is not None else 0.0
+                xyxy = box.xyxy[0].tolist()
+                x1, y1, x2, y2 = [float(v) for v in xyxy]
+                raw_name = self._label(cls_id, result_names)
+                name = to_snake_case(canonical_label(raw_name.replace("_", " ")))
+                raw_lower = raw_name.lower().replace("_", " ")
+                if is_scene_class(name) or is_scene_class(raw_name):
+                    continue
+                if conf < self._min_conf_for(name, floor):
+                    continue
+                bbox = {
+                    "x1": max(0.0, min(1.0, x1 / orig_w if orig_w else 0.0)),
+                    "y1": max(0.0, min(1.0, y1 / orig_h if orig_h else 0.0)),
+                    "x2": max(0.0, min(1.0, x2 / orig_w if orig_w else 0.0)),
+                    "y2": max(0.0, min(1.0, y2 / orig_h if orig_h else 0.0)),
                 }
-            )
+                area = _box_area(bbox)
+                if area >= MAX_SCENE_AREA or area <= 0:
+                    continue
+                # COCO person on large boxes (tank hull, vehicle) → false soldier
+                if name == "soldier" and raw_lower in ("person", "human", "pedestrian") and area > 0.05:
+                    continue
+                track_id = None
+                box_id = getattr(box, "id", None)
+                if box_id is not None:
+                    try:
+                        track_id = int(box_id[0].item() if hasattr(box_id[0], "item") else box_id[0])
+                    except Exception:  # noqa: BLE001
+                        track_id = None
+                yaml_id = class_id_for_name(name)
+                if yaml_id < 0:
+                    # Unmapped COCO / unknown — never show to operator
+                    continue
+                objects.append(
+                    {
+                        "id": f"trk-{track_id}" if track_id is not None else str(uuid.uuid4()),
+                        "class_id": yaml_id,
+                        "class_en": name,
+                        "class_ru": name,
+                        "confidence": conf,
+                        "bbox": bbox,
+                        "color": _BOX_COLORS[max(cls_id, 0) % len(_BOX_COLORS)],
+                        "origin": "auto",
+                        "track_id": track_id,
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001 — P1-10: skip bad box, continue batch
+                print(f"[YOLO] skip box[{i}]: {exc}")
+                continue
         return objects
 
     def _run_model(self, model: Any, img: Any, confidence: float, *, use_track: bool = False) -> list[dict[str, Any]]:
