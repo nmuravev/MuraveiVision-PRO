@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -31,10 +32,16 @@ class DetectRequest(BaseModel):
 
 
 def _sahi_default() -> bool:
-    """Resolve system-wide SAHI default from SQLite settings (default ON)."""
+    """Resolve system-wide SAHI default from SQLite settings (default ON).
+
+    Only catches SQLite/database errors — other exceptions propagate
+    so operators see real failures instead of silent SAHI fallback.
+    """
     try:
         return (get_setting("use_sahi_default") or "1") == "1"
-    except Exception:  # noqa: BLE001
+    except (sqlite3.Error, OSError):
+        # DB file missing, corrupted, or locked → fallback to ON
+        logger.warning("_sahi_default: SQLite/OSError, falling back to True")
         return True
 
 
