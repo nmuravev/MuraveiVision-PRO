@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import os
+
 from config import BASE_DIR
 from services.classes import get_class_catalog
 
@@ -30,6 +32,8 @@ MIN_BBOX_AREA_DEFAULT = 0.0001
 MAX_BBOX_AREA_DEFAULT = 0.9
 MIN_CONFIDENCE_DEFAULT = 0.01
 LOG_FILE = BASE_DIR / "logs" / "validator_rejections.jsonl"
+# P2-1: Catalog cache TTL — configurable via CATALOG_CACHE_TTL env var (default 60s)
+_CACHE_TTL_SEC = float(os.environ.get("CATALOG_CACHE_TTL", "60"))
 
 
 @dataclass
@@ -66,12 +70,10 @@ def _float_setting(key: str, default: float) -> float:
 class ResponseValidator:
     """Validates detection dicts before they reach the response envelope."""
 
-    CACHE_TTL_SEC = 300.0
-
     def __init__(self) -> None:
         self._enabled_ids: set[int] | None = None
         self._cache_timestamp: float = 0.0
-        self._cache_ttl: float = self.CACHE_TTL_SEC
+        self._cache_ttl: float = _CACHE_TTL_SEC
 
     # --- config resolution (SQLite override, fallback to const) ---
     def _enabled(self) -> bool:
