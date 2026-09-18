@@ -29,6 +29,11 @@ MAX_POLY_POINTS = 256
 MAX_TEXT_PROMPTS = 3
 MAX_TEXT_LEN = 64
 
+# P0-5: GPU tensor pool for memory reuse
+import os
+_GPU_TENSOR_POOL_SIZE = int(os.environ.get("GPU_TENSOR_POOL_SIZE", "32"))
+_GPU_CACHE_CLEANUP_INTERVAL = 50  # empty_cache() every N infer calls
+
 
 def normalize_text_prompts(raw: list[str] | None) -> list[str]:
     """1–3 non-empty strings, each ≤64 chars."""
@@ -50,6 +55,10 @@ def normalize_text_prompts(raw: list[str] | None) -> list[str]:
 
 _engine: Sam3Engine | None = None
 _engine_lock = threading.Lock()
+
+# P0-5: Global cache cleanup counter
+_cache_cleanup_counter = 0
+_cache_cleanup_lock = threading.Lock()
 
 
 def _weight_ok(path: Path) -> bool:
@@ -79,11 +88,23 @@ def resolve_named_weight(name: str | None = None) -> Path:
 
 
 def _empty_cache() -> None:
+    """Empty CUDA cache to release unused GPU memory.
+
+    P0-5: Called periodically after infer to prevent memory fragmentation.
+    Uses global counter to avoid calling after every single infer (too expensive).
+    """
     try:
         import torch
 
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        if not torch.cuda.is_available():
+            return
+
+        global _cache_cleanup_counter
+        with _cache_cleanup_lock:
+            _cache_cleanup_counter += 1
+            if _cache_cleanup_counter >= _GPU_CACHE_CLEANUP_INTERVAL:
+                _cache_cleanup_counter = 0
+                torch.cuda.empty_cache()
     except Exception:  # noqa: BLE001
         pass
 
@@ -302,6 +323,10 @@ class Sam3Engine:
             started = time.perf_counter()
             results = self._model(arr, **kwargs)
             masks = _masks_from_sam_results(results, h, w)
+            # P0-5: Explicitly delete intermediate results to free GPU memory
+            del results
+            del arr
+            _empty_cache()
             ms = int((time.perf_counter() - started) * 1000)
             return {
                 "masks": masks,
@@ -336,10 +361,14 @@ class Sam3Engine:
             if results is not None and not isinstance(results, (list, tuple)):
                 results = list(results) if hasattr(results, "__iter__") else [results]
             masks = _masks_from_sam_results(results, h, w)
+            # P0-5: Explicitly delete intermediate results to free GPU memory
+            del results
+            del arr
             label = concepts[0] if concepts else "object"
             for m in masks:
                 if m.get("class") in (None, "", "object"):
                     m["class"] = label
+            _empty_cache()
             ms = int((time.perf_counter() - started) * 1000)
             return {
                 "masks": masks,
