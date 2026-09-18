@@ -233,7 +233,9 @@ async def recon_export_artifact(
         else:
             raise HTTPException(status_code=404, detail=f"artifact {kind} missing")
 
-    fname = str(entry["file"])
+    fname = str(entry.get("file") or "")
+    if not fname:
+        raise HTTPException(status_code=404, detail=f"artifact {kind} missing")
     if kind == "mesh" and fname.lower().endswith(".obj"):
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
