@@ -65,9 +65,10 @@ async def lifespan(app: FastAPI):
         print(f"[ffprobe] path={_pp} source={_ps}")
     except Exception as _ff_exc:  # noqa: BLE001
         print(f"[ffmpeg] resolve failed: {_ff_exc}")
-    from services.db import init_db
+    from services.db import init_db, migrate_db
 
     init_db()
+    migrate_db()
     from services.trash import purge_old_trash, trash_root
 
     trash_root()

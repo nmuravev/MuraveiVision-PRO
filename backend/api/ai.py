@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from config import GENERATE_TIMEOUT
 from services.ai_crops import detection_crop_b64
 from services.autolabel import parse_autolabel_result
 from services.classes import get_class_catalog
@@ -24,6 +25,20 @@ from services.ollama_proxy import (
 from services.security import require_role
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
+
+# Rate limiting: max 2 concurrent Ollama requests to prevent overload
+_ollama_semaphore = asyncio.Semaphore(2)
+
+
+def _sanitize_prompt(prompt: str) -> str:
+    """Escape HTML/special chars to prevent prompt injection."""
+    return (
+        prompt.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#x27;")
+    )
 
 
 class AnalyzeRequest(BaseModel):
@@ -142,6 +157,8 @@ async def ai_analyze(
             "Ты аналитик разведки. По изображению опиши объект: что видно, "
             "признаки, что проверить. Без выдуманных фактов."
         )
+    else:
+        prompt = _sanitize_prompt(prompt)
     if image and _VISION_PROMPT_PREFIX not in prompt:
         prompt = _VISION_PROMPT_PREFIX + prompt
     if not image:
@@ -150,12 +167,20 @@ async def ai_analyze(
             "что нужен кроп для визуального анализа.]\n\n"
             + prompt
         )
-    result = await asyncio.to_thread(
-        generate,
-        prompt=prompt,
-        model=body.model,
-        image_base64=image,
-    )
+    timeout = (body.timeout_sec or GENERATE_TIMEOUT)
+    async with _ollama_semaphore:
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    generate,
+                    prompt=prompt,
+                    model=body.model,
+                    image_base64=image,
+                ),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=408, detail="Request timeout")
     if not result["ok"]:
         raise HTTPException(status_code=int(result["status"]), detail=result["message"] or UNAVAILABLE)
     return {
@@ -192,12 +217,13 @@ async def ai_autolabel(
         "Не придумывай class_id вне каталога.\nCATALOG="
         + json.dumps(compact_catalog, ensure_ascii=False, separators=(",", ":"))
     )
-    result = await asyncio.to_thread(
-        generate,
-        prompt=prompt,
-        model=body.model,
-        image_base64=image,
-    )
+    async with _ollama_semaphore:
+        result = await asyncio.to_thread(
+            generate,
+            prompt=prompt,
+            model=body.model,
+            image_base64=image,
+        )
     if not result["ok"]:
         raise HTTPException(
             status_code=int(result["status"]),

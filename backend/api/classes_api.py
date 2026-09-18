@@ -8,7 +8,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from services.classes import get_class_catalog, invalidate_class_cache, live_prompt_names
-from services.db import delete_class_override, get_class_override, list_class_overrides, upsert_class_override
+from services.db import (
+    delete_class_override,
+    delete_excluded_class,
+    get_class_override,
+    list_class_overrides,
+    list_excluded_classes,
+    upsert_class_override,
+    upsert_excluded_class,
+)
 from services.security import require_role
 
 router = APIRouter(prefix="/api/classes", tags=["classes"])
@@ -99,3 +107,51 @@ async def classes_override_delete(
     except Exception as exc:  # noqa: BLE001
         print(f"[CLASSES] validator refresh failed: {exc}")
     return {"ok": True, "deleted": deleted, "classes": get_class_catalog()}
+
+
+# ─── Excluded classes API ───────────────────────────────────────────
+
+
+class ExcludedClassBody(BaseModel):
+    class_name: str = Field(min_length=1, max_length=100)
+
+
+@router.get("/excluded")
+async def classes_excluded(
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    """List all excluded classes (COCO DROP + operator additions)."""
+    return {"excluded": list_excluded_classes()}
+
+
+@router.post("/excluded")
+async def classes_excluded_add(
+    body: ExcludedClassBody,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    """Add a class to exclusion list."""
+    row = upsert_excluded_class(body.class_name)
+    invalidate_class_cache()
+    try:
+        from services.classes import invalidate_excluded_cache
+
+        invalidate_excluded_cache()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[CLASSES] excluded cache invalidation failed: {exc}")
+    return {"ok": True, "excluded_class": row}
+
+
+@router.delete("/excluded/{class_name}")
+async def classes_excluded_delete(
+    class_name: str,
+    _user: dict[str, Any] = Depends(require_role("operator")),
+) -> dict[str, Any]:
+    """Remove a class from exclusion list."""
+    deleted = delete_excluded_class(class_name)
+    try:
+        from services.classes import invalidate_excluded_cache
+
+        invalidate_excluded_cache()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[CLASSES] excluded cache invalidation failed: {exc}")
+    return {"ok": True, "deleted": deleted}

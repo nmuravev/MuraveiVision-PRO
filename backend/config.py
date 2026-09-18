@@ -31,6 +31,9 @@ ENGINE_STATUS_CPU = "cpu"
 ENGINE_STATUS_DIRECTML = "directml"
 ENGINE_STATUS_CUDA = "cuda"
 
+# Default timeout for Ollama AI requests (seconds)
+GENERATE_TIMEOUT = 60.0
+
 
 def _read_app_version() -> str:
     """Single source: pack/repo VERSION file → package.json → unknown."""

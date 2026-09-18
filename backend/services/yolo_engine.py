@@ -63,75 +63,6 @@ _LBS_SOFT_TOKENS = (
 )
 _LBS_SOFT_CONF = 0.12
 
-# Closed-set YOLO26 COCO clutter (plus any label not in military YAML after alias).
-_COCO_DROP = (
-    "frisbee",
-    "sports_ball",
-    "sports ball",
-    "dog",
-    "cat",
-    "horse",
-    "sheep",
-    "cow",
-    "umbrella",
-    "handbag",
-    "suitcase",
-    "skis",
-    "snowboard",
-    "skateboard",
-    "surfboard",
-    "tennis",
-    "bottle",
-    "cup",
-    "chair",
-    "bench",
-    "tv",
-    "laptop",
-    "cell phone",
-    "cell_phone",
-    "keyboard",
-    "mouse",
-    "remote",
-    "book",
-    "clock",
-    "vase",
-    "scissors",
-    "teddy bear",
-    "hair drier",
-    "toothbrush",
-    "stop sign",
-    "parking meter",
-    "traffic light",
-    "fire hydrant",
-    "potted plant",
-    "dining table",
-    "toilet",
-    "sink",
-    "refrigerator",
-    "microwave",
-    "oven",
-    "toaster",
-    "couch",
-    "bed",
-    "wine glass",
-    "fork",
-    "knife",
-    "spoon",
-    "bowl",
-    "banana",
-    "apple",
-    "sandwich",
-    "orange",
-    "broccoli",
-    "carrot",
-    "hot dog",
-    "pizza",
-    "donut",
-    "cake",
-    "tie",
-    "backpack",
-)
-
 _BOX_COLORS = (
     "#ef4444",
     "#f97316",
@@ -166,9 +97,11 @@ def _is_osd_box(bbox: dict[str, float]) -> bool:
 
 
 def _keep_live_label(name: str) -> bool:
-    """Keep only military-catalog labels; drop COCO clutter and unmapped names (train, boat, …)."""
+    """Keep only military-catalog labels; drop excluded classes and unmapped names."""
     blob = (name or "").lower().replace("-", " ").replace("_", " ")
-    if any(tok in blob for tok in _COCO_DROP):
+    # Check against dynamic excluded classes
+    excluded = get_excluded_classes()
+    if blob in excluded or name.lower().replace("_", " ") in excluded:
         return False
     return is_catalog_label(name)
 
@@ -331,6 +264,13 @@ class YoloEngine:
             print(f"[YOLO] force_load missing: {weights}")
             return False
         try:
+            # Acquire mutex for VRAM exclusion
+            try:
+                from services.model_mutex import acquire_model
+                acquire_model("yolo_detect")
+            except Exception as e:
+                print(f"[YOLO] Warning: mutex acquire failed: {e}")
+            
             self.model = None
             try:
                 import torch
@@ -354,6 +294,24 @@ class YoloEngine:
             self._names = {}
             self.mode = "error"
             return False
+
+    def unload_model(self) -> None:
+        """Unload model from VRAM (for mutual exclusion)."""
+        try:
+            if self.model is not None:
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except Exception:
+                    pass
+                self.model = None
+            self.mode = "offline"
+            self.kind = "none"
+            self._names = {}
+            print("[YOLO] Model unloaded (VRAM release)")
+        except Exception as e:
+            print(f"[YOLO] Unload error: {e}")
 
     def _cache_names(self) -> None:
         names = getattr(self.model, "names", {}) or {}
@@ -802,12 +760,17 @@ class YoloEngine:
         try:
             # ByteTrack needs `lap`; Ultralytics tries to pip-install it (breaks air-gap).
             results = model.predict(**kwargs)
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, Exception) as exc:  # noqa: BLE001
             msg = str(exc).lower()
             if str(self._device).startswith("cuda") and (
                 "out of memory" in msg or "cuda" in msg and "memory" in msg
             ):
-                print(f"[YOLO] CUDA OOM/fail → CPU fallback: {exc}")
+                print(f"[YOLO] CUDA OOM → empty_cache + CPU fallback: {exc}")
+                try:
+                    import torch
+                    torch.cuda.empty_cache()
+                except Exception:
+                    pass
                 self._device = "cpu"
                 self._device_backend = "cpu-fallback-oom"
                 self._yolo_label = "CPU"

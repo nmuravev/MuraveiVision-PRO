@@ -223,6 +223,14 @@ class Sam3Engine:
 
     def load_model(self, name: str | None = None) -> Path:
         path = resolve_named_weight(name)
+        
+        # Acquire mutex for VRAM exclusion
+        try:
+            from services.model_mutex import acquire_model
+            acquire_model("sam3")
+        except Exception as e:
+            print(f"[SAM3] Warning: mutex acquire failed: {e}")
+        
         _unload_yolo_seg()
         with self._lock:
             if self._model is not None and self._weight_name == path.name:
