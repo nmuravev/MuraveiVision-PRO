@@ -32,6 +32,10 @@ _lock = threading.Lock()
 _initialized = False
 _jwt_secret_cache: str | None = None
 
+# P1-2: Lock for write operations (INSERT/UPDATE/DELETE)
+# READ operations (SELECT) can run concurrently in WAL mode
+_write_lock = threading.Lock()
+
 
 def normalize_media_path(path: str) -> str:
     """Canonical source_video key: forward slashes, relative to archive/ (no prefix)."""
@@ -420,19 +424,21 @@ def find_role_by_pin(pin: str) -> str | None:
 
 def update_pin(role: str, pin: str) -> None:
     init_db()
-    conn = _connect()
-    try:
-        conn.execute(
-            """
-            UPDATE pins
-            SET pin_sha256 = ?, pin_b64 = ?, updated_at = ?
-            WHERE role = ?
-            """,
-            (sha256_hex(pin), pin_b64(pin), time.time(), role),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    # P1-2: Lock for write operation
+    with _write_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                """
+                UPDATE pins
+                SET pin_sha256 = ?, pin_b64 = ?, updated_at = ?
+                WHERE role = ?
+                """,
+                (sha256_hex(pin), pin_b64(pin), time.time(), role),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def get_lockout(client_key: str) -> dict[str, Any]:
@@ -476,59 +482,63 @@ def record_failed_login(client_key: str, max_fails: int = 5, lock_sec: int = 120
     init_db()
     now = time.time()
 
-    for attempt in range(MAX_LOCKOUT_RETRIES):
-        conn = _connect()
-        try:
-            # Atomic SQL: increment fail_count directly in DB
-            # No read-modify-write race condition
-            conn.execute(
-                """
-                INSERT INTO lockouts (client_key, fail_count, locked_until)
-                VALUES (?, 1, 0)
-                ON CONFLICT(client_key) DO UPDATE SET
-                    fail_count = fail_count + 1,
-                    locked_until = CASE
-                        WHEN fail_count + 1 >= ? THEN ?
-                        ELSE locked_until
-                    END
-                """,
-                (client_key, max_fails, now + lock_sec),
-            )
-            conn.commit()
-
-            # Read updated fail_count
-            row = conn.execute(
-                "SELECT fail_count, locked_until FROM lockouts WHERE client_key = ?",
-                (client_key,),
-            ).fetchone()
-
-            fail_count = int(row["fail_count"]) if row else 1
-            locked_until = float(row["locked_until"]) if row else 0.0
-
-            return {"fail_count": fail_count, "locked_until": locked_until}
-
-        except sqlite3.OperationalError as exc:
-            if "database is locked" in str(exc) and attempt < MAX_LOCKOUT_RETRIES - 1:
-                conn.close()
-                time.sleep(LOCKOUT_RETRY_BACKOFF * (2 ** attempt))
-                logger.warning(
-                    f"[LOCKOUT] Database locked (attempt {attempt + 1}/{MAX_LOCKOUT_RETRIES}), "
-                    f"retrying for client {client_key}"
+    # P1-2: Lock for write operation
+    with _write_lock:
+        for attempt in range(MAX_LOCKOUT_RETRIES):
+            conn = _connect()
+            try:
+                # Atomic SQL: increment fail_count directly in DB
+                # No read-modify-write race condition
+                conn.execute(
+                    """
+                    INSERT INTO lockouts (client_key, fail_count, locked_until)
+                    VALUES (?, 1, 0)
+                    ON CONFLICT(client_key) DO UPDATE SET
+                        fail_count = fail_count + 1,
+                        locked_until = CASE
+                            WHEN fail_count + 1 >= ? THEN ?
+                            ELSE locked_until
+                        END
+                    """,
+                    (client_key, max_fails, now + lock_sec),
                 )
-                continue
-            raise
-        finally:
-            conn.close()
+                conn.commit()
+
+                # Read updated fail_count
+                row = conn.execute(
+                    "SELECT fail_count, locked_until FROM lockouts WHERE client_key = ?",
+                    (client_key,),
+                ).fetchone()
+
+                fail_count = int(row["fail_count"]) if row else 1
+                locked_until = float(row["locked_until"]) if row else 0.0
+
+                return {"fail_count": fail_count, "locked_until": locked_until}
+
+            except sqlite3.OperationalError as exc:
+                if "database is locked" in str(exc) and attempt < MAX_LOCKOUT_RETRIES - 1:
+                    conn.close()
+                    time.sleep(LOCKOUT_RETRY_BACKOFF * (2 ** attempt))
+                    logger.warning(
+                        f"[LOCKOUT] Database locked (attempt {attempt + 1}/{MAX_LOCKOUT_RETRIES}), "
+                        f"retrying for client {client_key}"
+                    )
+                    continue
+                raise
+            finally:
+                conn.close()
 
 
 def clear_lockout(client_key: str) -> None:
     init_db()
-    conn = _connect()
-    try:
-        conn.execute("DELETE FROM lockouts WHERE client_key = ?", (client_key,))
-        conn.commit()
-    finally:
-        conn.close()
+    # P1-2: Lock for write operation
+    with _write_lock:
+        conn = _connect()
+        try:
+            conn.execute("DELETE FROM lockouts WHERE client_key = ?", (client_key,))
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def _row_keys(row: sqlite3.Row) -> set[str]:
@@ -634,49 +644,51 @@ def insert_detection(payload: dict[str, Any]) -> dict[str, Any]:
     gps_lon = payload.get("gps_lon")
     gps_alt = payload.get("gps_alt")
     source_video = normalize_media_path(str(payload.get("source_video") or ""))
-    conn = _connect()
-    try:
-        conn.execute(
-            """
-            INSERT INTO detections (
-                id, created_at, source_video, time_sec, frame_idx,
-                class_id, class_name, confidence,
-                bbox_x, bbox_y, bbox_w, bbox_h, crop_path,
-                is_edited, edited_by, edited_at, user_notes, is_deleted, origin,
-                ai_class_name, gps_lat, gps_lon, gps_alt
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                det_id,
-                now,
-                source_video,
-                float(payload["time_sec"]),
-                int(payload.get("frame_idx") or 0),
-                int(payload.get("class_id") or 0),
-                str(payload["class_name"]),
-                float(payload.get("confidence") if payload.get("confidence") is not None else 1.0),
-                float(payload["bbox_x"]),
-                float(payload["bbox_y"]),
-                float(payload["bbox_w"]),
-                float(payload["bbox_h"]),
-                payload.get("crop_path"),
-                1 if payload.get("is_edited") else 0,
-                payload.get("edited_by"),
-                payload.get("edited_at"),
-                payload.get("user_notes") or "",
-                1 if payload.get("is_deleted") else 0,
-                payload.get("origin") or "auto",
-                str(payload.get("ai_class_name") or payload["class_name"]),
-                float(gps_lat) if gps_lat is not None else None,
-                float(gps_lon) if gps_lon is not None else None,
-                float(gps_alt) if gps_alt is not None else None,
-            ),
-        )
-        conn.commit()
-        row = conn.execute("SELECT * FROM detections WHERE id = ?", (det_id,)).fetchone()
-        return _row_to_detection(row)
-    finally:
-        conn.close()
+    # P1-2: Lock for write operation
+    with _write_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO detections (
+                    id, created_at, source_video, time_sec, frame_idx,
+                    class_id, class_name, confidence,
+                    bbox_x, bbox_y, bbox_w, bbox_h, crop_path,
+                    is_edited, edited_by, edited_at, user_notes, is_deleted, origin,
+                    ai_class_name, gps_lat, gps_lon, gps_alt
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    det_id,
+                    now,
+                    source_video,
+                    float(payload["time_sec"]),
+                    int(payload.get("frame_idx") or 0),
+                    int(payload.get("class_id") or 0),
+                    str(payload["class_name"]),
+                    float(payload.get("confidence") if payload.get("confidence") is not None else 1.0),
+                    float(payload["bbox_x"]),
+                    float(payload["bbox_y"]),
+                    float(payload["bbox_w"]),
+                    float(payload["bbox_h"]),
+                    payload.get("crop_path"),
+                    1 if payload.get("is_edited") else 0,
+                    payload.get("edited_by"),
+                    payload.get("edited_at"),
+                    payload.get("user_notes") or "",
+                    1 if payload.get("is_deleted") else 0,
+                    payload.get("origin") or "auto",
+                    str(payload.get("ai_class_name") or payload["class_name"]),
+                    float(gps_lat) if gps_lat is not None else None,
+                    float(gps_lon) if gps_lon is not None else None,
+                    float(gps_alt) if gps_alt is not None else None,
+                ),
+            )
+            conn.commit()
+            row = conn.execute("SELECT * FROM detections WHERE id = ?", (det_id,)).fetchone()
+            return _row_to_detection(row)
+        finally:
+            conn.close()
 
 
 def get_detection(det_id: str) -> dict[str, Any] | None:
