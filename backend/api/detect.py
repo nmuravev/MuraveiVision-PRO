@@ -90,6 +90,8 @@ async def detect_ws(websocket: WebSocket, viewer_id: str) -> None:
     await websocket.accept()
     engine = get_yolo_engine()
     logger.info("WS detect connected viewer=%s role=%s", viewer_id, user.get("role"))
+    # P1-7: Ensure engine is defined for error handler even if init fails
+    _engine_ref = engine
     try:
         while True:
             message = await websocket.receive_text()
@@ -140,7 +142,7 @@ async def detect_ws(websocket: WebSocket, viewer_id: str) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.exception("WS detect error viewer=%s: %s", viewer_id, exc)
         try:
-            await websocket.send_text(json.dumps({"error": str(exc), "mode": engine.mode}))
+            await websocket.send_text(json.dumps({"error": str(exc), "mode": _engine_ref.mode}))
         except Exception as send_exc:  # noqa: BLE001
             logger.warning("WS detect failed to send error: %s", send_exc)
         try:
