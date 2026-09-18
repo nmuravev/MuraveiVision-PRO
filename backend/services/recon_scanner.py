@@ -41,6 +41,10 @@ LOG_PATH = BASE_DIR / "logs" / "recon.log"
 MAX_SEGMENT_SEC = 120.0
 
 _lock = threading.Lock()
+
+# P0-7: Heartbeat interval for stale state detection (seconds)
+HEARTBEAT_STALE_THRESHOLD = 300.0  # 5 minutes — COLMAP mapper can be slow
+
 _state: dict[str, Any] = {
     "status": "idle",
     "job_id": None,
@@ -55,6 +59,7 @@ _state: dict[str, Any] = {
     "started_at": None,
     "finished_at": None,
     "error": None,
+    "_heartbeat": 0.0,  # P0-7: last activity timestamp
 }
 _events: list[dict[str, Any]] = []
 _stop = threading.Event()
@@ -90,6 +95,8 @@ def _emit(event: dict[str, Any]) -> None:
             _state["message"] = event["message"]
         if "error" in event:
             _state["error"] = event["error"]
+        # P0-7: Update heartbeat on every event
+        _state["_heartbeat"] = time.time()
 
 
 def emit_recon_event(event: dict[str, Any]) -> None:
@@ -304,6 +311,8 @@ def _scrub_orphan_running_manifests() -> None:
 def status() -> dict[str, Any]:
     with _lock:
         _recover_stale_running_unlocked()
+        # P0-7: Check heartbeat staleness
+        _check_heartbeat_stale()
         reap = str(_state.pop("_reap_colmap_job", None) or "")
     if reap:
         terminate_colmap_for_job(reap)
@@ -312,6 +321,33 @@ def status() -> dict[str, Any]:
         out = dict(_state)
         out.pop("_reap_colmap_job", None)
         return out
+
+
+def _check_heartbeat_stale() -> bool:
+    """Check if heartbeat is stale and recover if needed.
+
+    P0-7: If status is running but no heartbeat for HEARTBEAT_STALE_THRESHOLD
+    seconds, the worker thread is likely dead or hung.
+
+    Returns:
+        True if stale heartbeat was detected and recovered
+    """
+    if _state.get("status") != "running":
+        return False
+
+    heartbeat = float(_state.get("_heartbeat") or 0)
+    if heartbeat == 0:
+        # No heartbeat yet — thread just started, give it time
+        return False
+
+    age = time.time() - heartbeat
+    if age > HEARTBEAT_STALE_THRESHOLD:
+        _log(
+            f"P0-7: Stale heartbeat detected (age={age:.0f}s > "
+            f"{HEARTBEAT_STALE_THRESHOLD}s threshold), recovering"
+        )
+        return _recover_stale_running_unlocked()
+    return False
 
 def drain_events(after_idx: int = 0) -> tuple[list[dict[str, Any]], int]:
     with _lock:
