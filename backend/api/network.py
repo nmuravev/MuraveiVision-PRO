@@ -4,6 +4,14 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+# P0-2: Managed tasks set to prevent orphaned asyncio tasks
+_background_tasks: set[asyncio.Task[Any]] = set()
+
+
+def _discard_task(task: asyncio.Task[Any]) -> None:
+    """Callback to remove completed tasks from the tracking set."""
+    _background_tasks.discard(task)
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
@@ -202,8 +210,13 @@ async def post_message(
     await chat_ws.emit_chat_message(msg, relay_peers=relay_peers)
     worker = get_worker()
     if worker is not None and cfg.get("mode") == "client":
-        asyncio.create_task(worker.push_local_messages())
-        asyncio.create_task(worker.relay_message_to_hub(msg))
+        # P0-2: Track tasks to prevent GC before completion
+        t1 = asyncio.create_task(worker.push_local_messages())
+        t1.add_done_callback(_discard_task)
+        _background_tasks.add(t1)
+        t2 = asyncio.create_task(worker.relay_message_to_hub(msg))
+        t2.add_done_callback(_discard_task)
+        _background_tasks.add(t2)
     return {"ok": True, "message": msg}
 
 
@@ -373,10 +386,17 @@ async def recon_create_offer(
     await chat_ws.emit_chat_message(msg, relay_peers=relay_peers)
     worker = get_worker()
     if worker is not None and cfg.get("mode") == "client":
-        asyncio.create_task(worker.push_local_messages())
-        asyncio.create_task(worker.relay_message_to_hub(msg))
+        # P0-2: Track tasks to prevent GC before completion
+        t1 = asyncio.create_task(worker.push_local_messages())
+        t1.add_done_callback(_discard_task)
+        _background_tasks.add(t1)
+        t2 = asyncio.create_task(worker.relay_message_to_hub(msg))
+        t2.add_done_callback(_discard_task)
+        _background_tasks.add(t2)
         if hasattr(worker, "push_recon_package"):
-            asyncio.create_task(worker.push_recon_package(str(man["id"])))
+            t3 = asyncio.create_task(worker.push_recon_package(str(man["id"])))
+            t3.add_done_callback(_discard_task)
+            _background_tasks.add(t3)
     return {"ok": True, "package": man, "message": msg}
 
 

@@ -143,6 +143,19 @@ async def lifespan(app: FastAPI):
         print(f"[SYSTEM] hardware_detect skip: {exc}")
     yield
     print("[SYSTEM] Backend stopping...")
+    # P0-2: Cancel any remaining background tasks
+    try:
+        from api.network import _background_tasks
+        for task in list(_background_tasks):
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        _background_tasks.clear()
+    except Exception as _bg_exc:
+        print(f"[SYSTEM] Background task cleanup: {_bg_exc}")
     await nb.stop_beacon()
     await stop_network_worker()
 
