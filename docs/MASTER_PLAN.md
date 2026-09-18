@@ -2,12 +2,12 @@
 
 ## Meta
 
-- **Snapshot date:** 2026-09-17
+- **Snapshot date:** 2026-09-18
 - **Branch:** `main`
-- **Commit:** 7b046db (B3 full-video SAM3 propagate tip)
+- **Commit:** 7c49b76 (Sprint 2 P1 fixes rebased + pushed)
 - **Unit tests:** 407+ (backend suite, pre-commit gate)
-- **Status:** N1–N6 + B1+B2+B3 on main; B4 CUDA+rasterio seed verdicts next
-- **Last updated by:** feat(seg): full-video SAM3 propagate chunked (B3 fixture fix)
+- **Status:** P0 (11/11) ✅ + P1 (14/14) ✅ — Bug Fix Audit v2.0 complete; Sprint 3 P2 pending (15 tasks)
+- **Last updated by:** Bug Fix Audit v2.0 — Sprint 2 P1 fixes (40-bug plan, 26 commits)
 - **Portable size bands (OPERATOR-SANCTIONED 2026-09-16):** Mini warn&gt;4.5 / reject&gt;5; FullKit no-DA3 warn&gt;9.5 / reject&gt;10; FullKit+DA3 (base+large+metric+**giant**) warn&gt;18 / reject&gt;22. Giant stays for heterogeneous fleets (grey on VRAM&lt;16 GB).
 - **Portable local (P-C 2026-09-16):** Mini 3.67 GB sha256 `A40E1CD3…EF2F`; FullKit+DA3 win_cpu 13.07 GB sha256 `41B6FEE9…1772` (within 18/22). Mini ZIP DA3 bins=0; Full stage 4× safetensors + NOTICE.
 - **DA3 depth stats (in-memory, job 44aa6e50):** base median=21.65 std=2.88; large median=22.22 std=1.68; metric median=21.74 std=3.16 — models differ
@@ -44,6 +44,71 @@
 - Portable build hardening: unique `stage_*`, host-pip bake, offline wheels, stable CA bundle
 - Network Replication 3.1: multi-machine target sync via JWT
 - Phase 3 closed: Batch Seg / SAM3 / Change Detection v3 (incl. Batch CD)
+
+## Bug Fix Audit v2.0 (2026-09-18)
+
+Unified 40-bug fix plan executed with strict air-gap constraints. 26 commits rebased and pushed (30ff7f1..7c49b76).
+
+### Sprint 1: P0 — Critical (11/11 DONE ✅)
+
+| # | Задача | Файл | Коммит | Тесты |
+|---|--------|------|--------|-------|
+| P0-1 | SSE timeout (configurable) | `backend/api/recon.py` | `db5b74f` | `test_sse_timeout.py` — 5/5 |
+| P0-2 | Orphaned asyncio.create_task() | `backend/api/network.py` | (в пуше) | `test_background_tasks.py` |
+| P0-3 | Atomic fail_count + retry | `backend/services/db.py` | `514b62c` | `test_lockout_atomicity.py` — 6/6 |
+| P0-4 | Path traversal in recon_asset | `backend/services/recon_scanner.py` | `8ba206b` | `test_path_traversal.py` — 5/5 |
+| P0-5 | GPU memory leak (tensor pool) | `backend/services/sam3_engine.py` | (в пуше) | `test_gpu_memory.py` |
+| P0-6 | OOM fallback recovery | `backend/services/yolo_engine.py` | (в пуше) | `test_oom_recovery.py` |
+| P0-7 | Stale running state | `backend/services/recon_scanner.py` | `ef0602d` | `test_stale_state.py` — 5/5 |
+| P0-8 | Unsafe pickle RCE → msgpack | `backend/services/catalog.py` | `61b93dc` | `test_catalog_security.py` |
+| P0-9 | gsplat race condition | `backend/services/gsplat_msvc.py` | `5896008` | `test_gsplat_lock.py` |
+| P0-10 | Sam3Store interval cleanup | `MurVis/src/store/useSam3Store.ts` | (в пуше) | cleanupAllIntervals() |
+| P0-11 | Batch stores interval cleanup | `useBatchChangeStore.ts`, `useBatchSegStore.ts` | (в пуше) | аналогичный паттерн |
+
+### Sprint 2: P1 — High (14/14 DONE ✅)
+
+| # | Задача | Файл | Коммит | Тесты |
+|---|--------|------|--------|-------|
+| P1-1 | Remove /peek-pin | `backend/api/auth.py` | bda8eeb | `test_peek_pin_removed.py` |
+| P1-2 | Thread-safe DB (_write_lock) | `backend/services/db.py` | a199256 | `test_thread_safe_db.py` |
+| P1-3 | SQL injection whitelist | `backend/services/db.py` | beb3b82 | `test_sql_injection_whitelist.py` |
+| P1-4 | ollama_proxy RLock | `backend/services/ollama_proxy.py` | 165f114 | (в пуше) |
+| P1-5 | kind validation | `backend/api/recon.py` | e3afe80 | `test_recon_kind_validation.py` |
+| P1-6 | Filename sanitization | `backend/services/network_attachments.py` | 1277353 | `test_filename_sanitization.py` |
+| P1-7 | WS undefined engine | `backend/api/detect.py` | faf3517 | `test_ws_engine_undefined.py` |
+| P1-8 | HUD mask bytes.copy() | `backend/api/detect.py` | (в пуше) | `test_hud_mask_bytes_copy.py` |
+| P1-9 | Path traversal ws_detect | `backend/api/detect.py` | `8d59b4e` | `test_ws_detect_path_traversal.py` — 10/10 |
+| P1-10 | Batch error handling | `backend/services/yolo_engine.py` | `d04a633` | `test_batch_error_handling.py` — 4/4 |
+| P1-11 | SQLite WAL checkpoint | `backend/services/db.py` | `faf3517` | `test_wal_checkpoint.py` |
+| P1-12 | Token hash storage | `backend/api/auth.py` | `81b88c0` | `test_token_hash_storage.py` — 10/10 |
+| P1-13 | Exception handling recon | `backend/services/recon_scanner.py` | `dcae760` | `test_recon_exception_handling.py` — 5/5 |
+| P1-14 | readSse character parsing | `MurVis/src/lib/readSse.ts` | `8b4cc07` | TSC passes |
+
+### Sprint 3: P2 — Medium (0/15 PENDING ⏳)
+
+Ожидают выполнения (~19 часов):
+- P2-1: Catalog cache TTL (response_validator.py)
+- P2-2: vcvars64 caching (gsplat_msvc.py)
+- P2-3: Lockout NAT support (auth.py)
+- P2-4: Prompt sanitization (ai.py)
+- P2-5: Missing key check (ai.py)
+- P2-6: _sahi_default exceptions (detect.py)
+- P2-7: KeyError in export (recon.py)
+- P2-8: App.tsx stale state (App.tsx)
+- P2-9: WebSocket deps (Viewer.tsx)
+- P2-10: useMemo tick (useReconOpsProgress.ts)
+- P2-11: ViewerStore Immer (useViewerStore.ts)
+- P2-12: waitScanIdle deadline (useBatchScanStore.ts)
+- P2-13: Closure stale (useReconBuild.ts)
+- P2-14: hydrateDetections get() (useMuraveiStore.ts)
+- P2-15: ffmpeg background (main.py)
+
+### Pre-Sprint Tasks
+
+- **M0: Data Migration** — ⏳ НЕ НАЧАТО (скрипт migrate_catalog_v1_to_v2.py)
+- **T1: Load Testing** — ⏳ НЕ НАЧАТО (locust сценарий)
+- **PoC P1-2** — ✅ ЗАВЕРШЕНО
+- **Wheels download** — ⏳ НЕ ВЫПОЛНЕНО (msgpack, portalocker, locust)
 
 ---
 
@@ -215,11 +280,17 @@ Agent rules: [`.cursorrules`](../.cursorrules) (repo root).
 
 ---
 
-## 10. Next Steps (release train)
+## 10. Bug Fix Audit v2.0 Status
+
+- **Bug Fix Audit v2.0** — **DONE** (2026-09-18): P0 (11/11) ✅ + P1 (14/14) ✅; P2 (0/15) ⏳
+- 26 commits rebased and pushed (30ff7f1..7c49b76)
+- All fixes air-gap compliant
+
+## 11. Next Steps (release train)
 
 | Priority | Sprint | Why |
 |----------|--------|-----|
-| 1 | **B3 merge** | full-video SAM3 propagate (fixture fix applied, tests pending green) |
+| 1 | **Bug Fix Audit v2.0** | P0+P1 complete, P2 pending (15 tasks, ~19h) |
 | 2 | **B4** | seed torch+cu128* + rasterio wheels |
 | 3 | **B5** | tactical YOLO26 s/m/l-ft training |
 | 4 | **P** | cache-first pack rebuild Mini + FullKit |

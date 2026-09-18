@@ -82,6 +82,66 @@
 
 Ретроспектива: [PHASE3_FINAL_RETRO.md](PHASE3_FINAL_RETRO.md). Sprint notes: [PHASE4_RETRO.md](PHASE4_RETRO.md).
 
+## Bug Fix Audit v2.0 (2026-09-18)
+
+Unified 40-bug fix plan executed with strict air-gap constraints. 26 commits in remote (30ff7f1..7c49b76).
+
+### Sprint 1: P0 — Critical (11/11 ✅)
+
+- P0-1: SSE Stream Never Terminates → configurable timeout + heartbeat
+- P0-2: Orphaned asyncio.create_task() → managed task lifecycle
+- P0-3: Non-atomic fail_count → atomic SQL + retry logic
+- P0-4: Path traversal in recon_asset → relative_to() validation
+- P0-5: GPU Memory Leak → tensor pool + periodic empty_cache()
+- P0-6: OOM Fallback recovery → device restoration + retry
+- P0-7: Stale Running State → heartbeat monitoring + cleanup
+- P0-8: Unsafe Pickle RCE → msgpack + RestrictedUnpickler
+- P0-9: Race Condition gsplat → portalocker
+- P0-10: Sam3Store interval cleanup → cleanupAllIntervals()
+- P0-11: Batch stores interval cleanup → аналогичный паттерн
+
+### Sprint 2: P1 — High (14/14 ✅)
+
+- P1-1: Plaintext PIN /peek-pin → endpoint removed
+- P1-2: Thread-safe DB → _write_lock для записи
+- P1-3: SQL injection → _DETECTION_COLUMNS whitelist (18 колонок)
+- P1-4: ollama_proxy lock → threading.RLock()
+- P1-5: kind validation → whitelist {"splat", "dense", "mesh", "sparse"}
+- P1-6: Filename sanitization → Path(filename).name + validation
+- P1-7: WS undefined engine → safe engine initialization
+- P1-8: HUD mask bytes.copy() → prevent source mutation
+- P1-9: Path traversal ws_detect → _sanitize_viewer_id()
+- P1-10: Batch error handling → per-box try/except
+- P1-11: SQLite WAL checkpoint → PRAGMA wal_autocheckpoint=1000
+- P1-12: Token hash storage → SHA-256 hash in _active_tokens
+- P1-13: Exception handling → finally block cleanup
+- P1-14: readSse fix → character-by-character buffer parsing
+
+### Sprint 3: P2 — Medium (0/15 ⏳)
+
+Ожидают выполнения (~19 часов):
+- P2-1: Catalog cache TTL (response_validator.py)
+- P2-2: vcvars64 caching (gsplat_msvc.py)
+- P2-3: Lockout NAT support (auth.py)
+- P2-4: Prompt sanitization (ai.py)
+- P2-5: Missing key check (ai.py)
+- P2-6: _sahi_default exceptions (detect.py)
+- P2-7: KeyError in export (recon.py)
+- P2-8: App.tsx stale state (App.tsx)
+- P2-9: WebSocket deps (Viewer.tsx)
+- P2-10: useMemo tick (useReconOpsProgress.ts)
+- P2-11: ViewerStore Immer (useViewerStore.ts)
+- P2-12: waitScanIdle deadline (useBatchScanStore.ts)
+- P2-13: Closure stale (useReconBuild.ts)
+- P2-14: hydrateDetections get() (useMuraveiStore.ts)
+- P2-15: ffmpeg background (main.py)
+
+### Pre-Sprint Tasks
+
+- M0: Data Migration — ⏳ НЕ НАЧАТО
+- T1: Load Testing — ⏳ НЕ НАЧАТО
+- Wheels download — ⏳ НЕ ВЫПОЛНЕНО
+
 ## Future / Backlog
 
 | # | ID | Задача | Приоритет | Заметки |
@@ -89,7 +149,8 @@
 | 1 | Perf | Profiling batch seg / propagate / dual-viewer на edge GPU | P2 | Полевой smoke + метрики ms/VRAM |
 | 2 | Export | GeoTIFF/KML масок batch/propagate | по запросу | Не блокирует Phase 3 |
 | 3 | AV | AliceVision Mesh-only already on main (`alicevision_enabled`); no separate v3.2 branch merge | done | Dense = DA3 |
-| 4 | — | Новые фичи | по запросу пользователя | Placeholder |
+| 4 | Audit | Bug Fix Audit v2.0 — P0(11/11)✅ P1(14/14)✅ P2(0/15)⏳ | DONE | 26 коммитов в remote |
+| 5 | — | Новые фичи | по запросу пользователя | Placeholder |
 
 Чеклисты: [TODO.md](TODO.md).
 

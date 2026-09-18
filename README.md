@@ -4,8 +4,35 @@
 
 **Non-commercial project:** MuraveiVision PRO is distributed as an open **non-commercial** project. CC BY-NC 4.0 DA3 weights (LARGE / GIANT) in FullKit are for non-commercial use only — see [`docs/ATTRIBUTION.md`](docs/ATTRIBUTION.md) and `sidecars/da3/NOTICE_CC-BY-NC-4.0.txt`.
 
-**Latest release:** [v3.1.0](https://github.com/nmuravev/MuraveiVision-PRO/releases/tag/v3.1.0)  
+**Latest release:** [v3.2.0](https://github.com/nmuravev/MuraveiVision-PRO/releases/tag/v3.2.0)  
 **Документация:** [`docs/`](docs/README.md) — архитектура, API, обучение, portable, гайд оператора, roadmap.
+
+## Что нового в v3.2.0
+
+### Bug Fix Audit v2.0 (2026-09-18)
+
+Выполнен объединённый план исправления 40 багов (11 P0 + 14 P1 + 15 P2 pending) с соблюдением air-gap ограничений.
+
+**Sprint 1 — P0 Critical (11/11 ✅):**
+- SSE timeout с конфигурируемым таймаутом и heartbeat
+- Atomic fail_count с retry logic для brute-force защиты
+- GPU memory pool для предотвращения утечек
+- Migration pickle → msgpack + RestrictedUnpickler
+- Path traversal fixes в recon и ws_detect
+- Interval cleanup в Sam3Store и Batch stores
+
+**Sprint 2 — P1 High (14/14 ✅):**
+- Thread-safe DB с _write_lock
+- SQL injection whitelist (18 колонок)
+- Token hash storage (SHA-256)
+- WAL checkpoint для SQLite
+- Character-by-character SSE parsing
+- Batch error handling с per-box try/except
+
+**Sprint 3 — P2 Medium (0/15 ⏳):**
+Ожидают выполнения в следующем спринте (~19 часов).
+
+Подробнее: [`docs/MASTER_PLAN.md`](docs/MASTER_PLAN.md) § Bug Fix Audit v2.0
 
 ## Быстрый старт (Portable)
 

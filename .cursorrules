@@ -1,5 +1,15 @@
 # Cursor Rules for MuraveiVision PRO
 
+## CRITICAL RULE #1: Close items before proceeding
+
+**After completing EACH task item in a plan, the agent MUST:**
+1. Mark the item as completed (✅) in the plan file
+2. Commit the plan change
+3. ONLY THEN proceed to the next item
+
+**Never skip items or batch multiple items together.**
+**Each item must be closed individually before moving to the next.**
+
 ## Documentation Auto-Sync (MANDATORY)
 
 After completing ANY code change (feature, fix, refactor), you MUST:
@@ -27,6 +37,83 @@ After completing ANY code change (feature, fix, refactor), you MUST:
    ```
 
 See also: `docs/DOCS_SYNC_CHECKLIST.md`, `docs/MASTER_PLAN.md` §9.
+
+## CRITICAL RULE #2: Sync versions across all files and GitHub
+
+**WhenEVER changing version (package.json, README, release) you MUST sync ALL locations:**
+
+1. `package.json` → `"version"` field (source of truth for frontend)
+2. `README.md` → header `# MuraveiVision PRO vX.Y` and "Latest release"
+3. `docs/MASTER_PLAN.md` → Meta section (commit, status)
+4. `docs/ROADMAP.md` → version section
+5. GitHub Releases → create tag/release with the same version
+
+**Rule:** README.md "Latest release" MUST ALWAYS match the latest GitHub Release.
+If local version is higher — create a GitHub Release (or draft) with the current version.
+
+**Never let README version diverge from package.json or GitHub releases.**
+
+## CRITICAL RULE #3: Every version MUST include complete documentation
+
+**HARD RULE — NO EXCEPTIONS:**
+
+**When creating ANY new version, you MUST update the entire documentation corpus:**
+
+### 3.1. New Features Documentation
+
+For EACH NEW feature in a version, create:
+
+1. **README.md** — brief description in "What's new" / "Major Changes" section
+2. **docs/FEATURES.md** — complete feature reference:
+   - What it does and what problem it solves
+   - How to use it (CLI, API, UI)
+   - Usage examples with output
+   - Dependencies and requirements
+3. **docs/API.md** — if there are API endpoints:
+   - All endpoints with methods, parameters, request body
+   - Response formats (JSON schema)
+   - curl request examples
+4. **docs/ARCHITECTURE.md** — if the feature changes architecture:
+   - Where the code is located (file structure)
+   - How it interacts with other components
+   - Data flow diagrams (if applicable)
+5. **docs/OPERATOR_GUIDE.md** — operator field guide:
+   - How to use the feature in field conditions
+   - Step-by-step instructions
+   - Typical scenarios and troubleshooting
+6. **docs/ENGINEER_GUIDE.md** — engineering documentation:
+   - How to deploy and configure
+   - Configuration files and environment variables
+   - Logs and monitoring
+7. **docs/KNOWN_ISSUES.md** — if there are known limitations
+8. **CHANGELOG.md** (or section in MASTER_PLAN) — version change log
+
+### 3.2. Implementation Documentation
+
+For EACH NEW feature, you MUST:
+
+1. **Code comments** — JSDoc (frontend) / docstrings (Python) for every public API
+2. **Module README** — if a module is complex (≥3 files), add `README.md` with description
+3. **ARCHITECTURE.md** — update diagrams and component descriptions
+4. **CONFIGURATION.md** — add new configuration parameters
+
+### 3.3. Documentation Checklist (before every version commit)
+
+- [ ] README.md updated (What's new, requirements)
+- [ ] docs/FEATURES.md — all new features described
+- [ ] docs/API.md — all new endpoints described
+- [ ] docs/OPERATOR_GUIDE.md — operator instructions
+- [ ] docs/ENGINEER_GUIDE.md — engineer instructions
+- [ ] docs/ARCHITECTURE.md — diagrams updated
+- [ ] docs/CONFIGURATION.md — new environment variables
+- [ ] docs/KNOWN_ISSUES.md — version limitations
+- [ ] docs/MASTER_PLAN.md — Meta section updated
+- [ ] docs/ROADMAP.md — status moved to DONE
+- [ ] CHANGELOG — change list
+
+**NEVER ship code without documentation. This is non-negotiable.**
+**Every new feature MUST have: usage docs + implementation docs + API docs (if applicable).**
+**This rule applies to EVERY version, without exception.
 
 ## Python environment (MANDATORY)
 
