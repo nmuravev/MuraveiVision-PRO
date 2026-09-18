@@ -757,28 +757,66 @@ class YoloEngine:
             "verbose": False,
             "device": self._device if str(self._device).startswith("cuda") else "cpu",
         }
-        try:
-            # ByteTrack needs `lap`; Ultralytics tries to pip-install it (breaks air-gap).
-            results = model.predict(**kwargs)
-        except (RuntimeError, Exception) as exc:  # noqa: BLE001
-            msg = str(exc).lower()
-            if str(self._device).startswith("cuda") and (
-                "out of memory" in msg or "cuda" in msg and "memory" in msg
-            ):
-                print(f"[YOLO] CUDA OOM → empty_cache + CPU fallback: {exc}")
-                try:
-                    import torch
-                    torch.cuda.empty_cache()
-                except Exception:
-                    pass
-                self._device = "cpu"
-                self._device_backend = "cpu-fallback-oom"
-                self._yolo_label = "CPU"
-                self._degraded = True
-                kwargs["device"] = "cpu"
+        # P0-6: Retry logic with OOM recovery and CUDA restoration
+        max_retries = 3
+        last_exc: Exception | None = None
+
+        for attempt in range(max_retries):
+            try:
+                # ByteTrack needs `lap`; Ultralytics tries to pip-install it (breaks air-gap).
                 results = model.predict(**kwargs)
-            else:
-                raise
+                # P0-6: Success after OOM — try to restore CUDA device
+                if self._degraded and attempt > 0:
+                    try:
+                        import torch
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                            self._device = "cuda:0"
+                            self._device_backend = "torch-cuda"
+                            self._yolo_label = "CUDA"
+                            self._degraded = False
+                            print("[YOLO] CUDA restored after successful retry")
+                    except Exception:
+                        pass
+                return results
+            except (RuntimeError, Exception) as exc:  # noqa: BLE001
+                last_exc = exc
+                msg = str(exc).lower()
+
+                # P0-6: OOM detection and recovery
+                is_oom = (
+                    "out of memory" in msg
+                    or ("cuda" in msg and "memory" in msg)
+                    or "cuda error" in msg
+                )
+
+                if is_oom and str(self._device).startswith("cuda"):
+                    print(f"[YOLO] CUDA OOM (attempt {attempt + 1}/{max_retries}): {exc}")
+                    try:
+                        import torch
+                        torch.cuda.empty_cache()
+                    except Exception:
+                        pass
+
+                    # Last resort: CPU fallback
+                    if attempt == max_retries - 1:
+                        print(f"[YOLO] CUDA OOM → final CPU fallback: {exc}")
+                        self._device = "cpu"
+                        self._device_backend = "cpu-fallback-oom"
+                        self._yolo_label = "CPU"
+                        self._degraded = True
+                        kwargs["device"] = "cpu"
+                        try:
+                            results = model.predict(**kwargs)
+                            return results
+                        except Exception as final_exc:
+                            print(f"[YOLO] CPU fallback also failed: {final_exc}")
+                            raise
+                    else:
+                        # Retry with same device — empty_cache might have freed enough
+                        continue
+                else:
+                    raise  # Non-OOM error — propagate immediately
         if not results:
             return []
         return [o for o in self._boxes_to_objects(results[0], orig_w, orig_h, floor) if _keep_live_label(o["class_en"]) and not _is_osd_box(o["bbox"])]
