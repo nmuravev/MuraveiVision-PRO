@@ -32,17 +32,19 @@ class DetectRequest(BaseModel):
 
 
 def _sahi_default() -> bool:
-    """Resolve system-wide SAHI default from SQLite settings (default ON).
+    """Resolve system-wide SAHI default from SQLite settings.
 
-    Only catches SQLite/database errors — other exceptions propagate
-    so operators see real failures instead of silent SAHI fallback.
+    P2-6: Safe fallback to OFF when DB unavailable (prevents silent
+    behavior change during outages).
     """
     try:
-        return (get_setting("use_sahi_default") or "1") == "1"
-    except (sqlite3.Error, OSError):
-        # DB file missing, corrupted, or locked → fallback to ON
-        logger.warning("_sahi_default: SQLite/OSError, falling back to True")
-        return True
+        val = get_setting("use_sahi_default")
+        if val is None:
+            return False  # Default OFF when setting not set
+        return val == "1"
+    except (sqlite3.Error, OSError) as e:
+        logger.error("_sahi_default: DB error, defaulting to False: %s", e)
+        return False  # Safe default
 
 
 def _resolve_use_sahi(flag: bool | None) -> bool:
@@ -66,13 +68,20 @@ def _sanitize_viewer_id(viewer_id: str) -> str:
     return viewer_id
 
 
+# P2-10: Max decoded image size (50 MB) to prevent memory exhaustion
+MAX_IMAGE_BYTES = 50 * 1024 * 1024
+
+
 def _decode_image(raw: str | None) -> bytes:
     if not raw:
         return b""
     data = raw
     if "," in data:
         data = data.split(",", 1)[1]
-    return base64.b64decode(data)
+    decoded = base64.b64decode(data)
+    if len(decoded) > MAX_IMAGE_BYTES:
+        raise ValueError(f"Image too large: {len(decoded)} bytes > {MAX_IMAGE_BYTES}")
+    return decoded
 
 
 @router.post("/api/detect")

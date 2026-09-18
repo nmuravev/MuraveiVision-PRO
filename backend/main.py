@@ -36,13 +36,6 @@ for _ff_dir in (
         os.environ["PATH"] = str(_ff_dir) + os.pathsep + os.environ.get("PATH", "")
 
 
-def safe_path_resolve(path: str | Path) -> Path:
-    try:
-        return Path(path).resolve()
-    except (FileNotFoundError, OSError, NotADirectoryError):
-        return Path(path).absolute()
-
-
 REQUIRED_DIRS = ("cache", "logs", "archive", "reports", "assets")
 
 
@@ -86,8 +79,6 @@ async def lifespan(app: FastAPI):
 
     trash_root()
     # Optional 30-day trash cleanup (disable with MURAVEI_TRASH_PURGE=0)
-    import os
-
     if os.environ.get("MURAVEI_TRASH_PURGE", "1") != "0":
         purged = purge_old_trash()
         if purged:
@@ -96,7 +87,6 @@ async def lifespan(app: FastAPI):
     from services.yolo_engine import get_yolo_engine
 
     from services import runtime_log
-    import logging
 
     class _RuntimeLogHandler(logging.Handler):
         def emit(self, record: logging.LogRecord) -> None:

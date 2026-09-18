@@ -44,8 +44,9 @@ def want_cuda(kit: str, torch_flavor: str = "cuda") -> bool:
     flavor = (torch_flavor or "cuda").strip().lower()
     if flavor not in ("cuda", "cpu"):
         raise ValueError(f"unknown TorchFlavor: {torch_flavor!r}")
+    # Mini/Lite всегда CPU независимо от flavor
     if profile in ("mini", "lite"):
-        return flavor == "cuda"
+        return False
     # fullkit
     return flavor == "cuda"
 

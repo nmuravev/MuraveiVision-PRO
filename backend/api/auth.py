@@ -38,6 +38,18 @@ LOCK_SEC = 120
 _active_tokens: dict[str, dict[str, Any]] = {}  # hash -> {role, exp, username}
 
 
+def cleanup_expired_tokens(max_age_hours: int = 24) -> int:
+    """Remove expired tokens from active store. Returns count of removed."""
+    now = time.time()
+    expired = [
+        h for h, t in _active_tokens.items()
+        if now - t.get("created_at", 0) > max_age_hours * 3600 or t.get("exp", 0) < now
+    ]
+    for h in expired:
+        del _active_tokens[h]
+    return len(expired)
+
+
 class LoginRequest(BaseModel):
     pin: str = Field(..., min_length=7, max_length=7, pattern=r"^\d{7}$")
 
@@ -69,6 +81,7 @@ def _make_token(role: str, username: str) -> tuple[str, str]:
         "role": role,
         "exp": exp,
         "username": username,
+        "created_at": time.time(),
     }
     
     return plain_token, token_hash

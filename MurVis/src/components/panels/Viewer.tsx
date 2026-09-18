@@ -69,11 +69,20 @@ const YOLO_PAUSED_THROTTLE_MS = 500;
 const DISCRETE_SEEK_DEBOUNCE_MS = 100;
 
 /** Survives React unmount/remount of Viewer panels (mosaic layout changes). */
+const VIEWER_CACHE_MAX = 100;
 const viewerTimeCache = new Map<string, { path: string; t: number }>();
+
+function boundedCacheSet<K, V>(cache: Map<K, V>, key: K, value: V, max: number) {
+  if (cache.size >= max) {
+    const firstKey = cache.keys().next().value;
+    if (firstKey !== undefined) cache.delete(firstKey);
+  }
+  cache.set(key, value);
+}
 
 function rememberViewerTime(viewerId: string, path: string | null | undefined, t: number) {
   if (!path || !Number.isFinite(t) || t < 0) return;
-  viewerTimeCache.set(viewerId, { path, t });
+  boundedCacheSet(viewerTimeCache, viewerId, { path, t }, VIEWER_CACHE_MAX);
 }
 
 /** Last known playback time per viewer (for cross-panel Compare Sync). */
