@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
@@ -39,6 +40,23 @@ def _sahi_default() -> bool:
 
 def _resolve_use_sahi(flag: bool | None) -> bool:
     return bool(flag) if flag is not None else _sahi_default()
+
+
+def _sanitize_viewer_id(viewer_id: str) -> str:
+    """Sanitize viewer_id to prevent path traversal attacks.
+
+    P1-9: Reject any viewer_id containing path traversal sequences
+    ('..', '/', '\\') or null bytes. Return the basename for safety.
+    """
+    if not viewer_id:
+        raise ValueError("Empty viewer_id")
+    # Check for dangerous characters before extracting name
+    if ".." in viewer_id or "/" in viewer_id or "\\" in viewer_id:
+        raise ValueError(f"Path traversal in viewer_id: {viewer_id!r}")
+    # Also reject null bytes
+    if "\x00" in viewer_id:
+        raise ValueError(f"Null byte in viewer_id: {viewer_id!r}")
+    return viewer_id
 
 
 def _decode_image(raw: str | None) -> bytes:
@@ -77,13 +95,21 @@ async def detect_status(
 
 @router.websocket("/ws/detect/{viewer_id}")
 async def detect_ws(websocket: WebSocket, viewer_id: str) -> None:
+    # P1-9: Sanitize viewer_id to prevent path traversal
+    try:
+        safe_viewer_id = _sanitize_viewer_id(viewer_id)
+    except ValueError as exc:
+        logger.warning("WS detect rejected traversal viewer_id=%s: %s", viewer_id, exc)
+        await websocket.close(code=4003)
+        return
+
     token = websocket.query_params.get("token")
     try:
         user = decode_token(token or "")
         if ROLE_LEVEL.get(str(user.get("role", "")), 0) < ROLE_LEVEL["operator"]:
             raise ValueError("forbidden")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("WS auth failed for %s: %s", viewer_id, exc)
+        logger.warning("WS auth failed for %s: %s", safe_viewer_id, exc)
         await websocket.close(code=4401)
         return
 
