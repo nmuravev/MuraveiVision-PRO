@@ -28,6 +28,8 @@ MSVC_NEED_MSG = (
 
 _VCVARS_CACHE: Path | None | bool = False  # False=unset, None=missing, Path=found
 _CUDA_CACHE: Path | None | bool = False
+# P2-2: File-based cache for vcvars64 — survives restarts
+_VCVARS_CACHE_FILE: Path = BASE_DIR / "logs" / ".vcvars64_cache.txt"
 
 
 def cl_on_path() -> bool:
@@ -35,10 +37,37 @@ def cl_on_path() -> bool:
 
 
 def find_vcvars64() -> Path | None:
-    """Locate vcvars64.bat via env, vswhere, or VS install tree under Program Files."""
+    """Locate vcvars64.bat via env, vswhere, or VS install tree under Program Files.
+
+    P2-2: Checks file cache first (survives restarts), then PATH fallback,
+    then expensive vswhere/glob search. Caches result to disk.
+    """
     global _VCVARS_CACHE
     if _VCVARS_CACHE is not False:
         return _VCVARS_CACHE if isinstance(_VCVARS_CACHE, Path) else None
+
+    # P2-2: Check file cache (persisted across restarts)
+    try:
+        raw = _VCVARS_CACHE_FILE.read_text(encoding="utf-8").strip().strip('"')
+        if raw:
+            p = Path(raw)
+            if p.is_file():
+                _VCVARS_CACHE = p
+                return p
+            # Stale path — remove cache file
+            _VCVARS_CACHE_FILE.unlink(missing_ok=True)
+    except (OSError, IOError):
+        pass
+
+    # P2-2: Fallback — search PATH for vcvars64.bat
+    which_vcvars = shutil.which("vcvars64.bat")
+    if which_vcvars:
+        _VCVARS_CACHE = Path(which_vcvars)
+        try:
+            _VCVARS_CACHE_FILE.write_text(str(_VCVARS_CACHE), encoding="utf-8")
+        except OSError:
+            pass
+        return _VCVARS_CACHE
 
     for key in ("MURAVEI_VCVARS64", "VCVARS64"):
         raw = (os.environ.get(key) or "").strip().strip('"')
@@ -46,6 +75,7 @@ def find_vcvars64() -> Path | None:
             p = Path(raw)
             if p.is_file():
                 _VCVARS_CACHE = p
+                _persist_vcvars_cache(p)
                 return p
 
     vswhere = (
@@ -77,6 +107,7 @@ def find_vcvars64() -> Path | None:
                 p = Path(line[0].strip())
                 if p.is_file():
                     _VCVARS_CACHE = p
+                    _persist_vcvars_cache(p)
                     return p
         except (OSError, subprocess.TimeoutExpired):
             pass
@@ -108,10 +139,20 @@ def find_vcvars64() -> Path | None:
     if found:
         found.sort(key=_rank)
         _VCVARS_CACHE = found[0]
+        _persist_vcvars_cache(_VCVARS_CACHE)
         return found[0]
 
     _VCVARS_CACHE = None
     return None
+
+
+def _persist_vcvars_cache(path: Path) -> None:
+    """Write vcvars64 path to disk cache for next startup."""
+    try:
+        _VCVARS_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _VCVARS_CACHE_FILE.write_text(str(path), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def find_cuda_home() -> Path | None:
