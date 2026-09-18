@@ -1,4 +1,8 @@
-"""Discover MSVC/CUDA for gsplat CUDA JIT on Windows (no host-hardcoded paths)."""
+"""Discover MSVC/CUDA for gsplat CUDA JIT on Windows (no host-hardcoded paths).
+
+P0-9: Uses portalocker to prevent race conditions when multiple gsplat
+processes try to compile JIT kernels concurrently.
+"""
 from __future__ import annotations
 
 import os
@@ -7,6 +11,14 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+# P0-9: Try to import portalocker for file-based locking
+try:
+    import portalocker
+    HAS_PORTABLE_LOCKER = True
+except ImportError:
+    HAS_PORTABLE_LOCKER = False
+    print("[GSPLAT] portalocker not available — race condition protection disabled")
 
 from services.security import BASE_DIR
 
@@ -153,6 +165,10 @@ def python_include_dir() -> Path | None:
     return None
 
 
+# P0-9: Lock file for concurrent gsplat process protection
+_GSPLAT_LOCK_PATH = BASE_DIR / "logs" / ".gsplat_jit.lock"
+
+
 def gsplat_train_ready() -> tuple[bool, str]:
     """Whether Balanced/High (gsplat JIT) can run on this host."""
     if os.name != "nt":
@@ -165,6 +181,40 @@ def gsplat_train_ready() -> tuple[bool, str]:
     if find_vcvars64() is not None:
         return True, ""
     return False, MSVC_NEED_MSG
+
+
+def acquire_gsplat_lock() -> portalocker.Lock | None:
+    """Acquire file lock to prevent concurrent gsplat JIT compilation.
+
+    P0-9: Multiple gsplat processes trying to compile CUDA kernels
+    concurrently can cause silent data corruption or crashes.
+
+    Returns:
+        Lock object (caller must keep reference) or None if unavailable.
+    """
+    if not HAS_PORTABLE_LOCKER:
+        return None
+
+    try:
+        _GSPLAT_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        lock_file = open(_GSPLAT_LOCK_PATH, "w")
+        portalocker.lock(lock_file, portalocker.LOCK_EX | portalocker.LOCK_NB)
+        return lock_file
+    except (portalocker.LockException, OSError):
+        return None
+    except Exception:
+        return None
+
+
+def release_gsplat_lock(lock: portalocker.Lock | None) -> None:
+    """Release gsplat JIT compilation lock."""
+    if lock is None:
+        return
+    try:
+        portalocker.unlock(lock)
+        lock.close()
+    except Exception:
+        pass
 
 
 def clear_caches() -> None:
