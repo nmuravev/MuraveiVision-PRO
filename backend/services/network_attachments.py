@@ -91,6 +91,10 @@ def init_attachment(
     sha256: str,
     attachment_id: str | None = None,
 ) -> dict[str, Any]:
+    # P1-6: Sanitize filename to prevent path traversal
+    safe_name = Path(filename).name  # Extract basename only
+    if not safe_name or "/" in filename or "\\" in filename or ".." in filename:
+        raise ValueError("invalid filename (path traversal detected)")
     size_n = int(size)
     if size_n <= 0 or size_n > MAX_ATTACHMENT_BYTES:
         raise ValueError(f"size must be 1..{MAX_ATTACHMENT_BYTES}")
@@ -100,7 +104,7 @@ def init_attachment(
     digest = (sha256 or "").strip().lower()
     if not re.fullmatch(r"[a-f0-9]{64}", digest):
         raise ValueError("sha256 must be 64 hex chars")
-    name = Path(filename or "attach.bin").name[:200] or "attach.bin"
+    name = safe_name[:200] or "attach.bin"
     aid = _safe_id(attachment_id) if attachment_id else uuid.uuid4().hex
     existing = read_meta(aid)
     if existing and existing.get("complete") and existing.get("sha256") == digest:
