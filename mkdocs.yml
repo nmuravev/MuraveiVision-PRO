@@ -1,0 +1,268 @@
+# MuraveiVision PRO — MkDocs Configuration
+# Documentation system for MuraveiVision PRO v3.2.0
+# Theme: Material for MkDocs
+
+site_name: MuraveiVision PRO
+site_description: >
+  MuraveiVision PRO — профессиональная система анализа видеоданных
+  для полевой работы: обнаружение, сегментация, 3D-реконструкция,
+  пакетная обработка, сетевое взаимодействие.
+site_author: MuraveiVision Team
+site_url: https://muravei-vision.github.io/pro
+repo_name: MuraveiVision-PRO
+repo_url: https://github.com/nmuravev/MuraveiVision-PRO
+copyright: Copyright &copy; 2024-2026 MuraveiVision Team
+
+# Documentation structure
+docs_dir: docs
+site_dir: site
+
+# URL configuration
+use_directory_urls: true
+strict: false
+
+# Theme configuration
+theme:
+  name: material
+  language: ru
+  custom_dir: docs/overrides
+  palette:
+    # Primary: anthracite (ant vision)
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to light mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/toggle-switch-off
+        name: Switch to dark mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+  features:
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+    - content.action.view
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.indexes
+    - navigation.top
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.footer
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+    - header.autohide
+    - animation
+  icon:
+    repo: fontawesome/brands/github
+    logo: material/eye-stealth
+
+# Plugins
+plugins:
+  # Search (built-in, enabled by default)
+  search:
+    separator: '[\s\u200b\-_,:!=.\[\]()"`/]+|(?!\b)(?=[A-Z][a-z])'
+
+  # Minification (production)
+  minify:
+    minify_html: true
+    minify_js: true
+    minify_css: true
+    htmlmin_kwargs:
+      no_empty_lines: true
+
+  # Glitch detection
+  glightbox:
+    auto_themes: true
+
+# Extensions
+markdown_extensions:
+  # Code blocks
+  - codehilite:
+      guess_lang: false
+  - codehilite:
+      linenums: false
+  - highlight:
+      path: D:/LLM/MuraveiVision-PRO
+
+  # Formatting
+  - toc:
+      permalink: true
+      permalink_title: Permanent link
+      toc_depth: 4
+      baseurl: /
+
+  # Tables
+  - tables
+
+  # Admonitions
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+
+  # Syntax extensions
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path:
+        - docs
+        - D:/LLM/MuraveiVision-PRO
+      check_paths: false
+  - pymdownx.tabbed:
+      alternate_style: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+
+  # Lists
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+  # Math (for reconstruction formulas)
+  - pymdownx.arithmatex:
+      generic: true
+
+  # Diagrams (ASCII art support)
+  - attr_list
+  - md_in_html
+
+  # Footnotes
+  - footnotes
+
+# Navigation
+nav:
+  - "Главная": INDEX.md
+  - "Терминология": GLOSSARY.md
+
+  # Getting Started
+  - "Начало работы":
+    - "Начало работы": 00-GETTING-STARTED/OVERVIEW.md
+    - "Системные требования": 00-GETTING-STARTED/SYSTEM_REQUIREMENTS.md
+    - "Оператор — Быстрый старт": 00-GETTING-STARTED/OPERATOR_QUICKSTART.md
+    - "Инженер — Развёртывание": 00-GETTING-STARTED/ENGINEER_QUICKSTART.md
+    - "Разработчик — Настройка": 00-GETTING-STARTED/DEVELOPER_QUICKSTART.md
+
+  # Operator Guide
+  - "Оператор":
+    - "Оператор": 01-OPERATOR/OVERVIEW.md
+    - "Загрузка медиа": 01-OPERATOR/MEDIA_WORKFLOW.md
+    - "Обнаружение": 01-OPERATOR/DETECTION.md
+    - "Сегментация": 01-OPERATOR/SEGMENTATION.md
+    - "Пакетная обработка": 01-OPERATOR/BATCH_SCAN.md
+    - "Сравнение изменений": 01-OPERATOR/CHANGE_DETECTION.md
+    - "AI-анализ": 01-OPERATOR/AI_ANALYSIS.md
+    - "Обучение моделей": 01-OPERATOR/TRAINING.md
+    - "3D-реконструкция": 01-OPERATOR/RECONSTRUCTION.md
+    - "Сетевое взаимодействие": 01-OPERATOR/NETWORK.md
+    - "Устранение неполадок": 01-OPERATOR/TROUBLESHOOTING.md
+
+  # Engineer Guide
+  - "Инженер":
+    - "Инженер": 02-ENGINEER/OVERVIEW.md
+    - "Развёртывание": 02-ENGINEER/DEPLOYMENT.md
+    - "Конфигурация": 02-ENGINEER/CONFIGURATION.md
+    - "Модели": 02-ENGINEER/MODELS.md
+    - "Аппаратное обеспечение": 02-ENGINEER/HARDWARE.md
+    - "Настройка сети": 02-ENGINEER/NETWORK_SETUP.md
+    - "Обслуживание": 02-ENGINEER/MAINTENANCE.md
+    - "Диагностика": 02-ENGINEER/DIAGNOSTICS.md
+    - "Обновление": 02-ENGINEER/UPDATING.md
+
+  # Developer Guide
+  - "Разработчик":
+    - "Разработчик": 03-DEVELOPER/OVERVIEW.md
+    - "Архитектура": 03-DEVELOPER/ARCHITECTURE.md
+    - "API Reference": 03-DEVELOPER/API_REFERENCE.md
+    - "База данных": 03-DEVELOPER/DATABASE.md
+    - "Тестирование": 03-DEVELOPER/TESTING.md
+    - "Вклад в проект": 03-DEVELOPER/CONTRIBUTING.md
+    - "Отладка": 03-DEVELOPER/DEBUGGING.md
+
+  # Features
+  - "Возможности":
+    - "Возможности": 04-FEATURES/OVERVIEW.md
+    - "Обнаружение (YOLO/SAHI)": 04-FEATURES/DETECTION.md
+    - "Сегментация (SAM3)": 04-FEATURES/SEGMENTATION.md
+    - "3D-реконструкция (DA3)": 04-FEATURES/RECON_3D.md
+    - "Пакетные операции": 04-FEATURES/BATCH_OPERATIONS.md
+    - "Сетевое взаимодействие v3.3": 04-FEATURES/NETWORK.md
+    - "AI-аналитик (Ollama)": 04-FEATURES/AI_ANALYST.md
+    - "Портативная версия": 04-FEATURES/PORTABLE.md
+
+  # Reference
+  - "Справочник":
+    - "Справочник": 05-REFERENCE/OVERVIEW.md
+    - "API Endpoints": 05-REFERENCE/API_ENDPOINTS.md
+    - "Справочник ошибок": 05-REFERENCE/ERROR_REFERENCE.md
+    - "Ключи конфигурации": 05-REFERENCE/CONFIG_KEYS.md
+    - "Каталог классов": 05-REFERENCE/CLASS_CATALOG.md
+    - "Схема БД": 05-REFERENCE/DATABASE_SCHEMA.md
+    - "Структура каталогов": 05-REFERENCE/DIRECTORY_STRUCTURE.md
+
+  # Security
+  - "Безопасность":
+    - "Безопасность": 06-SECURITY/OVERVIEW.md
+    - "Аутентификация": 06-SECURITY/AUTH.md
+    - "Air-gap режим": 06-SECURITY/AIR_GAP.md
+    - "Аудит безопасности": 06-SECURITY/SECURITY_AUDIT.md
+
+  # Releases
+  - "Релизы":
+    - "Релизы": 07-RELEASES/OVERVIEW.md
+    - "История изменений": CHANGELOG.md
+    - "v3.2.0": 07-RELEASES/V3.2.0.md
+    - "Руководство по миграции": 07-RELEASES/MIGRATION_GUIDE.md
+
+  # Legacy
+  - "Архив":
+    - "Legacy документация": legacy/INDEX.md
+
+# Extra configuration
+extra:
+  # Version information
+  version:
+    provider: mike
+    default: latest
+
+  # Social links
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/nmuravev
+    - icon: fontawesome/brands/docker
+      link: https://hub.docker.com/r/muraveivision/pro
+
+  # Analytics (offline-capable: local only)
+  analytics:
+    tracker: local-only
+
+# Custom CSS
+extra_css:
+  - assets/css/custom.css
+  - assets/css/diagrams.css
+  - assets/css/code.css
+
+# Custom JavaScript
+extra_javascript:
+  - assets/js/mathjax.js
+  - assets/js/search-enhance.js
+
+# Page width
+extra:
+  font:
+    text: Roboto
+    code: Roboto Mono
