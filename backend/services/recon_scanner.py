@@ -1137,10 +1137,19 @@ def update_manifest(job_id: str, patch: dict[str, Any]) -> dict[str, Any]:
     return man
 
 def asset_path(job_id: str, name: str) -> Path:
+    """Resolve asset path with strict path traversal protection.
+
+    Uses pathlib.Path.relative_to() (not startswith) to prevent
+    path traversal attacks like '../../../etc/passwd'.
+    """
     job_dir = _job_dir(sanitize_job_id(job_id))
-    target = (job_dir / name).resolve()
-    if not str(target).startswith(str(job_dir.resolve())):
-        raise ValueError("Invalid asset path")
+    resolved_job_dir = job_dir.resolve()
+    target = (resolved_job_dir / name).resolve()
+    # relative_to() raises ValueError if target is outside job_dir
+    try:
+        target.relative_to(resolved_job_dir)
+    except ValueError:
+        raise ValueError("Path traversal detected: asset outside job directory")
     if not target.is_file():
         raise FileNotFoundError(name)
     return target
