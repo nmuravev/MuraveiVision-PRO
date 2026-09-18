@@ -185,7 +185,7 @@ async def ai_analyze(
         raise HTTPException(status_code=int(result["status"]), detail=result["message"] or UNAVAILABLE)
     return {
         "status": "ok",
-        "analysis": result["analysis"],
+        "analysis": result.get("analysis"),
         "model": result.get("model"),
         "provider": result.get("provider"),
         "had_image": bool(image),
