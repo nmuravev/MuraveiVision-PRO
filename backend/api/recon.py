@@ -183,6 +183,10 @@ async def recon_asset(
     return FileResponse(path, media_type=media.get(path.suffix.lower(), "application/octet-stream"))
 
 
+# P1-5: Whitelist for recon export artifact kinds
+_VALID_RECON_KINDS = frozenset({"splat", "dense", "mesh", "sparse"})
+
+
 @router.get("/api/recon/export/{job_id}/{kind}")
 async def recon_export_artifact(
     job_id: str,
@@ -196,6 +200,13 @@ async def recon_export_artifact(
     from services.job_ids import sanitize_job_id
     from services.alicevision_pipeline import normalize_artifacts
     from services.security import BASE_DIR
+
+    # P1-5: Validate kind against whitelist to prevent probing
+    if kind not in _VALID_RECON_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid kind '{kind}'. Allowed: {', '.join(sorted(_VALID_RECON_KINDS))}"
+        )
 
     job_id = sanitize_job_id(job_id)
     job_dir = BASE_DIR / "archive" / "recon" / job_id
