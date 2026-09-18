@@ -264,6 +264,13 @@ class YoloEngine:
             print(f"[YOLO] force_load missing: {weights}")
             return False
         try:
+            # Acquire mutex for VRAM exclusion
+            try:
+                from services.model_mutex import acquire_model
+                acquire_model("yolo_detect")
+            except Exception as e:
+                print(f"[YOLO] Warning: mutex acquire failed: {e}")
+            
             self.model = None
             try:
                 import torch

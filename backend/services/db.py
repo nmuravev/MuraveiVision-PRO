@@ -177,7 +177,7 @@ def init_db() -> None:
                 );
                 CREATE TABLE IF NOT EXISTS excluded_classes (
                     class_name TEXT PRIMARY KEY,
-                    added_at REAL NOT NULL DEFAULT strftime('%s', 'now')
+                    added_at REAL NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS flight_tracks (
                     id TEXT PRIMARY KEY,
@@ -1498,14 +1498,16 @@ def migrate_db() -> None:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS excluded_classes (
                     class_name TEXT PRIMARY KEY,
-                    added_at REAL NOT NULL DEFAULT strftime('%s', 'now')
+                    added_at REAL NOT NULL DEFAULT 0
                 )
             """)
             # Seed COCO DROP classes
+            import time
+            now = time.time()
             for class_name in _COCO_DROP_CLASSES:
                 conn.execute(
-                    "INSERT OR IGNORE INTO excluded_classes (class_name, added_at) VALUES (?, strftime('%s', 'now'))",
-                    (class_name,),
+                    "INSERT OR IGNORE INTO excluded_classes (class_name, added_at) VALUES (?, ?)",
+                    (class_name, now),
                 )
             conn.execute(
                 "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', '1')"
