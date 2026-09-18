@@ -69,16 +69,31 @@ async def recon_stop(_user: dict[str, Any] = Depends(require_role("operator"))) 
     return recon_scanner.stop()
 
 
+# P0-1: Configurable SSE idle timeout (default 60s, env SSE_IDLE_TIMEOUT)
+import os
+_SSE_IDLE_TIMEOUT = int(os.environ.get("SSE_IDLE_TIMEOUT", "60"))
+_SSE_HEARTBEAT_INTERVAL = 15.0  # seconds
+
+
 @router.get("/api/recon/stream")
 async def recon_stream(_user: dict[str, Any] = Depends(require_role("operator"))) -> StreamingResponse:
     async def gen():
         idx = 0
         last_status_push = 0.0
+        last_activity = time.monotonic()
         yield f"data: {json.dumps({'type': 'status', **recon_scanner.status()}, ensure_ascii=False)}\n\n"
         while True:
+            now = time.monotonic()
+            # P0-1: Idle timeout check — close zombie connections
+            idle_sec = now - last_activity
+            if idle_sec > _SSE_IDLE_TIMEOUT:
+                print(f"[SSE] Closing idle connection after {idle_sec:.0f}s > {_SSE_IDLE_TIMEOUT}s")
+                break
+
             events, idx = recon_scanner.drain_events(idx)
             for ev in events:
                 yield f"data: {json.dumps({'type': 'progress', **ev}, ensure_ascii=False)}\n\n"
+                last_activity = now  # Reset idle timer on activity
                 if ev.get("status") in ("done", "colmap_done", "error", "idle"):
                     return
             st = recon_scanner.status()
@@ -86,13 +101,11 @@ async def recon_stream(_user: dict[str, Any] = Depends(require_role("operator"))
                 yield f"data: {json.dumps({'type': 'status', **st}, ensure_ascii=False)}\n\n"
                 return
             # Heartbeat while running so long mapper stages refresh FE without new events
-            now = time.monotonic()
-            if st.get("status") == "running" and (now - last_status_push) >= 2.0 and not events:
-                yield f"data: {json.dumps({'type': 'status', **st}, ensure_ascii=False)}\n\n"
+            if st.get("status") == "running" and (now - last_status_push) >= _SSE_HEARTBEAT_INTERVAL and not events:
+                yield f"data: {json.dumps({'type': 'heartbeat', 'ts': time.time()}, ensure_ascii=False)}\n\n"
                 last_status_push = now
+                last_activity = now  # Heartbeat counts as activity
             await asyncio.sleep(0.4)
-
-    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @router.get("/api/recon/manifest")
