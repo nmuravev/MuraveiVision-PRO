@@ -889,6 +889,7 @@ def _run(
     t_end: float,
     fps_sample: float,
 ) -> None:
+    """Main recon worker thread target (P1-13: proper exception handling)."""
     global _thread
     job_dir = _job_dir(job_id)
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -1014,7 +1015,7 @@ def _run(
             }
         )
         _log(f"done job={job_id} status={final_status}")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 — P1-13: catch all, salvage, cleanup
         _log(f"ERROR {exc}")
         if _try_salvage_after_error(job_dir, manifest):
             _emit(
@@ -1046,6 +1047,7 @@ def _run(
                 }
             )
     finally:
+        # P1-13: Always cleanup thread reference, even on exception
         with _lock:
             _thread = None
             # KEEP: recover zombie — thread ended without final status
