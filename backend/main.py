@@ -1,4 +1,5 @@
 """MuraveiVision PRO Backend — FastAPI entrypoint."""
+import asyncio
 import os
 
 # Air-gap: disable Ultralytics AutoUpdate before any ultralytics import.
@@ -56,15 +57,21 @@ def ensure_runtime_dirs() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_runtime_dirs()
-    try:
-        from services.ffmpeg_util import resolve_ffmpeg, resolve_ffprobe
+    # P2-15: Defer ffmpeg resolution to background — does not block app startup.
+    # File-existence checks are fast, but logging/print output should not
+    # delay YOLO engine loading or network workers that operators depend on.
+    async def _resolve_ffmpeg_bg() -> None:
+        try:
+            from services.ffmpeg_util import resolve_ffmpeg, resolve_ffprobe
 
-        _fp, _fs = resolve_ffmpeg()
-        _pp, _ps = resolve_ffprobe()
-        print(f"[ffmpeg] path={_fp} source={_fs}")
-        print(f"[ffprobe] path={_pp} source={_ps}")
-    except Exception as _ff_exc:  # noqa: BLE001
-        print(f"[ffmpeg] resolve failed: {_ff_exc}")
+            _fp, _fs = resolve_ffmpeg()
+            _pp, _ps = resolve_ffprobe()
+            print(f"[ffmpeg] path={_fp} source={_fs}")
+            print(f"[ffprobe] path={_pp} source={_ps}")
+        except Exception as _ff_exc:  # noqa: BLE001
+            print(f"[ffmpeg] resolve failed: {_ff_exc}")
+
+    asyncio.create_task(_resolve_ffmpeg_bg())
     from services.db import init_db, migrate_db
 
     init_db()
