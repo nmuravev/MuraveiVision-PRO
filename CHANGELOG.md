@@ -2,7 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v3.2.0] — 2026-09-19 — Bug Fix Audit v2.0 (40 fixes)
+## [v3.2.0] — 2026-09-19 — Bug Fix Audit v2.0 + DA3 Dense Backend
+
+### Major New Feature: Depth Anything 3 (DA3) Dense Reconstruction
+
+- **DA3 Dense Backend (all 4 variants):** `da3_dense_base` / `large` / `metric` / `giant`
+  - **base** (Apache-2.0): Default, works on 8+ GB VRAM
+  - **large** (CC BY-NC 4.0): Higher quality, needs 12+ GB VRAM
+  - **metric** (Apache-2.0): Metric-scale reconstruction
+  - **giant** (CC BY-NC 4.0): Highest quality, requires ≥16 GB VRAM (gated)
+- **Sidecar-only deployment:** Weights in `sidecars/da3/`, never in `assets/models/`
+- **Soft-fail recovery:** Preserves sparse cloud on <8 COLMAP views
+- **Fail-closed:** `DA3_RUNTIME_UNAVAILABLE` when model can't load
+- **NOTICE files:** CC BY-NC 4.0 license for large/giant variants
+- **Pipeline integration:** Preset hierarchy Sparse → Dense (DA3) → Mesh (AV) → Splat
+- **Binary PLY:** 6 fields xyzrgb, no normals
+- **Config paths:** HF `config_*.json` + `inference()` path
+- **Build machine:** `fetch_da3_weights.py` runs only on build machine during pack prep
+
+### Sprint 3: P2 — Medium (15 fixes)
 
 ### Sprint 3: P2 — Medium (15 fixes)
 
