@@ -69,6 +69,12 @@ async def lifespan(app: FastAPI):
 
     init_db()
     migrate_db()
+    # P0-8: Auto-migrate legacy pickle catalog to msgpack (one-time)
+    try:
+        from scripts.migrate_catalog_v1_to_v2 import run_migration as migrate_catalog
+        migrate_catalog(force=False)
+    except Exception as _cat_exc:
+        print(f"[CATALOG] Migration skip: {_cat_exc}")
     from services.trash import purge_old_trash, trash_root
 
     trash_root()

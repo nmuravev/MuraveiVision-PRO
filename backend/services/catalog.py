@@ -45,6 +45,37 @@ except ImportError:
     logger.warning("msgpack not available - will use pickle (less secure)")
 
 
+class RestrictedUnpickler(pickle.Unpickler):
+    """Safe unpickler that only allows built-in types.
+
+    Prevents RCE via malicious pickle payloads by restricting
+    allowed classes to builtins only (dict, list, str, int, float, etc.).
+    """
+
+    SAFE_BUILTINS = {
+        "dict", "list", "tuple", "set", "frozenset",
+        "str", "bytes", "int", "float", "bool", "NoneType",
+        "bytearray", "complex",
+    }
+
+    def find_class(self, module: str, name: str) -> Any:
+        # Only allow builtins
+        if module in ("builtins", "__builtin__"):
+            if name in self.SAFE_BUILTINS:
+                return getattr(__import__(module), name)
+            logger.warning("RestrictedUnpickler blocked: %s.%s", module, name)
+            raise pickle.UnpicklingError(
+                "Global %s.%s is forbidden for security reasons"
+                % (module, name)
+            )
+        # Block all external modules
+        logger.warning("RestrictedUnpickler blocked: %s.%s", module, name)
+        raise pickle.UnpicklingError(
+            "Global %s.%s is forbidden (only builtins allowed)"
+            % (module, name)
+        )
+
+
 class CatalogStore:
     """Thread-safe catalog storage with msgpack (v2) and pickle (v1) fallback.
     
@@ -122,15 +153,16 @@ class CatalogStore:
     
     def _load_v1(self) -> bool:
         """Load v1 catalog from pickle file (DEPRECATED, INSECURE).
-        
-        Uses RestrictedUnpickler for safety.
-        
+
+        Uses RestrictedUnpickler to prevent RCE via malicious payloads.
+        Only built-in types (dict, list, str, int, float, etc.) are allowed.
+
         Returns:
             True if successful
         """
         try:
             with open(CATALOG_V1_PATH, 'rb') as f:
-                data = pickle.load(f)
+                data = RestrictedUnpickler(f).load()
             
             self._data = {"version": 1, "catalog": data, "migrated_at": None}
             self._version = 1
