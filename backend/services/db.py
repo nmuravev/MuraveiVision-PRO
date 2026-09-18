@@ -62,12 +62,37 @@ def pin_from_b64(encoded: str) -> str:
     return base64.b64decode(encoded.encode("ascii")).decode("utf-8")
 
 
+# P1-11: WAL checkpoint counter
+_wal_checkpoint_counter = 0
+_wal_checkpoint_lock = threading.Lock()
+_WAL_CHECKPOINT_INTERVAL = 1000  # checkpoint every N writes
+
+
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    # P1-11: Enable auto-checkpoint at 1000 pages (~8MB)
+    conn.execute("PRAGMA wal_autocheckpoint=1000")
     return conn
+
+
+def checkpoint_wal(conn: sqlite3.Connection) -> None:
+    """Perform explicit WAL checkpoint to prevent WAL file growth.
+
+    P1-11: Called periodically to truncate WAL and SHM files.
+    Uses PASSIVE mode — waits for readers to finish.
+    """
+    global _wal_checkpoint_counter
+    with _wal_checkpoint_lock:
+        _wal_checkpoint_counter += 1
+        if _wal_checkpoint_counter >= _WAL_CHECKPOINT_INTERVAL:
+            _wal_checkpoint_counter = 0
+            try:
+                conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            except Exception:
+                pass
 
 
 def init_db() -> None:
