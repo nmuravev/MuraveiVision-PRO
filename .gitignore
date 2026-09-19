@@ -40,3 +40,9 @@ yolo26n.pt
 logo.png  
 skills-lock.json  
 .commit_msg.txt  
+.backend.lock
+.muravei_backend.lock
+.muravei_backend.pid
+portable/stage_*
+portable/test_*
+portable/*.zip.sha256
