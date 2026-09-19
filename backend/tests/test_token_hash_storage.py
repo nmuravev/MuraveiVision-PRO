@@ -1,7 +1,7 @@
-"""Test P1-12: Token hash-only storage and session management.
+"""Test P1-12 + P6.1: Token hash-only storage and DB-backed session management.
 
 Verifies that JWT tokens are replaced with session-based tokens
-where only SHA-256 hashes are stored in memory.
+where only SHA-256 hashes are stored, persisted to DB for restart survival.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 _BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_BACKEND))
 
-from api.auth import _make_token, _invalidate_token, _active_tokens, _validate_session_token
+from api.auth import _make_token, _invalidate_token, _active_tokens, _validate_session_token, _sync_db_to_memory
 import hashlib
 import time
 
@@ -113,6 +113,68 @@ class TestTokenUniqueness(unittest.TestCase):
             tokens.add(plain)
         # All 100 tokens should be unique
         self.assertEqual(len(tokens), 100)
+
+
+class TestDbSyncP61(unittest.TestCase):
+    """Test P6.1: DB-backed session sync survives restarts."""
+
+    def setUp(self):
+        """Clear active tokens before each test."""
+        _active_tokens.clear()
+
+    def tearDown(self):
+        """Clear active tokens after each test."""
+        _active_tokens.clear()
+
+    def test_token_persisted_to_db(self):
+        """Token should be stored in session_tokens DB table."""
+        from services.db import get_session_token
+        plain, token_hash = _make_token("operator", "operator")
+        
+        # Check DB directly
+        db_session = get_session_token(token_hash)
+        self.assertIsNotNone(db_session)
+        self.assertEqual(db_session["role"], "operator")
+        self.assertEqual(db_session["username"], "operator")
+
+    def test_db_sync_restores_to_memory(self):
+        """_sync_db_to_memory should load tokens from DB."""
+        from services.db import remove_session_token
+        
+        # Create token
+        plain, token_hash = _make_token("engineer", "engineer")
+        
+        # Clear in-memory cache
+        _active_tokens.clear()
+        self.assertNotIn(token_hash, _active_tokens)
+        
+        # Sync from DB
+        _sync_db_to_memory()
+        
+        # Token should be back in memory
+        self.assertIn(token_hash, _active_tokens)
+        self.assertEqual(_active_tokens[token_hash]["role"], "engineer")
+
+    def test_invalidate_removes_from_db(self):
+        """_invalidate_token should remove token from both memory and DB."""
+        from services.db import get_session_token
+        
+        plain, token_hash = _make_token("operator", "operator")
+        
+        # Verify in DB
+        db_session = get_session_token(token_hash)
+        self.assertIsNotNone(db_session)
+        
+        # Invalidate
+        _invalidate_token(plain)
+        
+        # Should be removed from memory
+        token_hash_after_inv = hashlib.sha256(plain.encode()).hexdigest()
+        self.assertNotIn(token_hash_after_inv, _active_tokens)
+        
+        # Should be removed from DB
+        db_session_after = get_session_token(token_hash_after_inv)
+        self.assertIsNone(db_session_after)
 
 
 if __name__ == "__main__":

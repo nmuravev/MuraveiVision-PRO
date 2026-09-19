@@ -259,6 +259,15 @@ def init_db() -> None:
                     ON seg_masks(source_video, time_sec);
                 CREATE INDEX IF NOT EXISTS idx_seg_masks_track
                     ON seg_masks(track_id);
+                CREATE TABLE IF NOT EXISTS session_tokens (
+                    token_hash TEXT PRIMARY KEY,
+                    role TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    exp REAL NOT NULL,
+                    created_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_session_exp
+                    ON session_tokens(exp);
                 """
             )
             cols = {r[1] for r in conn.execute("PRAGMA table_info(detections)").fetchall()}
@@ -992,6 +1001,80 @@ def soft_delete_detections_for_source(source_video: str, edited_by: str | None) 
               )
             """,
             (edited_by, now, key, f"archive/{key}", key),
+        )
+        conn.commit()
+        return int(cur.rowcount or 0)
+    finally:
+        conn.close()
+
+
+# === P6.1: DB-backed session token store ===
+
+def add_session_token(
+    token_hash: str, role: str, username: str, exp: float
+) -> None:
+    """Persist session token to DB (survives restart)."""
+    init_db()
+    now = time.time()
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO session_tokens
+            (token_hash, role, username, exp, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (token_hash, role, username, exp, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_session_token(token_hash: str) -> dict[str, Any] | None:
+    """Retrieve session token by hash."""
+    init_db()
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT token_hash, role, username, exp, created_at FROM session_tokens WHERE token_hash = ?",
+            (token_hash,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "role": row["role"],
+            "exp": row["exp"],
+            "username": row["username"],
+            "created_at": row["created_at"],
+        }
+    finally:
+        conn.close()
+
+
+def remove_session_token(token_hash: str) -> None:
+    """Remove session token from DB."""
+    init_db()
+    conn = _connect()
+    try:
+        conn.execute(
+            "DELETE FROM session_tokens WHERE token_hash = ?", (token_hash,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def cleanup_expired_sessions(max_age_hours: int = 24) -> int:
+    """Remove expired sessions from DB. Returns count of removed."""
+    init_db()
+    now = time.time()
+    cutoff = now - (max_age_hours * 3600)
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "DELETE FROM session_tokens WHERE exp < ? OR created_at < ?",
+            (now, cutoff),
         )
         conn.commit()
         return int(cur.rowcount or 0)

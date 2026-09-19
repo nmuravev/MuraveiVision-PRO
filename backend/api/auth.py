@@ -19,6 +19,10 @@ from services.db import (
     init_db,
     record_failed_login,
     update_pin,
+    add_session_token,
+    get_session_token,
+    remove_session_token,
+    cleanup_expired_sessions,
 )
 from services.security import (
     JWT_ALG,
@@ -33,9 +37,61 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 MAX_FAILS = 5
 LOCK_SEC = 120
 
-# P1-12: In-memory token store with hash-only storage
-# Tokens are stored as SHA-256 hashes to prevent leak from crash dumps
+# P1-12: Hybrid token store (DB-backed + in-memory cache)
+# Tokens persisted to DB survive restarts; in-memory cache for fast lookups
 _active_tokens: dict[str, dict[str, Any]] = {}  # hash -> {role, exp, username}
+_last_db_sync: float = 0  # timestamp of last DB sync
+_DB_SYNC_INTERVAL = 300  # sync in-memory cache every 5 minutes
+
+
+def _sync_db_to_memory() -> None:
+    """Load active sessions from DB to in-memory cache (P6.1)."""
+    global _last_db_sync
+    now = time.time()
+    if now - _last_db_sync < _DB_SYNC_INTERVAL and _active_tokens:
+        return  # Skip if cache is fresh
+    
+    _active_tokens.clear()
+    try:
+        from services.db import _connect
+        conn = _connect()
+        try:
+            cutoff = now - (24 * 3600)  # Load last 24h
+            rows = conn.execute(
+                "SELECT token_hash, role, username, exp FROM session_tokens WHERE exp > ? AND created_at > ?",
+                (now, cutoff),
+            ).fetchall()
+            for row in rows:
+                _active_tokens[row["token_hash"]] = {
+                    "role": row["role"],
+                    "exp": row["exp"],
+                    "username": row["username"],
+                    "created_at": now,
+                }
+            _last_db_sync = now
+        finally:
+            conn.close()
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(f"[session] DB sync failed: {exc}")
+
+
+def _sync_memory_to_db() -> None:
+    """Persist in-memory tokens to DB (P6.1)."""
+    global _last_db_sync
+    now = time.time()
+    if now - _last_db_sync < _DB_SYNC_INTERVAL:
+        return  # Skip if already synced recently
+    
+    for token_hash, session in _active_tokens.items():
+        if session.get("exp", 0) > now:
+            add_session_token(
+                token_hash,
+                session["role"],
+                session["username"],
+                session["exp"],
+            )
+    _last_db_sync = now
 
 
 def cleanup_expired_tokens(max_age_hours: int = 24) -> int:
@@ -47,6 +103,7 @@ def cleanup_expired_tokens(max_age_hours: int = 24) -> int:
     ]
     for h in expired:
         del _active_tokens[h]
+        remove_session_token(h)  # Also remove from DB
     return len(expired)
 
 
@@ -67,16 +124,17 @@ class ChangePinRequest(BaseModel):
 
 
 def _make_token(role: str, username: str) -> tuple[str, str]:
-    """Generate session token with hash-only storage (P1-12).
+    """Generate session token with hash-only storage (P1-12, P6.1 DB-backed).
     
     Returns (plain_token, token_hash) — only hash is stored.
     Token is a random hex string (not JWT) to prevent forgery.
+    Persists to DB for survival across restarts.
     """
     plain_token = secrets.token_hex(32)  # 64-char random token
     token_hash = hashlib.sha256(plain_token.encode()).hexdigest()
     exp = time.time() + TOKEN_TTL_SEC
     
-    # Store hash -> metadata
+    # Store in in-memory cache
     _active_tokens[token_hash] = {
         "role": role,
         "exp": exp,
@@ -84,19 +142,31 @@ def _make_token(role: str, username: str) -> tuple[str, str]:
         "created_at": time.time(),
     }
     
+    # Persist to DB (P6.1)
+    try:
+        add_session_token(token_hash, role, username, exp)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(f"[session] DB persist failed: {exc}")
+    
     return plain_token, token_hash
 
 
 def _invalidate_token(token: str) -> None:
-    """Remove token from active store by hash."""
+    """Remove token from active store by hash (P6.1: also from DB)."""
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     _active_tokens.pop(token_hash, None)
+    try:
+        remove_session_token(token_hash)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(f"[session] DB invalidate failed: {exc}")
 
 
 def _validate_session_token(
     request: Request,
 ) -> str:
-    """Validate token from query param or Authorization header (P1-12)."""
+    """Validate token from query param or Authorization header (P1-12, P6.1 DB-backed)."""
     token = request.query_params.get("token") or (
         request.headers.get("authorization") or ""
     ).replace("Bearer ", "")
@@ -104,12 +174,31 @@ def _validate_session_token(
         raise HTTPException(status_code=401, detail="Unauthorized")
     
     token_hash = hashlib.sha256(token.encode()).hexdigest()
+    
+    # Check in-memory cache first
     session = _active_tokens.get(token_hash)
+    
+    # Fallback to DB (P6.1)
+    if session is None:
+        try:
+            db_session = get_session_token(token_hash)
+            if db_session:
+                # Restore to in-memory cache
+                _active_tokens[token_hash] = db_session
+                session = db_session
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(f"[session] DB lookup failed: {exc}")
+    
     if not session:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     
     if session["exp"] < time.time():
         _active_tokens.pop(token_hash, None)
+        try:
+            remove_session_token(token_hash)
+        except Exception:
+            pass
         raise HTTPException(status_code=401, detail="Token expired")
     
     return token
