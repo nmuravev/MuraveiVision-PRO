@@ -161,6 +161,12 @@ async def lifespan(app: FastAPI):
     from services.accelerator import log_profile_once
     from services.hardware_detect import log_detect_once
 
+    # P6.1: Sync session tokens from DB to in-memory cache
+    await _run_hook("session_sync", lambda: (
+        __import__('api.auth', fromlist=['_sync_db_to_memory'])._sync_db_to_memory(),
+        __import__('api.auth', fromlist=['cleanup_expired_sessions']).cleanup_expired_sessions()
+    )[0])
+
     # P0: Все хуки через _run_hook(lambda: ...) — вызов ВНУТРИ try
     await _run_hook("network_worker", lambda: start_network_worker())
     await _run_hook("beacon", lambda: nb.start_beacon_if_enabled())
@@ -186,6 +192,11 @@ async def lifespan(app: FastAPI):
     # R4.2: Shutdown hooks через _run_hook (симметрия: падение не роняет процесс)
     await _run_hook("stop_beacon", lambda: nb.stop_beacon())
     await _run_hook("stop_network_worker", lambda: stop_network_worker())
+
+
+# === B7.1: Log PID at startup for debug ===
+import os
+logger.info(f"[SYSTEM] Backend PID: {os.getpid()}")
 
 
 app = FastAPI(

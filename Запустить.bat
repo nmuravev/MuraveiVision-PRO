@@ -61,11 +61,18 @@ if exist "%~dp0scripts\bootstrap_portable.ps1" (
 REM === Single-instance check (lock in tempfile) ===
 for /f "delims=" %%T in ('echo %TEMP%') do set TEMP_DIR=%%T
 if exist "%TEMP_DIR%\.muravei_backend.lock" (
-    echo [ERROR] Another backend instance already running.
-    echo Lock file: %TEMP_DIR%\.muravei_backend.lock
-    echo Delete it if this is a stale lock.
-    pause
-    exit /b 1
+    REM Read stale PID from lock file
+    set /p STALE_PID=<"%TEMP_DIR%\.muravei_backend.lock" 2>nul
+    REM Check if process is alive
+    tasklist /FI "PID eq !STALE_PID!" 2>nul | findstr /i "python" >nul
+    if not errorlevel 1 (
+        echo [ERROR] Another backend instance already running (PID !STALE_PID!).
+        echo Close the existing backend window or delete %TEMP_DIR%\.muravei_backend.lock
+        exit /b 1
+    ) else (
+        echo [WARN] Stale lock file detected (PID !STALE_PID! is dead). Removing...
+        del "%TEMP_DIR%\.muravei_backend.lock" 2>nul
+    )
 )
 
 set "PYTHON="
@@ -117,8 +124,25 @@ if exist "%~dp0sidecars\ffmpeg" set "PATH=%~dp0sidecars\ffmpeg;%PATH%"
 REM --- One entry path: MODULE mode (never script-mode python backend\main.py) ---
 echo Starting backend on http://127.0.0.1:8000 ...
 
-REM === R2: Delete stale pidfile BEFORE start (wait_loop ждёт создания новым процессом) ===
+REM === A1: Check if backend is already running via health check (before start) ===
+set /a _health_check_tries=0
+:health_check_loop
+"!PYTHON!" -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)" 2>nul
+if not errorlevel 1 (
+    echo [INFO] Backend already running on port 8000. Opening UI...
+    if not defined MURAVEI_NO_BROWSER start "" "http://127.0.0.1:8000"
+    if not defined MURAVEI_NO_PAUSE pause
+    exit /b 0
+)
+set /a _health_check_tries+=1
+if !_health_check_tries! lss 3 goto wait_pid_delete
+goto start_backend
+
+:wait_pid_delete
 del "%TEMP_DIR%\.muravei_backend.pid" 2>nul
+goto start_backend
+
+:start_backend
 
 REM Env vars inherit to child. Use cmd /c ""exe" args" quoting (reliable on Windows).
 REM Avoid nested \" escapes that silently fail under some launchers/smoke hosts.
@@ -132,9 +156,12 @@ ping -n 4 127.0.0.1 >nul
 timeout /t 2 /nobreak >nul
 if not exist "%TEMP_DIR%\.muravei_backend.pid" goto wait_loop
 set /p CUR_PID=<"%TEMP_DIR%\.muravei_backend.pid"
+REM Validate PID is a number
+echo !CUR_PID! | findstr /r "^[0-9][0-9]*$" >nul
+if errorlevel 1 goto wait_loop
 tasklist /FI "PID eq !CUR_PID!" 2>nul | findstr /i "python" >nul
 if not errorlevel 1 goto wait_loop
-REM Процесс исчез — добить дерево (no-op если мёртв):
+REM Process disappeared — kill tree (no-op if already dead):
 taskkill /F /T /PID !CUR_PID! >nul 2>&1
 
 echo Waiting for backend...
@@ -159,4 +186,12 @@ echo.
 echo System started.
 echo Close the "MuraveiVision Backend" window to stop the API.
 if exist "%~dp0ollama\ollama.exe" echo Ollama runs in background - end ollama.exe if needed.
+if not defined MURAVEI_NO_PAUSE pause
+goto :eof
+
+:health_check_ok
+echo [INFO] Backend already running on port 8000. Opening UI...
+if not defined MURAVEI_NO_BROWSER start "" "http://127.0.0.1:8000"
+echo.
+echo System is already running.
 if not defined MURAVEI_NO_PAUSE pause

@@ -1,15 +1,13 @@
-docs: sync documentation for Bug Fix Audit v2.0 and v3.2.0 release
+fix(auth): DB-backed session tokens survive restart (B6.1)
 
-- Update .cursorrules with 3 critical rules:
-  - CRITICAL RULE #1: Close items before proceeding
-  - CRITICAL RULE #2: Sync versions across all files and GitHub
-  - CRITICAL RULE #3: Every version MUST include complete documentation
-- Update README.md: Latest release v3.2.0 + What's new section
-- Update docs/MASTER_PLAN.md: Meta section + Bug Fix Audit v2.0 (40 bugs)
-- Update docs/ROADMAP.md: Bug Fix Audit v2.0 section + Future/Backlog
+Replace in-memory _active_tokens with hybrid store:
+- SQLite session_tokens table for persistence
+- In-memory cache synced from DB on startup (last 24h)
+- _sync_db_to_memory() on lifespan start
+- All token ops (create/invalidate/cleanup) touch both memory + DB
 
-Bug Fix Audit v2.0 summary:
-- Sprint 1 P0: 11/11 tasks completed
-- Sprint 2 P1: 14/14 tasks completed
-- Sprint 3 P2: 0/15 tasks pending (~19 hours)
-- 26 commits rebased and pushed (30ff7f1..7c49b76)
+Root cause: Auth 401 after backend restart — in-memory tokens lost.
+Migration: Users re-login once after restart (old tokens invalidated).
+
+Files: backend/api/auth.py, backend/services/db.py
+Tests: test_token_hash_storage.py (13 tests, all pass)

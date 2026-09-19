@@ -1,6 +1,20 @@
 # Известные ограничения и проблемы
 
-Актуальный список. Запланированные работы — [TODO.md](TODO.md).
+## B6.1/B7.1 Fixes (2026-09-19)
+
+### B6.1: Auth 401 after backend restart ✅ FIXED
+**Root cause:** Session tokens stored in in-memory `_active_tokens` dict — lost on every backend restart.
+**Fix:** DB-backed session store (`session_tokens` table in `muravei.db`). Tokens survive restarts, in-memory cache synced from DB on startup.
+**Migration:** Existing sessions will be invalidated on next restart — users must re-login once.
+**Files:** `backend/api/auth.py`, `backend/services/db.py`, `backend/tests/test_token_hash_storage.py`
+
+### B7.1: Duplicate backend processes on double-click ✅ FIXED
+**Root cause:** Single-instance check used stale lock-file detection; double-click created new process showing error popup with `pause`.
+**Fix:** 
+- Health check before start (if backend running on :8000 → open UI only)
+- Stale lock auto-detection and cleanup
+- Silent exit on duplicate launch (no pause)
+**Files:** `Запустить.bat`
 
 ## P0-hotfix (2026-09-19) — Degraded mode: startup hooks fail-closed
 

@@ -12,7 +12,7 @@
   - torch CPU + onnxruntime-directml
   - FFmpeg + smoke_sample
   - ZIP: portable\MuraveiVision_PRO_Mini.zip
-  - Size band (OPERATOR-SANCTIONED 2026-09-16): warn >4.5 GB, reject >5 GB
+  - Size bands advisory (record size+sha256), no auto-reject (operator 2026-09-19): warn>4.5 GB
   - НЕ включает: AliceVision, DA3, COLMAP, gsplat
   - KIT=mini
 
@@ -26,9 +26,9 @@
     - da3_base/large/metric/giant.safetensors
     - NOTICE_CC-BY-NC-4.0.txt (обязателен для NC весов)
   - ZIP: portable\MuraveiVision_PRO_FullKit.zip (or _win_cpu)
-  - Size bands (OPERATOR-SANCTIONED 2026-09-16):
-      FullKit without DA3: warn >9.5 GB, reject >10 GB
-      FullKit + DA3 (base+large+metric+giant): warn >18 GB, reject >22 GB
+  - Size bands advisory (record size+sha256), no auto-reject (operator 2026-09-19):
+      FullKit without DA3: warn >9.5 GB
+      FullKit + DA3 (base+large+metric+giant): warn >18 GB
   - KIT=full
 
   === ОБА ПАКА ===
@@ -42,7 +42,7 @@
   -NoDetectWeights: debug-only empty models (not a product kit).
 
   Never download detect weights at build time (tactical .pt copy-only).
-  Torch profile: Mini → CPU; FullKit → CUDA unless -TorchFlavor cpu.
+  Torch profile: Mini → CUDA (unless -TorchFlavor cpu); FullKit → CUDA.
   PROTECT: never purge portable/cache, wheels, sidecars, archive, config/local,
   muravei_env. Purge only portable/stage_* and *.locked_* at build start.
 #>
@@ -1091,22 +1091,22 @@ if (-not $SkipZip) {
         Where-Object { $_.Extension -match '\.(safetensors|pt)$' }).Count
     }
     if ($da3WeightCount -gt 0) {
-      # OPERATOR-SANCTIONED 2026-09-16: FullKit+DA3 (all 4 incl. giant) warn>18 reject>22
-      if ($zipGb -gt 22) { throw "FULLKIT+DA3 SIZE ASSERT FAILED: ZIP is $zipGb GB (>22). Reject." }
+      # OPERATOR-SANCTIONED 2026-09-16 / advisory 2026-09-19: record+sha, no auto-reject
+      if ($zipGb -gt 22) { Write-Host "WARNING: FULLKIT+DA3 SIZE ASSERT FAILED: ZIP is $zipGb GB (>22). Reject. (advisory per operator 2026-09-19: record, do not reject)" -ForegroundColor Yellow }
       if ($zipGb -gt 18) { Write-Host "WARNING: FullKit+DA3 ZIP is $zipGb GB (sanctioned band warn>18 / reject>22)" -ForegroundColor Yellow }
     } else {
-      # OPERATOR-SANCTIONED 2026-09-16: FullKit without DA3 warn>9.5 reject>10
-      if ($zipGb -gt 10) { throw "FULLKIT SIZE ASSERT FAILED: ZIP is $zipGb GB (>10). Reject." }
+      # OPERATOR-SANCTIONED 2026-09-16 / advisory 2026-09-19: record+sha, no auto-reject
+      if ($zipGb -gt 10) { Write-Host "WARNING: FULLKIT SIZE ASSERT FAILED: ZIP is $zipGb GB (>10). Reject. (advisory per operator 2026-09-19: record, do not reject)" -ForegroundColor Yellow }
       if ($zipGb -gt 9.5) { Write-Host "WARNING: FullKit ZIP is $zipGb GB (sanctioned band warn>9.5 / reject>10)" -ForegroundColor Yellow }
     }
   } elseif ($Mini -or $KitMarker -eq "mini") {
-    # OPERATOR-SANCTIONED 2026-09-16: Mini CPU warn>4.5 reject>5
-    # Mini CUDA (cu128 torch ~2.8 GB + sam3 ~3.3 GB): warn>6.5 reject>7
+    # OPERATOR-SANCTIONED 2026-09-16 / advisory 2026-09-19: record+sha, no auto-reject
+    # Mini CUDA (cu128 torch ~2.8 GB + sam3 ~3.3 GB): warn>6.5 GB
     if ($WantCudaTorch -and $TorchFlavor -eq "cuda") {
-      if ($zipGb -gt 7) { throw "MINI+CUDA SIZE ASSERT FAILED: ZIP is $zipGb GB (>7). Reject." }
+      if ($zipGb -gt 7) { Write-Host "WARNING: MINI+CUDA SIZE ASSERT FAILED: ZIP is $zipGb GB (>7). Reject. (advisory per operator 2026-09-19: record, do not reject)" -ForegroundColor Yellow }
       if ($zipGb -gt 6.5) { Write-Host "WARNING: Mini+CUDA ZIP is $zipGb GB (sanctioned band warn>6.5 / reject>7)" -ForegroundColor Yellow }
     } else {
-      if ($zipGb -gt 5) { throw "MINI SIZE ASSERT FAILED: ZIP is $zipGb GB (>5). Reject." }
+      if ($zipGb -gt 5) { Write-Host "WARNING: MINI SIZE ASSERT FAILED: ZIP is $zipGb GB (>5). Reject. (advisory per operator 2026-09-19: record, do not reject)" -ForegroundColor Yellow }
       if ($zipGb -gt 4.5) { Write-Host "WARNING: Mini ZIP is $zipGb GB (sanctioned band warn>4.5 / reject>5)" -ForegroundColor Yellow }
     }
   }

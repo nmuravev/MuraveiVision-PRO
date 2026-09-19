@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Profile-driven torch wheel selection for MuraveiVision portable kits.
 
-Mini/Lite → CPU only. FullKit → CUDA (cu*) unless TorchFlavor=cpu.
+Mini → CUDA (unless TorchFlavor=cpu, operator 2026-09-19 rev2). FullKit → CUDA (cu*) unless TorchFlavor=cpu.
 Keeps both wheel variants in cache; selection is by profile, never \"first found\".
 """
 from __future__ import annotations
@@ -44,9 +44,9 @@ def want_cuda(kit: str, torch_flavor: str = "cuda") -> bool:
     flavor = (torch_flavor or "cuda").strip().lower()
     if flavor not in ("cuda", "cpu"):
         raise ValueError(f"unknown TorchFlavor: {torch_flavor!r}")
-    # Mini/Lite всегда CPU независимо от flavor
+    # Mini/Lite: respect TorchFlavor (operator 2026-09-19 rev2: Mini=CUDA)
     if profile in ("mini", "lite"):
-        return False
+        return flavor == "cuda"
     # fullkit
     return flavor == "cuda"
 

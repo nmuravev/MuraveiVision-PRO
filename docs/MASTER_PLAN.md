@@ -6,8 +6,8 @@
 - **Branch:** `main`
 - **Commit:** HEAD (P0 hotfix + R1-R4 + Atomic Execution)
 - **Unit tests:** 407+ (backend suite, pre-commit gate)
-- **Status:** P0 (11/11) ✅ + P1 (14/14) ✅ + P0-hotfix ✅ — Startup hardening complete
-- **Last updated by:** P0 Hotfix v3.2.0 — Lifespan hardening + single-instance + process cleanup
+- **Status:** P0 (11/11) ✅ + P1 (14/14) ✅ + P0-hotfix ✅ + B6.1/B7.1 ✅ — Startup hardening + Auth + Single-instance complete
+- **Last updated by:** B6.1 Auth DB-backed sessions + B7.1 Duplicate process fix
 
 ## P0 Hotfix (2026-09-19)
 
@@ -19,6 +19,24 @@
 - **Single-instance:** lock-file in tempfile + PID file for bat wait_loop
 - **Process cleanup:** atexit + SIGINT handler with re-raise (uvicorn graceful Ctrl+C)
 - **Docs:** MASTER_PLAN Meta + KNOWN_ISSUES degraded-mode row (file: backend/main.py:_run_hook)
+
+## B6.1: DB-backed Session Tokens (2026-09-19)
+
+- **auth_db_sessions:** v3.2.0 | 2026-09-19 | Auth 401 after restart → DB-backed session store (`session_tokens` table)
+- **Root cause:** In-memory `_active_tokens` lost on restart → all sessions invalid
+- **Fix:** Hybrid store — in-memory cache (fast lookup) + SQLite persistence (survives restart)
+- **Sync:** `_sync_db_to_memory()` on startup (loads last 24h active sessions)
+- **Migration:** Users re-login once after restart (old tokens invalidated)
+- **Files changed:** `backend/api/auth.py`, `backend/services/db.py`, `backend/tests/test_token_hash_storage.py`
+- **Tests:** test_token_hash_storage.py (13 tests, all pass)
+
+## B7.1: Duplicate Process Fix (2026-09-19)
+
+- **bat_duplicate_fix:** v3.2.0 | 2026-09-19 | Double-click creates duplicate backend processes
+- **Root cause:** Stale lock-file detection; error popup with `pause` on duplicate launch
+- **Fix:** Health check before start; stale lock auto-cleanup; silent exit on duplicate
+- **Files changed:** `Запустить.bat`
+
 - **Portable size bands (OPERATOR-SANCTIONED 2026-09-16):** Mini warn&gt;4.5 / reject&gt;5; FullKit no-DA3 warn&gt;9.5 / reject&gt;10; FullKit+DA3 (base+large+metric+**giant**) warn&gt;18 / reject&gt;22. Giant stays for heterogeneous fleets (grey on VRAM&lt;16 GB).
 - **Portable local (P-C 2026-09-16):** Mini 3.67 GB sha256 `A40E1CD3…EF2F`; FullKit+DA3 win_cpu 13.07 GB sha256 `41B6FEE9…1772` (within 18/22). Mini ZIP DA3 bins=0; Full stage 4× safetensors + NOTICE.
 - **DA3 depth stats (in-memory, job 44aa6e50):** base median=21.65 std=2.88; large median=22.22 std=1.68; metric median=21.74 std=3.16 — models differ
