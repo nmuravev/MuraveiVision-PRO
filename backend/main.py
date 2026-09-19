@@ -1,5 +1,6 @@
 """MuraveiVision PRO Backend — FastAPI entrypoint."""
 import asyncio
+import logging
 import os
 
 # Air-gap: disable Ultralytics AutoUpdate before any ultralytics import.
