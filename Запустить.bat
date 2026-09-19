@@ -58,6 +58,16 @@ if exist "%~dp0scripts\bootstrap_portable.ps1" (
     )
 )
 
+REM === Single-instance check (lock in tempfile) ===
+for /f "delims=" %%T in ('echo %TEMP%') do set TEMP_DIR=%%T
+if exist "%TEMP_DIR%\.muravei_backend.lock" (
+    echo [ERROR] Another backend instance already running.
+    echo Lock file: %TEMP_DIR%\.muravei_backend.lock
+    echo Delete it if this is a stale lock.
+    pause
+    exit /b 1
+)
+
 set "PYTHON="
 REM Prefer embeddable root python.exe (portable). Scripts\python.exe is often a
 REM same-binary copy without python*._pth and resolves to host/system prefix.
@@ -106,10 +116,26 @@ if exist "%~dp0sidecars\ffmpeg" set "PATH=%~dp0sidecars\ffmpeg;%PATH%"
 
 REM --- One entry path: MODULE mode (never script-mode python backend\main.py) ---
 echo Starting backend on http://127.0.0.1:8000 ...
+
+REM === R2: Delete stale pidfile BEFORE start (wait_loop ждёт создания новым процессом) ===
+del "%TEMP_DIR%\.muravei_backend.pid" 2>nul
+
 REM Env vars inherit to child. Use cmd /c ""exe" args" quoting (reliable on Windows).
 REM Avoid nested \" escapes that silently fail under some launchers/smoke hosts.
 set "MURAVEI_SESSION_TRACE=1"
 start "MuraveiVision Backend" /D "%~dp0" cmd /c ""!PYTHON!" -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000 >> "!MURAVEI_LOG_DIR!\uvicorn.log" 2>&1"
+
+REM === A1: PID-based wait_loop (loop by PID liveness, NOT lock file) ===
+echo Waiting for backend to start...
+ping -n 4 127.0.0.1 >nul
+:wait_loop
+timeout /t 2 /nobreak >nul
+if not exist "%TEMP_DIR%\.muravei_backend.pid" goto wait_loop
+set /p CUR_PID=<"%TEMP_DIR%\.muravei_backend.pid"
+tasklist /FI "PID eq !CUR_PID!" 2>nul | findstr /i "python" >nul
+if not errorlevel 1 goto wait_loop
+REM Процесс исчез — добить дерево (no-op если мёртв):
+taskkill /F /T /PID !CUR_PID! >nul 2>&1
 
 echo Waiting for backend...
 set /a _tries=0

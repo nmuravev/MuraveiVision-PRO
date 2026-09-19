@@ -2,6 +2,12 @@
 
 Актуальный список. Запланированные работы — [TODO.md](TODO.md).
 
+## P0-hotfix (2026-09-19) — Degraded mode: startup hooks fail-closed
+
+- **degraded mode:** Startup hooks wrapped in try/except via `_run_hook` (non-fatal). If a hook fails (e.g., beacon with broken config), it logs error and backend continues. [file: backend/main.py:_run_hook]
+- **single-instance:** Only one backend instance allowed. Second launch exits immediately. Lock-file in `%TEMP%\.muravei_backend.lock`. [file: backend/services/single_instance.py]
+- **process cleanup:** Child processes terminated on exit via atexit + SIGINT handler. Closing console window triggers cleanup. [file: backend/main.py:_cleanup_on_exit]
+
 ## U1 (2026-09-17) — Controlled dependency upgrade
 
 - **ultralytics:** 8.4.118 → 8.4.154 ✅ upgraded

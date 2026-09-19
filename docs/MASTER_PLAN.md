@@ -2,12 +2,23 @@
 
 ## Meta
 
-- **Snapshot date:** 2026-09-18
+- **Snapshot date:** 2026-09-19
 - **Branch:** `main`
-- **Commit:** 7c49b76 (Sprint 2 P1 fixes rebased + pushed)
+- **Commit:** HEAD (P0 hotfix + R1-R4 + Atomic Execution)
 - **Unit tests:** 407+ (backend suite, pre-commit gate)
-- **Status:** P0 (11/11) ✅ + P1 (14/14) ✅ — Bug Fix Audit v2.0 complete; Sprint 3 P2 pending (15 tasks)
-- **Last updated by:** Bug Fix Audit v2.0 — Sprint 2 P1 fixes (40-bug plan, 26 commits)
+- **Status:** P0 (11/11) ✅ + P1 (14/14) ✅ + P0-hotfix ✅ — Startup hardening complete
+- **Last updated by:** P0 Hotfix v3.2.0 — Lifespan hardening + single-instance + process cleanup
+
+## P0 Hotfix (2026-09-19)
+
+- **hotfix_p0_startup:** v3.2.0 | 2026-09-19 | P0: ValueError on startup → safe_bool/safe_int + lifespan hardening + single-instance guard + process cleanup
+- **Files changed:** config_utils.py, single_instance.py, network.py, network_beacon.py, network_sync.py, ollama_proxy.py, recon_train.py, train_presets.py, main.py, Запустить.bat
+- **Tests added:** test_config_utils (7), test_single_instance (2), test_lifespan_hook (3), test_startup_resilience (1)
+- **14 locations replaced:** unsafe bool(int(str)) and int(cfg.get) → safe_bool/safe_int
+- **Lifespan:** all hooks wrapped in _run_hook(lambda: ...) — non-fatal on failure
+- **Single-instance:** lock-file in tempfile + PID file for bat wait_loop
+- **Process cleanup:** atexit + SIGINT handler with re-raise (uvicorn graceful Ctrl+C)
+- **Docs:** MASTER_PLAN Meta + KNOWN_ISSUES degraded-mode row (file: backend/main.py:_run_hook)
 - **Portable size bands (OPERATOR-SANCTIONED 2026-09-16):** Mini warn&gt;4.5 / reject&gt;5; FullKit no-DA3 warn&gt;9.5 / reject&gt;10; FullKit+DA3 (base+large+metric+**giant**) warn&gt;18 / reject&gt;22. Giant stays for heterogeneous fleets (grey on VRAM&lt;16 GB).
 - **Portable local (P-C 2026-09-16):** Mini 3.67 GB sha256 `A40E1CD3…EF2F`; FullKit+DA3 win_cpu 13.07 GB sha256 `41B6FEE9…1772` (within 18/22). Mini ZIP DA3 bins=0; Full stage 4× safetensors + NOTICE.
 - **DA3 depth stats (in-memory, job 44aa6e50):** base median=21.65 std=2.88; large median=22.22 std=1.68; metric median=21.74 std=3.16 — models differ
