@@ -218,4 +218,15 @@ Never produce:
 - cmd-unsafe env sets (`set X = Y` with spaces)
 
 When uncertain: STOP and ask the operator. Better one question than a silent
-invariant breach.
+invariant breach.  
+## Temporary file management (operator-sanctioned 2026-09-17)  
+  
+- NEVER create temp files in repo root.  
+- Commit messages: write to `tmp\\commit_msg.txt` (NOT `.commit_msg.txt` in root)  
+- Test scripts: write to `tmp\\test_*.py` or `tmp\\_run_*.py`  
+- Env verification: write to `tmp\\env_verify.py`  
+- Logs: write to `logs\\*.log`  
+- All `tmp/` and `logs/` are gitignored (see .gitignore)  
+- Before commit: verify no `.tmp_*` or `_run_*` files in root:  
+- After commit: delete `tmp\\commit_msg.txt` immediately  
+- `.backup/` contains historical junk (gitignored, never commit)  

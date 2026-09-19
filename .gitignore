@@ -1,1 +1,42 @@
-Nothing should be ignored based on the provided file changes. The only modified file is a Python test file (`backend/tests/test_sam3_propagate.py`), which is source code and should not be ignored. There are no build artifacts, dependencies, temporary files, or other items that require ignoring in the provided change list.
+Nothing should be ignored based on the provided file changes. The only modified file is a Python test file (`backend/tests/test_sam3_propagate.py`), which is source code and should not be ignored. There are no build artifacts, dependencies, temporary files, or other items that require ignoring in the provided change list.  
+# Temporary files  
+tmp/  
+logs/  
+.backup/  
+# Build artifacts  
+muravei_env/  
+dist/  
+node_modules/  
+portable/  
+MurVis/  
+.agents/  
+.claude/  
+.cursor/  
+.gigacode_vsc/  
+.gigaide/  
+.idea/  
+.vscode/  
+archive/  
+cache/  
+config/local/  
+reports/  
+runs/  
+test-results/  
+*.db  
+*.db.backup  
+*.pt  
+*.zip  
+*.log  
+*.pyc  
+__pycache__/  
+*.pyo  
+playwright-report/  
+openreel-reference/  
+muravei-vision-pro/  
+MuraveiVision_PRO_Mini.zip  
+MuraveiVision_PRO_FullKit.zip  
+MuraveiVision_PRO_Portable.zip  
+yolo26n.pt  
+logo.png  
+skills-lock.json  
+.commit_msg.txt  
