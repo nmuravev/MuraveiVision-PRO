@@ -21,7 +21,7 @@ Batch Scan — Video by Detections:
 │  └───────────────────────────────────┘  │
 │  Files: 156 images (45.2 GB)           │
 │                                         │
-│  Model: [YOLOv8s-ft ▼]                 │
+│  Model: [YOLO26s-ft ▼]                 │
 │                                         │
 │  SAHI: [Auto] [Off] [Custom]          │
 │  ┌─────────────┐  ┌─────────────┐     │

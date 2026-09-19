@@ -1,10 +1,10 @@
 # Detection — MuraveiVision PRO
 
-> **Обнаружение объектов с помощью YOLOv8/v11 и SAHI-слайсинга.**
+> **Обнаружение объектов с помощью YOLO26 и SAHI-слайсинга.**
 
 ## Обзор
 
-Detection — это система обнаружения объектов в изображениях и видео с использованием моделей YOLO (You Only Look Once) v8 и v11 с поддержкой SAHI (Slicing Aided Hyper Inference) для больших изображений.
+Detection — это система обнаружения объектов в изображениях и видео с использованием моделей YOLO26 (You Only Look Once) с поддержкой SAHI (Slicing Aided Hyper Inference) для больших изображений.
 
 ## Архитектура обнаружения
 
@@ -30,7 +30,7 @@ Detection Pipeline:
        ▼
 ┌─────────────────────────────────┐
 │     YOLO Model Inference        │
-│  • YOLOv8n / v8s / v11n        │
+│  • YOLO26n-ft / s-ft / m-ft / l-ft │
 │  • Batch processing             │
 │  • GPU acceleration (CUDA)      │
 └──────┬──────────────────────────┘
@@ -59,15 +59,13 @@ Detection Pipeline:
 
 | Модель | Размер (MB) | Speed (FPS) | mAP50 | Точность | Использование |
 |--------|-------------|-------------|-------|----------|---------------|
-| **YOLOv8n** | 6.1 | 150 | 37.1 | Базовая | Быстрый просмотр, edge devices |
-| **YOLOv8s** | 22.2 | 85 | 44.9 | Средняя | Полевая работа, баланс |
-| **YOLOv8m** | 50.6 | 45 | 50.2 | Высокая | Детальный анализ |
-| **YOLOv8l** | 86.7 | 30 | 52.9 | Очень высокая | Production |
-| **YOLOv8x** | 134.1 | 20 | 53.9 | Максимальная | Точные измерения |
-| **YOLOv11n** | 6.3 | 160 | 38.5 | Базовая | Новое поколение, fast |
-| **YOLOv11s** | 21.5 | 90 | 46.0 | Средняя | Новое поколение, balanced |
+| **YOLO26n-ft** | 6.1 | 150 | 37.1 | Базовая | Быстрый просмотр, edge devices |
+| **YOLO26s-ft** | 22.2 | 85 | 44.9 | Средняя | Полевая работа, баланс |
+| **YOLO26m-ft** | 50.6 | 45 | 50.2 | Высокая | Детальный анализ |
+| **YOLO26l-ft** | 86.7 | 30 | 52.9 | Очень высокая | Production |
+| **YOLO26n** | 6.1 | 150 | 37.1 | Базовая | Резервная модель |
 
-> **Рекомендация:** YOLOv8s-ft для полевой работы, YOLOv8n-ft для скорости.
+> **Рекомендация:** YOLO26s-ft для полевой работы, YOLO26n-ft для скорости.
 
 ### Fine-tuned модели
 
@@ -144,10 +142,10 @@ Detection Panel:
 ┌─────────────────────────────────────────────┐
 │  Model Selection                             │
 │  ┌───────────────────────────────────────┐  │
-│  │ YOLOv8s-ft  ✓                         │  │
-│  │ YOLOv8n-ft                            │  │
-│  │ YOLOv11s                              │  │
-│  │ yolo8s-ant-v3 (custom)                │  │
+│  │ YOLO26s-ft  ✓                         │  │
+│  │ YOLO26n-ft                            │  │
+│  │ YOLO26m-ft                            │  │
+│  │ yolo26l-ft                            │  │
 │  └───────────────────────────────────────┘  │
 │                                             │
 │  SAHI Settings                              │
@@ -305,7 +303,7 @@ IMG_002.jpg,Ant,0.91,55,30,115,85
 # Single image detection
 curl -X POST http://localhost:8000/api/detect \
   -F "image=@IMG_001.jpg" \
-  -F "model=yolo8s-ft" \
+  -F "model=yolo26s-ft" \
   -F "sahi_enabled=true" \
   -F "slice_height=512" \
   -F "slice_width=512" \
@@ -333,7 +331,7 @@ curl -X POST http://localhost:8000/api/detect \
 # Folder detection
 curl -X POST http://localhost:8000/api/detect/batch \
   -F "folder=@/data/field_session_01/" \
-  -F "model=yolo8s-ft" \
+  -F "model=yolo26s-ft" \
   -F "recursive=true"
 
 # Response:
@@ -353,10 +351,10 @@ curl -X POST http://localhost:8000/api/detect/batch \
 
 | Модель | 1920×1080 | 3840×2160 | 8192×6144 + SAHI |
 |--------|-----------|-----------|-------------------|
-| YOLOv8n | 180 FPS | 95 FPS | 12 FPS (64 tiles) |
-| YOLOv8s | 95 FPS | 50 FPS | 6 FPS (64 tiles) |
-| YOLOv8m | 48 FPS | 25 FPS | 3 FPS (64 tiles) |
-| YOLOv8l | 32 FPS | 16 FPS | 2 FPS (64 tiles) |
+| YOLO26n-ft | 180 FPS | 95 FPS | 12 FPS (64 tiles) |
+| YOLO26s-ft | 95 FPS | 50 FPS | 6 FPS (64 tiles) |
+| YOLO26m-ft | 48 FPS | 25 FPS | 3 FPS (64 tiles) |
+| YOLO26l-ft | 32 FPS | 16 FPS | 2 FPS (64 tiles) |
 
 ### Оптимизация производительности
 
@@ -376,7 +374,7 @@ Solution:
 2. Увеличьте SAHI overlap (30% вместо 20%)
 3. Уменьшите slice size (256 вместо 512)
 4. Проверьте классы в модели
-5. Попробуйте другую модель (v8s вместо v8n)
+5. Попробуйте другую модель (s-ft вместо n-ft)
 ```
 
 ### Проблема: Много ложных срабатываний
@@ -399,7 +397,7 @@ Solution:
 2. Уменьшите SAHI slice size
 3. Уменьшите overlap
 4. Уменьшите batch size если OOM
-5. Используйте YOLOv8n вместо v8s
+5. Используйте YOLO26n-ft вместо s-ft
 ```
 
 ### Проблема: CUDA out of memory
@@ -410,27 +408,27 @@ Solution:
 1. Уменьшите batch_size в config
 2. Закройте другие GPU-приложения
 3. Перезапустите backend
-4. Используйте YOLOv8n (меньше модель)
+4. Используйте YOLO26n-ft (меньше модель)
 ```
 
 ## Советы по эффективности
 
 ### Для быстрых сессий
 
-1. YOLOv8n-ft + SAHI off — максимальная скорость
+1. YOLO26n-ft + SAHI off — максимальная скорость
 2. Threshold 0.50, IoU 0.45 — по умолчанию
 3. Batch detection для папок
 
 ### Для максимальной точности
 
-1. YOLOv8s-ft или fine-tuned модель
+1. YOLO26s-ft или fine-tuned модель
 2. SAHI 512×512, overlap 30%
 3. Threshold 0.30, IoU 0.40
 4. Manual review результатов
 
 ### Для полевых условий
 
-1. YOLOv8s-ft — баланс скорость/точность
+1. YOLO26s-ft — баланс скорость/точность
 2. SAHI 512×512, overlap 20%
 3. Threshold 0.45 — умеренный
 4. Batch export в CSV

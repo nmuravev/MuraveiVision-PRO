@@ -1,20 +1,20 @@
 # Detection (YOLO/SAHI) — MuraveiVision PRO
 
-> **Обнаружение объектов: YOLOv8/v11, SAHI-слайсинг, экспорт результатов.**
+> **Обнаружение объектов: YOLO26, SAHI-слайсинг, экспорт результатов.**
 
 ## Overview
 
-Detection feature provides object detection using YOLOv8/v11 models with SAHI (Slicing Aided Hyper Inference) for large images.
+Detection feature provides object detection using YOLO26 models with SAHI (Slicing Aided Hyper Inference) for large images.
 
 ## Supported Models
 
 | Model | Size | Speed | mAP | Use Case |
 |-------|------|-------|-----|----------|
-| **YOLOv8n** | 6 MB | 180 FPS | 37.1 | Fast preview |
-| **YOLOv8s** | 22 MB | 95 FPS | 44.9 | Field work (recommended) |
-| **YOLOv8m** | 51 MB | 48 FPS | 50.2 | Detailed analysis |
-| **YOLOv11n** | 6 MB | 160 FPS | 38.5 | New generation, fast |
-| **YOLOv11s** | 22 MB | 90 FPS | 46.0 | New generation, balanced |
+| **YOLO26n-ft** | 6 MB | 180 FPS | 37.1 | Fast preview |
+| **YOLO26s-ft** | 22 MB | 95 FPS | 44.9 | Field work (recommended) |
+| **YOLO26m-ft** | 51 MB | 48 FPS | 50.2 | Detailed analysis |
+| **YOLO26l-ft** | 87 MB | 32 FPS | 52.9 | Production |
+| **YOLO26n** | 6 MB | 150 FPS | 37.1 | Backup model |
 
 ## SAHI Slicing
 
@@ -92,7 +92,7 @@ HUD Exclusion:
 ```bash
 curl -X POST http://localhost:8000/api/detect \
   -F "image=@IMG_001.jpg" \
-  -F "model=yolo8s-ft" \
+  -F "model=yolo26s-ft" \
   -F "sahi_enabled=true" \
   -F "slice_height=512" \
   -F "threshold=0.5"

@@ -11,7 +11,7 @@
 | Возможность | Описание | Документация |
 |-------------|----------|--------------|
 | **Media Workflow** | Загрузка, просмотр, GPS sidecars | [Media Workflow](./MEDIA_WORKFLOW.md) |
-| **Detection** | YOLOv8/v11 с SAHI-слайсингом | [Detection](./DETECTION.md) |
+| **Detection** | YOLO26 с SAHI-слайсингом | [Detection](./DETECTION.md) |
 | **Segmentation** | SAM3 interactive & propagate | [Segmentation](./SEGMENTATION.md) |
 | **Batch Scan** | Пакетная обработка видео | [Batch Scan](./BATCH_SCAN.md) |
 | **Change Detection** | Сравнение "до/после" | [Change Detection](./CHANGE_DETECTION.md) |
@@ -59,7 +59,7 @@ AI-анализ (Ollama) — опционально
 
 ### Для быстрых сессий
 
-1. Используйте пресеты моделей (YOLOv8n для скорости, YOLOv8s для точности)
+1. Используйте пресеты моделей (YOLO26n для скорости, YOLO26s для точности)
 2. SAHI slice 512×512 для стандартных изображений
 3. Batch Scan для папок с изображениями
 4. Экспорт в CSV для быстрой обработки в Excel
@@ -75,7 +75,7 @@ AI-анализ (Ollama) — опционально
 ## Часто задаваемые вопросы
 
 **Q: Какая модель лучше для полевых условий?**
-A: YOLOv8n-ft для скорости, YOLOv8s-ft для точности. Для сложных условий — fine-tune на ваших данных.
+A: YOLO26n-ft для скорости, YOLO26s-ft для точности. Для сложных условий — fine-tune на ваших данных.
 
 **Q: Почему detection работает медленно?**
 A: Проверьте VRAM, уменьшите SAHI slice size, уменьшите batch size.

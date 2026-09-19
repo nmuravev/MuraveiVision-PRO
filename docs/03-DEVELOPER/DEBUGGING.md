@@ -94,7 +94,7 @@ Issue: CUDA out of memory
 Solution:
 1. Check VRAM: nvidia-smi
 2. Reduce batch_size in config
-3. Use smaller model (yolo8n)
+3. Use smaller model (yolo26n)
 4. Close other GPU apps
 
 Issue: Database locked

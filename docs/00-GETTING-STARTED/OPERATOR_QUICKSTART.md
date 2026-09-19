@@ -66,9 +66,9 @@
 ┌─────────────────────────────────────┐
 │ Model Selection                      │
 │ ┌─────────────────────────────────┐ │
-│ │ YOLOv8n-ft  ✓                   │ │
-│ │ YOLOv8s-ft                        │ │
-│ │ YOLOv11n                          │ │
+│ │ YOLO26n-ft  ✓                   │ │
+│ │ YOLO26s-ft                        │ │
+│ │ YOLO26n-ft                        │ │
 │ └─────────────────────────────────┘ │
 │                                     │
 │ SAHI Settings                       │
@@ -183,7 +183,7 @@ Propagation settings:
 │   📂 /data/field_session_01/         │
 │   Files: 156 images                  │
 │                                       │
-│ Model:   [YOLOv8n-ft]               │
+│ Model:   [YOLO26n-ft]               │
 │ SAHI:    [Auto]                      │
 │                                       │
 │ [▶ Start Batch Scan]                 │
@@ -271,7 +271,7 @@ IMG_002.jpg,Ant,0.91,55,30,115,85,,55.7559,37.6174
 
 ```
 1. Load Media → загрузить изображение
-2. Detection → выбрать YOLOv8n-ft
+2. Detection → выбрать YOLO26n-ft
 3. Run Detection
 4. Review results on canvas
 5. Export (опционально)
@@ -329,7 +329,7 @@ Low detection count
 Solution:
 1. Уменьшите threshold (0.30 вместо 0.50)
 2. Проверьте качество изображения
-3. Попробуйте другую модель (YOLOv8s вместо v8n)
+3. Попробуйте другую модель (YOLO26s вместо v8n)
 4. Проверьте классы в модели
 ```
 

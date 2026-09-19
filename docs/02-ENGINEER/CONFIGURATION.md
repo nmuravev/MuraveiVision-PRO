@@ -45,7 +45,7 @@ sahi:
 
 # === Detection ===
 detection:
-  model: "yolo8s-ft"
+  model: "yolo26s-ft"
   threshold: 0.50
   iou: 0.45
   max_detections: 100

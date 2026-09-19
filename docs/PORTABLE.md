@@ -18,7 +18,7 @@
   # FullKit + cu128 torch (CPU wheels also kept — do not delete either):
   powershell -ExecutionPolicy Bypass -File scripts\cache_portable_wheels.ps1 -WithTorchCu128
   ```
-- **Torch by kit profile** ([`scripts/portable_torch_policy.py`](../scripts/portable_torch_policy.py)): **Mini/Lite → CPU only** (require explicit `+cpu` wheel tag; unmarked PyPI torch is rejected); **FullKit → CUDA cu128** (or `-TorchFlavor cpu`). Cache may hold both `+cpu` and `+cu*` wheels — build filters find-links by profile (never «first found»). Post-stage assert: Mini `torch.version.cuda is None`; FullKit CUDA `is not None`. **Size bands (OPERATOR-SANCTIONED 2026-09-16):** Mini warn&gt;4.5 / reject&gt;5; FullKit without DA3 warn&gt;9.5 / reject&gt;10; FullKit+DA3 (all four variants including giant) warn&gt;18 / reject&gt;22. Giant stays in FullKit for heterogeneous fleets (grey on VRAM&lt;16 GB). Mini/Lite swap `onnxruntime-gpu` → **`onnxruntime-directml`** (`--no-deps` + re-pin `numpy&lt;2`).
+- **Torch by kit profile** ([`scripts/portable_torch_policy.py`](../scripts/portable_torch_policy.py)): **Mini → CPU only** (require explicit `+cpu` wheel tag; unmarked PyPI torch is rejected); **FullKit → CUDA cu128** (or `-TorchFlavor cpu`). Cache may hold both `+cpu` and `+cu*` wheels — build filters find-links by profile (never «first found»). Post-stage assert: Mini `torch.version.cuda is None`; FullKit CUDA `is not None`. **Size bands (OPERATOR-SANCTIONED 2026-09-16):** Mini warn&gt;4.5 / reject&gt;5; FullKit without DA3 warn&gt;9.5 / reject&gt;10; FullKit+DA3 (all four variants including giant) warn&gt;18 / reject&gt;22. Giant stays in FullKit for heterogeneous fleets (grey on VRAM&lt;16 GB). Mini swap `onnxruntime-gpu` → **`onnxruntime-directml`** (`--no-deps` + re-pin `numpy&lt;2`).
 - **Embed python path:** portable kits must use `muravei_env\python.exe` (with `python*._pth`). Do **not** copy `python.exe` into `Scripts\` — without `._pth` it resolves to host/system `sys.prefix`. `Запустить.bat` prefers embed root.
 - **CA bundle:** стабильный `portable/cache/cacert.pem` (вне stage site-packages); env `SSL_CERT_FILE` / `PIP_CERT` / …
 - **Robocopy fallback:** только если host-pip bake упал, или `MURAVEI_PORTABLE_MIRROR=1`. **Never** set `MURAVEI_PORTABLE_MIRROR=1` for Mini (mirrors host CUDA).
@@ -32,7 +32,7 @@
 |-------|------------|------------|-----|
 | **Mini** | `npm run portable:mini` (`-Mini`) | full offline stack: tactical `yolo26*.pt` + **sam3.pt** + SAHI ON; torch **CPU** + DirectML; KIT=`mini` | `MuraveiVision_PRO_Mini.zip` (~4 GB) |
 | **Full** | `npm run portable:full` (`-FullKit -IncludeAliceVision`) | Mini stack + torch **cu128** + COLMAP/gsplat/AliceVision; KIT=`full`; **без Ollama** | `MuraveiVision_PRO_FullKit.zip` (~8–8.5 GB) |
-| **Lite** | `npm run portable` | legacy Portable.zip; same weight/sam3 rules as Mini | `MuraveiVision_PRO_Portable.zip` |
+| **Legacy Portable** | `npm run portable` | legacy Portable.zip; same weight/sam3 rules as Mini (KIT=mini) | `MuraveiVision_PRO_Portable.zip` |
 
 **Mini vs Full = 3D + CUDA + model size ONLY.** Detect weights: copy-only from `assets/models` (ladder l-ft&gt;…&gt;n); never download COCO stock.
 

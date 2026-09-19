@@ -60,7 +60,7 @@ MuraveiVision-PRO-portable/
 ├── backend/               # Backend code
 ├── MurVis/                # Frontend (built)
 ├── models/                # Model weights
-│   ├── yolo8n.pt          # 6 MB
+│   ├── yolo26n.pt          # 6 MB
 │   ├── sam3_weights.bin   # 1.5 GB
 │   └── da3_s_weights.bin  # 2.1 GB
 ├── config/
@@ -81,7 +81,7 @@ npm run build
 
 # 2. Копирование моделей
 mkdir models
-copy backend\models\yolo8n.pt models\
+copy backend\models\yolo26n.pt models\
 copy backend\models\sam3\sam3_weights.bin models\
 copy backend\models\da3\da3_s_weights.bin models\
 
@@ -101,7 +101,7 @@ tar -a -c -f MuraveiVision-PRO-portable.zip MuraveiVision-PRO-portable/
 |-----------|--------|
 | Приложение | 500 MB |
 | Python runtime | 300 MB |
-| YOLOv8n | 6 MB |
+| YOLO26n | 6 MB |
 | SAM3 | 1.5 GB |
 | DA3-S | 2.1 GB |
 | **Итого** | **~4.4 GB** |

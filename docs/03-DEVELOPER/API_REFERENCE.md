@@ -71,7 +71,7 @@ curl http://localhost:8000/health
 curl -X POST http://localhost:8000/api/detect \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIs..." \
   -F "image=@IMG_001.jpg" \
-  -F "model=yolo8s-ft" \
+  -F "model=yolo26s-ft" \
   -F "sahi_enabled=true" \
   -F "slice_height=512" \
   -F "slice_width=512" \
@@ -99,7 +99,7 @@ curl -X POST http://localhost:8000/api/detect \
     }
   ],
   "processing_time_ms": 245,
-  "model": "yolo8s-ft"
+  "model": "yolo26s-ft"
 }
 ```
 
@@ -109,7 +109,7 @@ curl -X POST http://localhost:8000/api/detect \
 curl -X POST http://localhost:8000/api/detect/batch \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIs..." \
   -F "folder=@/data/field_session_01/" \
-  -F "model=yolo8s-ft" \
+  -F "model=yolo26s-ft" \
   -F "recursive=true" \
   -F "sahi_enabled=true"
 
@@ -353,7 +353,7 @@ curl -X POST http://localhost:8000/api/batch/scan \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIs..." \
   -F "folder=@/data/field_session_01/" \
   -F "mode=detection" \
-  -F "model=yolo8s-ft" \
+  -F "model=yolo26s-ft" \
   -F "recursive=true"
 
 # Response 202:

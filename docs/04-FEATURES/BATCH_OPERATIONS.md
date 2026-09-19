@@ -29,7 +29,7 @@ Export (CSV, JSON, COCO)
 curl -X POST http://localhost:8000/api/batch/scan \
   -F "folder=@/data/field_session_01/" \
   -F "mode=detection" \
-  -F "model=yolo8s-ft"
+  -F "model=yolo26s-ft"
 
 # Response:
 {

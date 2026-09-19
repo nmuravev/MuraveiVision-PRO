@@ -31,7 +31,7 @@ MuraveiVision PRO поддерживает NVIDIA GPU (CUDA), AMD GPU (DirectML)
 | Сценарий | Производительность |
 |----------|-------------------|
 | YOLO-nano | ~50 FPS |
-| YOLOv8n | ~10 FPS |
+| YOLO26n | ~10 FPS |
 | SAHI (512×512) | ~2 FPS |
 | DA3 dense | ❌ Не поддерживается |
 
@@ -180,17 +180,17 @@ lscpu | grep -E "Architecture|CPU op-mode|Model name|Socket|Core|Thread|AVX"
 
 | Модель | 1920×1080 | 3840×2160 | 8192×6144 + SAHI |
 |--------|-----------|-----------|-------------------|
-| YOLOv8n | 180 FPS | 95 FPS | 12 FPS (64 tiles) |
-| YOLOv8s | 95 FPS | 50 FPS | 6 FPS (64 tiles) |
-| YOLOv8m | 48 FPS | 25 FPS | 3 FPS (64 tiles) |
+| YOLO26n | 180 FPS | 95 FPS | 12 FPS (64 tiles) |
+| YOLO26s | 95 FPS | 50 FPS | 6 FPS (64 tiles) |
+| YOLO26m | 48 FPS | 25 FPS | 3 FPS (64 tiles) |
 
 ### Detection FPS (RTX 3060, 12 GB VRAM)
 
 | Модель | 1920×1080 | 3840×2160 | 8192×6144 + SAHI |
 |--------|-----------|-----------|-------------------|
-| YOLOv8n | 150 FPS | 80 FPS | 10 FPS (64 tiles) |
-| YOLOv8s | 80 FPS | 42 FPS | 5 FPS (64 tiles) |
-| YOLOv8m | 40 FPS | 20 FPS | 2.5 FPS (64 tiles) |
+| YOLO26n | 150 FPS | 80 FPS | 10 FPS (64 tiles) |
+| YOLO26s | 80 FPS | 42 FPS | 5 FPS (64 tiles) |
+| YOLO26m | 40 FPS | 20 FPS | 2.5 FPS (64 tiles) |
 
 ### Segmentation FPS (RTX 4070)
 
@@ -242,7 +242,7 @@ CUDA out of memory
 Solution:
 1. Уменьшите batch_size
 2. Закройте другие GPU-приложения
-3. Используйте YOLOv8n вместо v8s
+3. Используйте YOLO26n вместо v26s
 4. Уменьшите memory_fraction (0.6 вместо 0.8)
 ```
 

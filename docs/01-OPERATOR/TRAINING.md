@@ -118,7 +118,7 @@ convert_coco(
 # model.yaml — конфигурация обучения
 
 # Базовая модель
-model: yolov8n.pt  # yolov8s.pt, yolov8m.pt, yolov8l.pt, yolov8x.pt
+model: yolo26n.pt  # yolo26s.pt, yolo26m.pt, yolo26l.pt, yolo26n.pt
 
 # Параметры данных
 data: data.yaml
@@ -165,10 +165,10 @@ save_txt: True          # сохранять результаты в TXT
 
 | Размер набора данных | Модель | Epochs | Batch | Image Size |
 |---------------------|--------|--------|-------|------------|
-| < 500 изображений | YOLOv8n | 50 | 8 | 640 |
-| 500 — 2000 | YOLOv8n/s | 100 | 16 | 640 |
-| 2000 — 10000 | YOLOv8s/m | 150 | 16 | 1280 |
-| > 10000 | YOLOv8m/l | 200 | 32 | 1280 |
+| < 500 изображений | YOLO26n | 50 | 8 | 640 |
+| 500 — 2000 | YOLO26n/s | 100 | 16 | 640 |
+| 2000 — 10000 | YOLO26s/m | 150 | 16 | 1280 |
+| > 10000 | YOLO26m/l | 200 | 32 | 1280 |
 
 ## Трансферное обучение
 
@@ -181,7 +181,7 @@ MuraveiVision PRO автоматически загружает предобуч
 from ultralytics import YOLO
 
 # Загрузка предобученной модели
-model = YOLO("yolov8n.pt")
+model = YOLO("yolo26n.pt")
 
 # Тонкая настройка на собственном наборе данных
 results = model.train(
@@ -200,7 +200,7 @@ results = model.train(
 
 ```python
 # Перенос с детекции на классификацию
-model = YOLO("yolov8n.pt")
+model = YOLO("yolo26n.pt")
 results = model.train(
     data="classification_data.yaml",
     model="yolov8n.pt",
@@ -576,7 +576,7 @@ accumulate: 4     # накопление градиентов (эффектив�
 | AMP (mixed precision) | 1.5-2x |
 | workers > 8 | 1.2-1.5x |
 | imgsz 640 vs 1280 | 4x |
-| YOLOv8n vs YOLOv8x | 3-5x |
+| YOLO26n vs YOLO26x | 3-5x |
 | NVMe SSD | 1.5-2x |
 
 ### Проблема: Ошибки формата данных

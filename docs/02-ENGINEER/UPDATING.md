@@ -198,7 +198,7 @@ muravei_env\Scripts\python.exe backend/scripts/update_models.py
 
 # Update specific model
 muravei_env\Scripts\python.exe backend/scripts/update_models.py \
-  --model yolo8s
+  --model yolo26s
 
 # Update DA3 (new in v3.2.0)
 muravei_env\Scripts\python.exe backend/scripts/update_models.py \
@@ -210,7 +210,7 @@ muravei_env\Scripts\python.exe backend/scripts/update_models.py \
 ```
 Model versions:
 ┌─────────────────────────────────────────┐
-│  yolo8s-ft:                             │
+│  yolo26s-ft:                             │
 │  • v1.0 (2026-06) — initial             │
 │  • v2.0 (2026-08) — improved classes   │
 │  • v3.0 (2026-09) — current            │

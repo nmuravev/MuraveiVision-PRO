@@ -165,7 +165,7 @@ async def test_detect_single_image(tmp_path):
     # Run detection
     result = await run_detection(
         image=test_image,
-        model="yolo8s-ft",
+        model="yolo26s-ft",
         sahi_enabled=False
     )
     
@@ -184,7 +184,7 @@ async def test_detect_with_sahi(tmp_path):
     
     result = await run_detection(
         image=test_image,
-        model="yolo8s-ft",
+        model="yolo26s-ft",
         sahi_enabled=True,
         slice_height=512,
         slice_width=512,
@@ -257,7 +257,7 @@ async def test_full_detection_flow(tmp_path):
     
     result = await run_detection(
         image=test_image,
-        model="yolo8s-ft",
+        model="yolo26s-ft",
         session_id=session["id"]
     )
     

@@ -12,9 +12,9 @@ MuraveiVision PRO использует несколько моделей для 
 
 | Модель | Назначение | Размер | Путь |
 |--------|------------|--------|------|
-| **YOLOv8n** | Detection (fast) | 6 MB | `models/yolo8n.pt` |
-| **YOLOv8s** | Detection (balanced) | 22 MB | `models/yolo8s.pt` |
-| **YOLOv8m** | Detection (accurate) | 51 MB | `models/yolo8m.pt` |
+| **YOLO26n** | Detection (fast) | 6 MB | `models/yolo26n.pt` |
+| **YOLO26s** | Detection (balanced) | 22 MB | `models/yolo26s.pt` |
+| **YOLO26m** | Detection (accurate) | 51 MB | `models/yolo26m.pt` |
 | **SAM3** | Segmentation | 1.5 GB | `models/sam3/sam3_weights.bin` |
 | **DA3-S** | Depth estimation | 2.1 GB | `models/da3/da3_s_weights.bin` |
 | **DA3-B** | Depth estimation (large) | 4.3 GB | `models/da3/da3_b_weights.bin` |
@@ -43,7 +43,7 @@ muravei_env\Scripts\python.exe backend/scripts/download_models.py --all
 
 # Download specific model
 muravei_env\Scripts\python.exe backend/scripts/download_models.py \
-  --model yolo8s
+  --model yolo26s
 
 # Download DA3 (new in v3.2.0)
 muravei_env\Scripts\python.exe backend/scripts/download_models.py \
@@ -73,7 +73,7 @@ muravei_env\Scripts\python.exe backend/scripts/verify_models.py
 # ========================================
 # Model Verification
 # ========================================
-# [OK] yolo8s.pt — size: 22 MB, checksum: valid
+# [OK] yolo26s.pt — size: 22 MB, checksum: valid
 # [OK] sam3_weights.bin — size: 1.5 GB, checksum: valid
 # [OK] da3_s_weights.bin — size: 2.1 GB, checksum: valid
 # [OK] All models verified
@@ -216,7 +216,7 @@ colors:
 ```
 Model versions:
 ┌─────────────────────────────────────────┐
-│  yolo8s-ft:                             │
+│  yolo26s-ft:                             │
 │  Current: v3.0 (2026-09-19)            │
 │  Previous: v2.0 (2026-08-01)           │
 │  Available: v1.0, v2.0, v3.0           │
@@ -239,7 +239,7 @@ muravei_env\Scripts\python.exe backend/scripts/model_manager.py --list
 
 # Switch detection model
 muravei_env\Scripts\python.exe backend/scripts/model_manager.py \
-  --set-detection yolo8n
+  --set-detection yolo26n
 
 # Switch segmentation model
 muravei_env\Scripts\python.exe backend/scripts/model_manager.py \
@@ -256,8 +256,8 @@ muravei_env\Scripts\python.exe backend/scripts/model_manager.py --status
 ```bash
 # Quantize YOLO model (INT8)
 muravei_env\Scripts\python.exe backend/scripts/quantize.py \
-  --model models/yolo8s.pt \
-  --output models/yolo8s-int8.pt \
+  --model models/yolo26s.pt \
+  --output models/yolo26s-int8.pt \
   --format int8
 
 # Size reduction: 22 MB → 6 MB (3x smaller)
@@ -270,8 +270,8 @@ muravei_env\Scripts\python.exe backend/scripts/quantize.py \
 ```bash
 # Prune model (remove unnecessary weights)
 muravei_env\Scripts\python.exe backend/scripts/prune.py \
-  --model models/yolo8s.pt \
-  --output models/yolo8s-pruned.pt \
+  --model models/yolo26s.pt \
+  --output models/yolo26s-pruned.pt \
   --sparsity 0.3
 
 # Size reduction: 22 MB → 15 MB
@@ -291,7 +291,7 @@ muravei_env\Scripts\python.exe backend/scripts/model_health.py
 # ========================================
 # Model Health Check
 # ========================================
-# [OK] yolo8s — loaded, inference OK, mAP: 44.9
+# [OK] yolo26s — loaded, inference OK, mAP: 44.9
 # [OK] sam3 — loaded, inference OK, FPS: 30
 # [OK] da3_s — loaded, inference OK, FPS: 12
 # [OK] All models healthy
@@ -332,7 +332,7 @@ Solution:
 ```
 Out of VRAM
 Solution:
-1. Use smaller model (yolo8n instead of yolo8s)
+1. Use smaller model (yolo26n instead of yolo26s)
 2. Quantize model (INT8)
 3. Close other GPU applications
 4. Reduce batch_size in config

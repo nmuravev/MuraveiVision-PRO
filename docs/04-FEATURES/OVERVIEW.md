@@ -10,7 +10,7 @@ MuraveiVision PRO — комплексная система анализа ви�
 
 | Возможность | Описание | Версия | Docs |
 |-------------|----------|--------|------|
-| **Detection** | YOLOv8/v11 + SAHI | v3.0+ | [Detection](./DETECTION.md) |
+| **Detection** | YOLO26 + SAHI | v3.0+ | [Detection](./DETECTION.md) |
 | **Segmentation** | SAM3 interactive & propagate | v3.1+ | [Segmentation](./SEGMENTATION.md) |
 | **3D Reconstruction** | COLMAP, DA3, GSplat, Flight3D | v3.2+ | [Recon 3D](./RECON_3D.md) |
 | **Batch Operations** | Batch Scan, Segmentation, Change | v3.0+ | [Batch](./BATCH_OPERATIONS.md) |
@@ -22,7 +22,7 @@ MuraveiVision PRO — комплексная система анализа ви�
 
 ### Возможности
 
-- YOLOv8n/s/m/l/x и YOLOv11n/s
+- YOLO26n/s/m/l и YOLO26n/s
 - SAHI slicing для больших изображений
 - Real-time detection
 - Batch detection
@@ -35,8 +35,8 @@ MuraveiVision PRO — комплексная система анализа ви�
 
 | Модель | 1080p | 4K | 4K + SAHI |
 |--------|-------|-----|-----------|
-| YOLOv8n | 180 FPS | 95 FPS | 12 FPS |
-| YOLOv8s | 95 FPS | 50 FPS | 6 FPS |
+| YOLO26n | 180 FPS | 95 FPS | 12 FPS |
+| YOLO26s | 95 FPS | 50 FPS | 6 FPS |
 
 ## Segmentation (SAM3)
 

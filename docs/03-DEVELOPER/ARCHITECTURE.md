@@ -30,15 +30,15 @@ MuraveiVision PRO — full-stack приложение с клиент-серве
 │  │  API     │ │   API    │ │   API    │ │   API    │      │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘      │
 │  ┌─────────────────────────────────────────────────────┐  │
-│  │              Services Layer                          │  │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐           │  │
-│  │  │  YOLO    │ │   SAM3   │ │   DA3    │           │  │
-│  │  │ Service  │ │ Service  │ │ Service  │           │  │
-│  │  └──────────┘ └──────────┘ └──────────┘           │  │
-│  └─────────────────────────────────────────────────────┘  │
+│  │              Services Layer (74 modules)               │  │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │  │
+│  │  │  YOLO    │ │   SAM3   │ │ Network │ │  Batch   │  │  │
+│  │  │ Engine   │ │ Engine   │ │ Service │ │ Service  │  │  │
+│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘  │  │
+│  │  ... + 70 more specialized modules                    │  │
 │  ┌─────────────────────────────────────────────────────┐  │
-│  │              Database Layer                           │  │
-│  │         SQLite (WAL mode, 8 tables)                  │  │
+│  │              Database Layer                            │  │
+│  │         SQLite (WAL mode, 14 tables)                 │  │
 │  └─────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -66,14 +66,64 @@ backend/
 │   ├── sam3.py               # SAM3 segmentation
 │   ├── da3.py                # DA3 depth estimation
 │   └── ollama.py             # Ollama LLM client
-├── services/                  # Business logic
+├── services/                  # Business logic (74 modules)
 │   ├── __init__.py
-│   ├── detection_service.py  # Detection orchestration
-│   ├── segmentation_service.py
-│   ├── batch_service.py
-│   ├── session_service.py
-│   ├── backup_service.py
-│   └── network_service.py
+│   ├── yolo_engine.py         # YOLO26 detection engine
+│   ├── sahi_yolo_engine.py    # SAHI slicing wrapper
+│   ├── sam3_engine.py         # SAM3 segmentation
+│   ├── segmentation_engine.py # Segmentation orchestration
+│   ├── da3_pipeline.py        # DA3 depth estimation
+│   ├── db.py                  # SQLite (pins, settings, detections)
+│   ├── network.py             # Network sync
+│   ├── network_beacon.py      # LAN beacon
+│   ├── network_sync.py        # Target/message sync
+│   ├── network_recon_share.py # Recon sharing
+│   ├── batch_scanner.py       # Batch scanning
+│   ├── batch_segmentation.py  # Batch segmentation
+│   ├── batch_change_detection.py # Change detection
+│   ├── trainer.py             # Model training
+│   ├── recon_colmap.py        # COLMAP reconstruction
+│   ├── recon_scanner.py       # 3D scanning
+│   ├── ai_crops.py            # AI crop analysis
+│   ├── ollama_proxy.py        # Ollama LLM proxy
+│   ├── security.py            # Security utilities
+│   ├── classes.py             # Class catalog
+│   ├── catalog.py             # Class overrides
+│   ├── export_csv.py          # CSV export
+│   ├── export_masks.py        # Mask export
+│   ├── geo_export.py          # Geo export (KML/GeoJSON)
+│   ├── hud_exclusion.py       # HUD auto-blur
+│   ├── live_stream.py         # Live stream processing
+│   ├── tracker.py             # Object tracking
+│   ├── motion.py              # Motion detection
+│   ├── similarity.py          # Similarity search
+│   ├── change_detection.py    # Change detection
+│   ├── change_export.py       # Change export
+│   ├── autolabel.py           # Auto-labeling
+│   ├── network_attachments.py # Network file attachments
+│   ├── chat_ws.py             # Chat WebSocket
+│   ├── chat_refs.py           # Chat references
+│   ├── recorder.py            # Video recording
+│   ├── ffmpeg_util.py         # FFmpeg utilities
+│   ├── hardware.py            # Hardware detection
+│   ├── hardware_detect.py     # Hardware specifics
+│   ├── accelerator.py         # GPU/DirectML accelerator
+│   ├── ultralytics_airgap.py  # Ultralytics airgap
+│   ├── model_validator.py     # Model validation
+│   ├── model_mutex.py         # Model loading mutex
+│   ├── usb_models.py          # USB model import
+│   ├── weight_transfer.py     # Weight transfer
+│   ├── train_presets.py       # Training presets
+│   ├── portable_bootstrap.py  # Portable env bootstrap
+│   ├── telemetry.py           # Telemetry
+│   ├── events.py              # Event logging
+│   ├── reporter.py            # Reporting
+│   ├── runtime_log.py         # Runtime logging
+│   ├── error_catalog.py       # Error catalog
+│   ├── response_validator.py  # Response validation
+│   ├── classes.py             # Class definitions
+│   ├── classes.py             # Class utilities
+│   ├── ... (74 total modules) │
 ├── schemas/                   # Pydantic models
 │   ├── __init__.py
 │   ├── detection.py
@@ -283,7 +333,7 @@ Complete Data Flow:
                    ▼            ▼            ▼
               ┌─────────────────────────────────┐
               │      SQLite Database            │
-              │   (WAL mode, 8 tables)          │
+              │   (WAL mode, 14 tables)         │
               └─────────────────────────────────┘
                    │
                    ▼
@@ -336,21 +386,28 @@ WebSocket Channels:
 ```
 Database Tables (SQLite):
 ┌─────────────────────────────────────────────┐
-│  1. sessions              Session metadata  │
-│  2. detections            Detection results │
-│  3. segments              Segmentation masks│
-│  4. models                Model registry    │
-│  5. users                 User accounts     │
-│  6. network_peers         Network nodes     │
-│  7. chat_messages         Chat history      │
-│  8. session_trace         Session events    │
+│  1. pins                    PIN codes (SHA256) │
+│  2. settings                Settings (K/V)    │
+│  3. lockouts                Brute-force lock  │
+│  4. detections              Detection results │
+│  5. network_config          Network config    │
+│  6. network_bases           Registered bases  │
+│  7. network_targets         Network targets   │
+│  8. network_messages        Network messages  │
+│  9. class_overrides         Class overrides   │
+│ 10. excluded_classes        Excluded classes  │
+│ 11. flight_tracks           Flight tracks     │
+│ 12. active_learning_samples ML feedback       │
+│ 13. detection_embeddings    Similarity search │
+│ 14. seg_masks               Segmentation masks│
 └─────────────────────────────────────────────┘
 
 Key relationships:
-sessions 1──N detections
-sessions 1──N segments
-detections 1──N segments
-users 1──N sessions
+detections 1──N seg_masks (by source_video)
+pins — authorization roles
+settings — app configuration (jwt_secret)
+lockouts — brute-force protection
+network_* — network subsystem (config, bases, targets, messages)
 ```
 
 ## Security Architecture

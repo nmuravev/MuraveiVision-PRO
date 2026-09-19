@@ -152,16 +152,16 @@ muravei_env\Scripts\python.exe backend/scripts/download_models.py yolo
 # Без сети
 # 1. Скачайте модели на машине с интернетом:
 #    https://github.com/nmuravev/MuraveiVision-PRO/releases/download/models/
-#    - yolov8n.pt
-#    - yolov8s.pt
-#    - yolov11n.pt
+#    - yolo26n-ft.pt
+#    - yolo26s-ft.pt
+#    - yolo26n-ft.pt
 # 2. Скопируйте в: backend/models/
 
 # Проверка
 dir backend\models\*.pt
-# yolov8n.pt    6.1 MB
-# yolov8s.pt   22.2 MB
-# yolov11n.pt   6.3 MB
+# yolo26n-ft.pt    6.1 MB
+# yolo26s-ft.pt   22.2 MB
+# yolo26n-ft.pt   6.3 MB
 ```
 
 ### 3.2 Загрузка SAM3 модели

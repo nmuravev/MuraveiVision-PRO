@@ -51,7 +51,7 @@
 | Сценарий | Производительность |
 |----------|-------------------|
 | YOLO-nano | ~50 FPS (1 image) |
-| YOLOv8n | ~10 FPS |
+| YOLO26n-ft | ~10 FPS |
 | SAHI (1024×1024) | ~2 FPS |
 | DA3 dense | НЕ ПОДДЕРЖИВАЕТСЯ |
 
@@ -156,15 +156,15 @@ lscpu | grep -E "Architecture|CPU op-mode|Model name|Socket|Core|Thread|AVX"
 
 ```
 Base model load:        250 MB
-YOLOv8n weights:        6 MB
-YOLOv8s weights:       22 MB
-YOLOv8m weights:       50 MB
+YOLO26n-ft weights:        6 MB
+YOLO26s-ft weights:       22 MB
+YOLO26m-ft weights:       50 MB
 SAHI context (per tile): 100 MB × tiles
 Batch buffer:           200 MB × batch_size
 Segmentation masks:     50 MB × images
 ```
 
-**Пример:** YOLOv8s + SAHI (4×4 grid) + batch 4:
+**Пример:** YOLO26s-ft + SAHI (4×4 grid) + batch 4:
 ```
 22 + (100 × 16) + (200 × 4) = 22 + 1600 + 800 = 2422 MB
 ```

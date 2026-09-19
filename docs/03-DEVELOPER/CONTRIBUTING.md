@@ -59,11 +59,11 @@ Fixes: #123
 # Create commit message file
 echo "feat: add new detection model" > .commit_msg.txt
 echo "" >> .commit_msg.txt
-echo "Added support for YOLOv11n model with improved" >> .commit_msg.txt
+echo "Added support for YOLO26n model with improved" >> .commit_msg.txt
 echo "performance on small object detection." >> .commit_msg.txt
 
 # Commit using file
-git add backend/models/yolo11.py
+git add backend/models/yolo26.py
 git commit -F .commit_msg.txt
 ```
 
@@ -421,7 +421,7 @@ def detect_image(
         RuntimeError: If model fails to load.
         
     Example:
-        >>> result = detect_image(image_data, "yolo8s")
+        >>> result = detect_image(image_data, "yolo26s")
         >>> len(result["detections"])
         5
     """
