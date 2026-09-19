@@ -1,7 +1,10 @@
 """MuraveiVision PRO Backend — FastAPI entrypoint."""
 import asyncio
+import atexit
 import logging
 import os
+import signal
+import traceback
 
 # Air-gap: disable Ultralytics AutoUpdate before any ultralytics import.
 os.environ.setdefault("ULTRALYTICS_SKIP_REQUIREMENTS_CHECKS", "1")
@@ -48,8 +51,42 @@ def ensure_runtime_dirs() -> None:
     (BASE_DIR / "archive" / "recordings").mkdir(parents=True, exist_ok=True)
 
 
+# P0: Module-level _run_hook for non-fatal startup hooks (A3: unit-testable)
+import inspect
+
+logger = logging.getLogger(__name__)
+failed_components = []
+
+
+async def _run_hook(name: str, fn):
+    """Run a startup/shutdown hook (sync or async) inside try/except.
+
+    fn: callable that returns result (sync or coroutine).
+    Called INSIDE try to catch ValueError from config parsing.
+    """
+    try:
+        result = fn()  # sync-вызов ВНУТРИ try!
+        if inspect.isawaitable(result):
+            result = await result  # async-хуки тоже поддерживаются
+        logger.info(f"[lifespan] {name}: OK")
+        return result
+    except Exception as exc:
+        logger.error(f"[lifespan] {name} FAILED (non-fatal): {exc}")
+        logger.debug(traceback.format_exc())
+        failed_components.append(name)
+        return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # P0: Single-instance guard (R3: check before any startup)
+    from services.single_instance import get_guard
+
+    guard = get_guard()
+    if not guard.acquire():
+        logger.error("[single_instance] Another backend already running. Exiting.")
+        sys.exit(1)
+
     ensure_runtime_dirs()
     # P2-15: Defer ffmpeg resolution to background — does not block app startup.
     # File-existence checks are fast, but logging/print output should not
@@ -119,26 +156,18 @@ async def lifespan(app: FastAPI):
     print(f"[SYSTEM] Static dist: {DIST_DIR} exists={DIST_DIR.is_dir()}")
     print("[SYSTEM] MuraveiVision PRO Backend starting...")
     from services.network_sync import start_network_worker, stop_network_worker
-
-    start_network_worker()
-    # N5: LAN beacon (opt-in, never on boot)
     from services import network_beacon as nb
+    from services.ollama_proxy import startup_reconnect
+    from services.accelerator import log_profile_once
+    from services.hardware_detect import log_detect_once
 
-    nb.start_beacon_if_enabled()
-    try:
-        from services.ollama_proxy import startup_reconnect
-
-        startup_reconnect()
-    except Exception as exc:  # noqa: BLE001
-        print(f"[SYSTEM] Ollama startup reconnect skip: {exc}")
-    try:
-        from services.accelerator import log_profile_once
-        from services.hardware_detect import log_detect_once
-
-        log_profile_once()
-        log_detect_once()
-    except Exception as exc:  # noqa: BLE001
-        print(f"[SYSTEM] hardware_detect skip: {exc}")
+    # P0: Все хуки через _run_hook(lambda: ...) — вызов ВНУТРИ try
+    await _run_hook("network_worker", lambda: start_network_worker())
+    await _run_hook("beacon", lambda: nb.start_beacon_if_enabled())
+    await _run_hook("ollama_reconnect", lambda: startup_reconnect())
+    await _run_hook("hardware_detect", lambda: (log_profile_once(), log_detect_once()))
+    if failed_components:
+        logger.warning(f"[lifespan] {len(failed_components)} components failed: {failed_components}")
     yield
     print("[SYSTEM] Backend stopping...")
     # P0-2: Cancel any remaining background tasks
@@ -154,8 +183,9 @@ async def lifespan(app: FastAPI):
         _background_tasks.clear()
     except Exception as _bg_exc:
         print(f"[SYSTEM] Background task cleanup: {_bg_exc}")
-    await nb.stop_beacon()
-    await stop_network_worker()
+    # R4.2: Shutdown hooks через _run_hook (симметрия: падение не роняет процесс)
+    await _run_hook("stop_beacon", lambda: nb.stop_beacon())
+    await _run_hook("stop_network_worker", lambda: stop_network_worker())
 
 
 app = FastAPI(
@@ -340,6 +370,7 @@ _mount_static()
 
 
 if __name__ == "__main__":
+    import atexit
     import uvicorn
 
     reload = os.environ.get("MURAVEI_RELOAD", "0") == "1"
@@ -350,3 +381,28 @@ if __name__ == "__main__":
         reload=reload,
         log_level="info",
     )
+
+
+# P0: Process cleanup on exit (R3: SIGINT re-raise for graceful Ctrl+C)
+def _cleanup_on_exit():
+    """Cleanup child processes on exit."""
+    try:
+        import psutil
+        parent = psutil.Process(os.getpid())
+        for child in parent.children(recursive=True):
+            try:
+                child.terminate()
+            except psutil.NoSuchProcess:
+                pass
+    except (ImportError, Exception):
+        pass
+
+
+def _sigint_handler(signum, frame):
+    """R3: Cleanup + re-raise KeyboardInterrupt for uvicorn graceful shutdown."""
+    _cleanup_on_exit()
+    signal.default_int_handler(signum, frame)  # re-raise → uvicorn graceful Ctrl+C
+
+
+signal.signal(signal.SIGINT, _sigint_handler)
+atexit.register(_cleanup_on_exit)
