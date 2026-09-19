@@ -15,6 +15,7 @@ from services import chat_ws
 from services import network as net
 from services import network_attachments as nattach
 from services import network_recon_share as nrecon
+from services.config_utils import safe_bool, safe_int
 
 SYNC_INTERVAL_SEC = 15.0
 HTTP_TIMEOUT_SEC = 10.0
@@ -82,7 +83,7 @@ class NetworkSyncWorker:
         self.base_id = net.ensure_base_id()
         self.base_name = str(cfg.get("base_name") or "")
         self.server_ip = str(cfg.get("server_ip") or "").strip()
-        self.port = int(cfg.get("port") or 8000)
+        self.port = safe_int(cfg.get("port"), 8000)
         return cfg
 
     async def login_to_hub(self, force: bool = False) -> bool:
@@ -741,8 +742,8 @@ def status_dict() -> dict[str, Any]:
             else None
         ),
         # N5: beacon status
-        "lan_beacon_enabled": bool(cfg.get("lan_beacon_enabled", False)),
-        "lan_beacon_port": int(cfg.get("lan_beacon_port", 8001)),
+        "lan_beacon_enabled": safe_bool(cfg.get("lan_beacon_enabled"), False),
+        "lan_beacon_port": safe_int(cfg.get("lan_beacon_port"), 8001),
     }
 
 

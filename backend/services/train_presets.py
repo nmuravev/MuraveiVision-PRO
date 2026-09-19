@@ -9,6 +9,7 @@ from typing import Any
 
 from services.runtime_log import write as runtime_write
 from services.security import BASE_DIR
+from services.config_utils import safe_bool, safe_int
 
 PRESETS_PATH = BASE_DIR / "config" / "train_presets.json"
 
@@ -323,7 +324,7 @@ def presets_for_client() -> list[dict[str, Any]]:
                 "id": pid,
                 "label": cfg.get("label") or pid,
                 "eta": eta,
-                "default": bool(cfg.get("default")),
+                "default": safe_bool(cfg.get("default"), False),
                 "disabled": disabled,
                 "disabled_reason": reason,
                 "alias_of": cfg.get("alias_of"),

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from services import recon_scanner
+from services.config_utils import safe_bool, safe_int
 from services.alicevision import alicevision_available, alicevision_cuda_ready
 from services.alicevision_pipeline import (
     normalize_artifacts,
@@ -448,7 +449,7 @@ def _run_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) -> None:
     if script == "da3_dense":
         _run_da3_worker(job_id, preset_id, cfg)
         return
-    max_steps = int(cfg.get("max_steps") or 0)
+    max_steps = safe_int(cfg.get("max_steps"), 0)
     t0 = time.time()
     log_path = job_dir / "train.log"
     ring: deque[str] = deque(maxlen=40)
@@ -477,7 +478,7 @@ def _run_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) -> None:
             "--job-dir",
             str(job_dir),
             "--max-points",
-            str(int(cfg.get("max_points") or 80_000)),
+            str(safe_int(cfg.get("max_points"), 80_000)),
         ]
     else:
         _emit({"message": "Патч JIT / проверка MSVC…"})
@@ -500,7 +501,7 @@ def _run_worker(job_id: str, preset_id: str, cfg: dict[str, Any]) -> None:
             "--max-steps",
             str(max_steps),
             "--data-factor",
-            str(int(cfg.get("data_factor") or 4)),
+            str(safe_int(cfg.get("data_factor"), 4)),
         ]
         try:
             cmd, env = build_gsplat_launch(py, script_args, cwd=BASE_DIR)

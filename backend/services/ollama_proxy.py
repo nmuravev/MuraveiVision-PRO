@@ -24,6 +24,7 @@ from services.ollama_discovery import (
     probe_tags,
     scan_lan_ollama,
 )
+from services.config_utils import safe_bool, safe_int
 
 # Back-compat export for smokes / callers
 OLLAMA_BASE = "http://127.0.0.1:11434"
@@ -414,7 +415,7 @@ def save_settings(
         h, p = _parse_host_port(cfg["base_url"])
         cfg["host"], cfg["port"] = h, p
     elif host is not None:
-        cfg["base_url"] = base_from_host_port(cfg["host"], int(cfg.get("port") or DEFAULT_PORT))
+        cfg["base_url"] = base_from_host_port(cfg["host"], safe_int(cfg.get("port"), DEFAULT_PORT))
     if model is not None:
         cfg["model"] = model.strip()
         _model = cfg["model"]
@@ -429,7 +430,7 @@ def save_settings(
         return connect(
             base_url=str(cfg.get("base_url") or "") or None,
             host=str(cfg.get("host") or "") or None,
-            port=int(cfg.get("port") or DEFAULT_PORT),
+            port=safe_int(cfg.get("port"), DEFAULT_PORT),
             model=str(cfg.get("model") or "") or None,
             timeout_sec=float(cfg.get("timeout_sec") or GENERATE_TIMEOUT),
             use_ladder=not bool(cfg.get("base_url")),
@@ -450,7 +451,7 @@ def startup_reconnect() -> None:
             return
         _startup_started = True
     cfg = load_config()
-    _auto_reconnect = bool(cfg.get("auto_reconnect", True))
+    _auto_reconnect = safe_bool(cfg.get("auto_reconnect"), True)
     _timeout_sec = float(cfg.get("timeout_sec") or GENERATE_TIMEOUT)
     _model = str(cfg.get("model") or "")
     if not _auto_reconnect:

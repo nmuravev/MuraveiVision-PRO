@@ -177,14 +177,15 @@ def start_beacon_if_enabled() -> asyncio.Task | None:
     """Called from main.py lifespan. Returns bootstrap task reference."""
     global _beacon
     from services import network as net
+    from services.config_utils import safe_bool, safe_int
     cfg = net.get_config()
     _beacon = LanBeacon()
     _beacon.configure(
-        enabled=bool(int(str(cfg.get("lan_beacon_enabled", "0")))),
-        port=int(cfg.get("lan_beacon_port", BEACON_PORT_DEFAULT)),
+        enabled=safe_bool(cfg.get("lan_beacon_enabled"), False),
+        port=safe_int(cfg.get("lan_beacon_port", BEACON_PORT_DEFAULT)),
         base_id=net.ensure_base_id(),
         base_name=str(cfg.get("base_name", "")),
-        server_port=int(cfg.get("port", 8000)),
+        server_port=safe_int(cfg.get("port", 8000)),
     )
     return asyncio.create_task(_beacon.start())
 

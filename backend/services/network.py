@@ -9,6 +9,7 @@ import uuid
 from typing import Any
 
 from services.db import _connect, init_db
+from services.config_utils import safe_bool, safe_int
 
 TARGET_TTL_SEC = 24 * 3600
 
@@ -100,7 +101,7 @@ def get_config() -> dict[str, Any]:
             "base_id": base_id,
             "updated_at": float(row["updated_at"]),
             "has_hub_pin": bool(str(row["hub_pin"] or "").strip()) if "hub_pin" in keys else False,
-            "lan_beacon_enabled": bool(int(str(row["lan_beacon_enabled"] or "0"))) if "lan_beacon_enabled" in keys else False,
+            "lan_beacon_enabled": safe_bool(row["lan_beacon_enabled"] if "lan_beacon_enabled" in keys else None, False),
             "lan_beacon_port": int(row["lan_beacon_port"] or 8001) if "lan_beacon_port" in keys else 8001,
         }
     finally:
