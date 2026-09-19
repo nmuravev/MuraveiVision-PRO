@@ -1,36 +1,48 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Сборка MuraveiVision PRO Portable ZIP (Mini или Full Field Kit).
+  Сборка MuraveiVision PRO Portable ZIP (Mini или FullKit).
 
 .DESCRIPTION
+  === МАТРИЦА КОМПЛЕКТОВ ===
+
   Mini (-Mini):
-  - Embeddable Python 3.12.10 + dist/backend
+  - Embeddable Python 3.12.10 + dist/backend (готов к запуску, без докачек)
   - tactical YOLO26 *.pt (copy-only) + exactly one sam3.pt
   - torch CPU + onnxruntime-directml
+  - FFmpeg + smoke_sample
   - ZIP: portable\MuraveiVision_PRO_Mini.zip
   - Size band (OPERATOR-SANCTIONED 2026-09-16): warn >4.5 GB, reject >5 GB
-  - DA3 NEVER bundled (Assert-PackInventory). -NoDA3 is explicit intent only;
-    real gate = Mini has zero da3 bins.
-  - Ollama NOT bundled (system-optional)
+  - НЕ включает: AliceVision, DA3, COLMAP, gsplat
+  - KIT=mini
 
   FullKit (-FullKit):
-  - same weights + sam3 + sidecars (COLMAP/gsplat/AliceVision Mesh opt-in)
-  - optional DA3 Dense sidecar (all 4 variants when staged under sidecars/da3)
-  - Giant STAYS in FullKit+DA3 (heterogeneous fleet: grey on VRAM<16 GB via
-    RU disabled_reason; works from pack on >=16 GB hosts)
-  - torch CUDA cu128 by default (-TorchFlavor cpu → CPU)
+  - Всё из Mini +
+  - torch CUDA cu128 (NVIDIA GPU)
+  - sidecars/colmap/ (structure-from-motion)
+  - sidecars/gsplat_examples/ (3D Gaussian splatting)
+  - sidecars/alicevision/ (opt-in через -IncludeAliceVision)
+  - sidecars/da3/ (DA3 Dense веса, если есть под sidecars/da3/)
+    - da3_base/large/metric/giant.safetensors
+    - NOTICE_CC-BY-NC-4.0.txt (обязателен для NC весов)
   - ZIP: portable\MuraveiVision_PRO_FullKit.zip (or _win_cpu)
   - Size bands (OPERATOR-SANCTIONED 2026-09-16):
       FullKit without DA3: warn >9.5 GB, reject >10 GB
       FullKit + DA3 (base+large+metric+giant): warn >18 GB, reject >22 GB
-  - Ollama NOT bundled
+  - KIT=full
 
-  Lite (no -Mini/-FullKit): legacy Portable.zip with same weight rules.
+  === ОБА ПАКА ===
+  - Включают embeddable Python 3.12.10 (muravei_env/) — готов к запуску сразу
+  - backend/, dist/ (UI + CSP)
+  - VERSION + KIT (mini|full)
+  - Запустить.bat (CRLF)
+  - НЕ включают: Ollama (system-optional), map_tiles
+
+  Lite (no -Mini/-FullKit): legacy Portable.zip (удалить в будущем).
   -NoDetectWeights: debug-only empty models (not a product kit).
 
   Never download detect weights at build time (tactical .pt copy-only).
-  Torch profile: Mini/Lite → CPU; FullKit → CUDA unless -TorchFlavor cpu.
+  Torch profile: Mini → CPU; FullKit → CUDA unless -TorchFlavor cpu.
   PROTECT: never purge portable/cache, wheels, sidecars, archive, config/local,
   muravei_env. Purge only portable/stage_* and *.locked_* at build start.
 #>

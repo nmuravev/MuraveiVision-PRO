@@ -1,4 +1,4 @@
-# Portable ZIP
+# Portable ZIP — Матрица комплектов
 
 ## Цель
 
@@ -6,7 +6,122 @@
 
 Скрипт: [`scripts/build_portable.ps1`](../scripts/build_portable.ps1).
 
-**Python:** только embeddable / `muravei_env` **3.12.10**. Host `C:\Python314` и bare `python` запрещены.
+**Python:** только embeddable `muravei_env` **3.12.10** (включён в оба пака). Host `C:\Python314` и bare `python` запрещены.
+
+## Готовность к запуску
+
+**Оба пака (Mini и FullKit) включают полный embeddable Python 3.12.10 с всеми зависимостями.**
+
+Система запускается **сразу после распаковки** — никаких дополнительных установок, докачек или настроек не требуется:
+
+```bash
+# 1. Распаковать ZIP
+unzip MuraveiVision_PRO_Mini.zip -d C:\MuraveiVision
+
+# 2. Запустить — работает сразу!
+cd C:\MuraveiVision
+Запустить.bat
+```
+
+**Что включено в `muravei_env/`:**
+- ✅ Python 3.12.10 embeddable
+- ✅ FastAPI, uvicorn, pydantic
+- ✅ Ultralytics (YOLO26), SAHI, OpenCV
+- ✅ ONNX Runtime + DirectML (Mini) / CUDA (FullKit)
+- ✅ Pillow, numpy, timm, safetensors
+- ✅ Все transitivе зависимости
+
+**Не входит:** Ollama (system-optional), `assets/map_tiles` (ship separately).
+
+## Матрица комплектов
+
+### 1. Mini — Лёгкая сборка
+
+```powershell
+npm run portable:mini
+# или
+powershell -ExecutionPolicy Bypass -File scripts\build_portable.ps1 -FetchEmbeddablePython -Mini
+```
+
+**Назначение:** Полевая работа: обнаружение (YOLO26) + сегментация (SAM3) + SAHI. Минимальный размер, максимальная портативность.
+
+**Включено:**
+- ✅ `muravei_env/` — embeddable Python 3.12.10 + все зависимости (готов к запуску)
+- ✅ `backend/` — FastAPI бэкенд
+- ✅ `dist/` — UI (React + CSP)
+- ✅ `assets/models/yolo26*.pt` — tactical модели (copy-only, без скачивания)
+- ✅ `assets/models/sam3.pt` — сегментация
+- ✅ `assets/ffmpeg/` — ffmpeg + ffprobe
+- ✅ `assets/smoke_sample/` — smoke-тесты (CC0)
+- ✅ `military_classes.yaml` — словарь классов
+- ✅ `VERSION` + `KIT=mini` — метаданные
+- ✅ `Запустить.bat` — лаунчер (CRLF)
+- ✅ torch **CPU** + DirectML (без GPU)
+- ✅ пустые `archive/`, `cache/`, `logs/`, `reports/`
+
+**НЕ включено:**
+- ❌ AliceVision (3D reconstruction)
+- ❌ DA3 Dense (neural dense reconstruction)
+- ❌ COLMAP (structure-from-motion)
+- ❌ gsplat_examples (3D Gaussian splatting)
+- ❌ Ollama (AI-анализ, system-optional)
+
+**Размер:** ~4.5 GB (warn >4.5 GB, reject >5 GB)
+
+**Железо:** CPU + DirectML OK; без GPU «Сканировать»/«Сегментация» работают (SAM3 на CPU медленный)
+
+---
+
+### 2. FullKit — Полная сборка
+
+```powershell
+npm run portable:full
+# или
+powershell -ExecutionPolicy Bypass -File scripts\build_portable.ps1 -FetchEmbeddablePython -FullKit -IncludeAliceVision
+```
+
+**Назначение:** Полный набор: обнаружение + сегментация + 3D реконструкция (COLMAP + AliceVision + gsplat) + DA3 Dense.
+
+**Включено (всё из Mini +):**
+- ✅ torch **CUDA cu128** (NVIDIA GPU)
+- ✅ `sidecars/colmap/` — COLMAP (structure-from-motion)
+- ✅ `sidecars/gsplat_examples/` — 3D Gaussian splatting
+- ✅ `sidecars/alicevision/` — AliceVision Mesh (opt-in через `-IncludeAliceVision`)
+- ✅ `sidecars/da3/` — DA3 Dense веса (если есть под `sidecars/da3/`)
+  - `da3_base.safetensors`, `da3_large.safetensors`, `da3_metric.safetensors`, `da3_giant.safetensors`
+  - `NOTICE_CC-BY-NC-4.0.txt` (обязателен для NC весов)
+  - `config_*.json`
+
+**НЕ включено:**
+- ❌ Ollama (AI-анализ, system-optional)
+
+**Размер:**
+- FullKit без DA3: warn >9.5 GB, reject >10 GB
+- FullKit + DA3 (все 4 варианта): warn >18 GB, reject >22 GB
+
+**Железо:** Windows 10/11 **amd64**; **NVIDIA GPU** рекомендуется для realtime CUDA (FullKit)
+
+---
+
+### Сравнительная таблица
+
+| Компонент | Mini | FullKit |
+|-----------|------|---------|
+| **Python 3.12.10 (muravei_env)** | ✅ | ✅ |
+| **Backend + UI** | ✅ | ✅ |
+| **YOLO26 модели** | ✅ | ✅ |
+| **SAM3** | ✅ | ✅ |
+| **FFmpeg** | ✅ | ✅ |
+| **torch CPU / DirectML** | ✅ | ❌ |
+| **torch CUDA cu128** | ❌ | ✅ |
+| **COLMAP** | ❌ | ✅ |
+| **gsplat_examples** | ❌ | ✅ |
+| **AliceVision** | ❌ | ✅ (opt-in) |
+| **DA3 Dense** | ❌ | ✅ (если есть веса) |
+| **Ollama** | ❌ | ❌ (system-optional) |
+| **Размер ZIP** | ~4.5 GB | ~8–22 GB |
+| **KIT** | `mini` | `full` |
+| **GPU requirement** | CPU OK | NVIDIA recommended |
 
 ## Hardening (v3.1)
 
@@ -25,36 +140,6 @@
 - **Перед сборкой:** остановите host `uvicorn` / portable stage (DLL locks). Если AV держит файлы — перезагрузка ПК, затем повтор.
 
 Все пути в скриптах — относительно корня репо / env. Без абсолютных `D:\…` machine paths. Ollama **не** бандлится (system-optional).
-
-## Матрица комплектов
-
-| Режим | npm / флаг | Содержимое | ZIP |
-|-------|------------|------------|-----|
-| **Mini** | `npm run portable:mini` (`-Mini`) | full offline stack: tactical `yolo26*.pt` + **sam3.pt** + SAHI ON; torch **CPU** + DirectML; KIT=`mini` | `MuraveiVision_PRO_Mini.zip` (~4 GB) |
-| **Full** | `npm run portable:full` (`-FullKit -IncludeAliceVision`) | Mini stack + torch **cu128** + COLMAP/gsplat/AliceVision; KIT=`full`; **без Ollama** | `MuraveiVision_PRO_FullKit.zip` (~8–8.5 GB) |
-| **Legacy Portable** | `npm run portable` | legacy Portable.zip; same weight/sam3 rules as Mini (KIT=mini) | `MuraveiVision_PRO_Portable.zip` |
-
-**Mini vs Full = 3D + CUDA + model size ONLY.** Detect weights: copy-only from `assets/models` (ladder l-ft&gt;…&gt;n); never download COCO stock.
-
-**Не входит ни в один ZIP:** Ollama runtime/blobs, `assets/map_tiles`, host `muravei_env` с Python 3.14. Для AI-анализа поставьте Ollama отдельно.
-
-## Сборка Mini (full offline detect + SAM3)
-
-```powershell
-npm run portable:mini
-# или
-powershell -ExecutionPolicy Bypass -File scripts\build_portable.ps1 -FetchEmbeddablePython -Mini
-```
-
-## Сборка FullKit (без Ollama)
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\build_portable.ps1 -FetchEmbeddablePython -FullKit -IncludeAliceVision
-```
-
-AliceVision **Mesh** (opt-in): `npm run portable:full` передаёт `-IncludeAliceVision`. Mini никогда не бандлит AliceVision или DA3. DA3 Dense: копируется из `sidecars/da3/` (root files only: `da3_*.safetensors`, `config_*.json`, `NOTICE_CC-BY-NC-4.0.txt`); `-NoDA3` пропускает.
-
-Подробная таблица содержимого: [PORTABLE_GUIDE.md](PORTABLE_GUIDE.md).
 
 ## Что кладётся (оба пака)
 
